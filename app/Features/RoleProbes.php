@@ -32,7 +32,7 @@ use Illuminate\Support\Str;
  * @phpstan-type Spatie array{teams: bool, key: string|null, guards: array<string, string>, permissions: array<string, list<string>>}
  * @phpstan-type Tenant array{model: string, relation: string|null, column: string|null, roles: list<string>, spatie: Spatie|null}
  * @phpstan-type Route array{method: string, uri: string, name: string|null, tenant: string, team: string, member: string|null}
- * @phpstan-type Found array{tenants: list<Tenant>, routes: list<Route>}
+ * @phpstan-type Found array{tenants: list<Tenant>, routes: list<Route>, unread: 'failed'|'empty'|null}
  * @phpstan-type Probe array{route: string, method: string, uri: string, tenant: string, team: string, member: string|null, actor: string}
  * @phpstan-type Observed array{status: int, changed: bool, invalid: bool}
  * @phpstan-type Change array{route: string, actor: string, before: string, after: string}
@@ -51,6 +51,11 @@ class RoleProbes
     public const UNKNOWN = 'unknown';
 
     /**
+     * The name of the check, as the owner and the reviewer read it.
+     */
+    public const CHECK = 'Who may do what in a team';
+
+    /**
      * The script that lists the app's teams with their roles, and the
      * routes that work on a team or on one of its members, run with the
      * app's own PHP.
@@ -66,6 +71,7 @@ $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $user = config('auth.providers.users.model');
 $tenants = [];
 $memberships = [];
+$unread = null;
 
 foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
     $class = 'App\\Models\\'.basename($file, '.php');
@@ -142,7 +148,15 @@ if (class_exists($registrar) && in_array('Spatie\\Permission\\Traits\\HasRoles',
 
     if ($roles === []) {
         config(['database.connections.role_probes' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true], 'database.default' => 'role_probes']);
-        $roles = rescue($read, [], report: false);
+        $failed = false;
+        $roles = rescue($read, function () use (&$failed) {
+            $failed = true;
+
+            return [];
+        }, report: false);
+        // Said to the owner: an app on Spatie whose roles were not read is
+        // a gap, not an app without roles.
+        $unread = $roles !== [] ? null : ($failed ? 'failed' : 'empty');
     }
 
     if ($roles !== []) {
@@ -197,7 +211,7 @@ foreach (app('router')->getRoutes() as $route) {
     }
 }
 
-echo json_encode(['tenants' => array_values($tenants), 'routes' => $routes]), "\n";
+echo json_encode(['tenants' => array_values($tenants), 'routes' => $routes, 'unread' => $unread]), "\n";
 
 PHP;
     }
@@ -288,7 +302,9 @@ PHP;
             }
         }
 
-        return ['tenants' => $tenants, 'routes' => $routes];
+        $unread = $data['unread'] ?? null;
+
+        return ['tenants' => $tenants, 'routes' => $routes, 'unread' => $unread === 'failed' || $unread === 'empty' ? $unread : null];
     }
 
     /**
@@ -633,6 +649,25 @@ PHP;
         }
 
         return ['tried' => $tried, 'changed' => $changed, 'new' => $new, 'findings' => $findings];
+    }
+
+    /**
+     * Say to the owner why the change was not tried as each role, so the
+     * gap shows rather than silence.
+     *
+     * @param  'failed'|'empty'|'before'|'unrun'|'ours'  $why
+     */
+    public static function skipped(string $why): string
+    {
+        $tried = __('I could not try this change as each role in a team.');
+
+        return match ($why) {
+            'failed' => $tried.' '.__('Your app makes its roles when it sets up its database, and that did not work here.'),
+            'empty' => $tried.' '.__('Your app sets up no roles in its database, so there were none to try.'),
+            'unrun' => $tried.' '.__('The requests did not run in your app\'s tests here.'),
+            'before' => __('I could not try your app as it was before this change, so I cannot say what changed for each role in a team.'),
+            'ours' => __('This is our fault: I could not try this change as each role in a team. We have been told.'),
+        };
     }
 
     /**

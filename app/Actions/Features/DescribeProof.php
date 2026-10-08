@@ -25,6 +25,7 @@ use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
+use App\Features\RoleProbes;
 use App\Features\ScreenCheck;
 use App\Features\TestReport;
 use App\Features\UndescribedImages;
@@ -68,7 +69,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('saved values'), $this->narrowed($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->roles($verification), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('saved values'), $this->narrowed($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -626,6 +627,19 @@ class DescribeProof
         }
 
         return [['kind' => 'chosen', 'text' => __('You approved what the change sends to people. If a later change sends something new, I will ask again.'), ...$decision(true)]];
+    }
+
+    /**
+     * Say when the change could not be tried as each role in a team, and
+     * why, so the owner sees the gap rather than nothing.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function roles(Verification $verification): array
+    {
+        $result = collect($verification->results ?? [])->firstWhere('name', __(RoleProbes::CHECK));
+
+        return ($result['outcome'] ?? null) === 'skipped' ? [['kind' => 'gap', 'text' => (string) $result['output']]] : [];
     }
 
     /**

@@ -1603,7 +1603,7 @@ class VerifyFeatureRequest implements ShouldQueue
      * starting commit, and add the result as a check. Return false only
      * when someone outside a team gained a thing; what a role gained or
      * lost is kept for the reviewer and the owner. A probe that could not
-     * run proves nothing either way.
+     * run proves nothing either way, and says why, so the owner sees the gap.
      */
     protected function probeRoles(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
     {
@@ -1614,11 +1614,20 @@ class VerifyFeatureRequest implements ShouldQueue
             return true;
         }
 
+        $skipped = function (string $why) {
+            /** @var 'failed'|'empty'|'before'|'unrun'|'ours' $why */
+            $this->addResult(__(RoleProbes::CHECK), 'checks', self::OUTCOME_SKIPPED, output: RoleProbes::skipped($why));
+
+            return true;
+        };
+
         try {
             $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
-            $find = function () use ($driver, $runWorkspaceCommand, $workspace, $config) {
+            $output = '';
+            $find = function () use ($driver, $runWorkspaceCommand, $workspace, $config, &$output) {
                 $driver->writeFile((string) $workspace->driver_id, $config['models'], RoleProbes::introspection());
-                $found = RoleProbes::found($runWorkspaceCommand->handle($workspace, ['php', $config['models']], 60)->output);
+                $output = $runWorkspaceCommand->handle($workspace, ['php', $config['models']], 60)->output;
+                $found = RoleProbes::found($output);
                 $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['models']], 30);
 
                 return $found;
@@ -1640,8 +1649,18 @@ class VerifyFeatureRequest implements ShouldQueue
             $found = $find();
             $probes = $found === null ? [] : RoleProbes::plan($found, $config['probes']);
 
-            if ($found === null || $probes === []) {
-                return true;
+            // The app's tests passed, so it starts: output that is not the
+            // script's means the script broke, which is ours to fix.
+            if ($found === null) {
+                report(new RuntimeException('The role probe script printed no teams: '.Str::limit($output, 500)));
+
+                return $skipped('ours');
+            }
+
+            // An app with no team roles has nothing to try; one whose Spatie
+            // roles could not be read has a gap.
+            if ($probes === []) {
+                return $found['unread'] === null ? true : $skipped($found['unread']);
             }
 
             [$after, $duration] = $send($probes, $found['tenants']);
@@ -1677,18 +1696,18 @@ class VerifyFeatureRequest implements ShouldQueue
             $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
 
             if ($routesBefore === null) {
-                return true;
+                return $skipped('before');
             }
 
             $measured = RoleProbes::measure($probes, $after, $before, $routesBefore);
 
             if ($measured['tried'] === 0) {
-                return true;
+                return $skipped('unrun');
             }
 
             $this->keepEvidence('roles', $measured);
             $passed = $measured['findings'] === [];
-            $this->addResult(__('Who may do what in a team'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $duration, output: RoleProbes::describe($measured));
+            $this->addResult(__(RoleProbes::CHECK), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $duration, output: RoleProbes::describe($measured));
 
             return $passed;
         } catch (CommandLost $exception) {
@@ -1696,7 +1715,7 @@ class VerifyFeatureRequest implements ShouldQueue
         } catch (Throwable $exception) {
             report($exception);
 
-            return true;
+            return $skipped('ours');
         }
     }
 

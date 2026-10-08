@@ -2,11 +2,13 @@
 
 namespace Tests\Feature\Features;
 
+use App\Actions\Features\DescribeProof;
 use App\Actions\Features\RequestVerification;
 use App\Enums\VerificationStatus;
 use App\Models\FeatureRequest;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use RuntimeException;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Fakes\FakeWorkspaceDriver;
 use Tests\TestCase;
@@ -54,13 +56,14 @@ class RoleProbeVerificationTest extends TestCase
      * @param  array<int, bool>  $before  Whether each removal went through before the change
      * @param  array<int, bool>  $after  Whether each removal went through with it
      * @param  list<array<string, mixed>>|null  $tenants  The teams the script finds; an enum role column by default
+     * @param  string|null  $unread  Why the script could not read the app's Spatie roles
      */
-    protected function answer(array $before, array $after, ?array $tenants = null): void
+    protected function answer(array $before, array $after, ?array $tenants = null, ?string $unread = null): void
     {
         $started = false;
         $tenants ??= [['model' => 'Team', 'relation' => 'members', 'column' => 'role', 'roles' => ['owner', 'admin', 'member']]];
 
-        $this->driver->onExec = function (string $workspace, array $command) use ($before, $after, $tenants, &$started) {
+        $this->driver->onExec = function (string $workspace, array $command) use ($before, $after, $tenants, $unread, &$started) {
             if (($command[0] ?? null) === 'git' && ($command[1] ?? null) === 'apply') {
                 $started = in_array('--reverse', $command, true);
             }
@@ -68,6 +71,7 @@ class RoleProbeVerificationTest extends TestCase
             if ($command === ['php', 'roles.php']) {
                 return new CommandResult(exitCode: 0, output: (string) json_encode([
                     'tenants' => $tenants,
+                    'unread' => $unread,
                     'routes' => [
                         ['method' => 'PATCH', 'uri' => '/settings/teams/{team}', 'name' => 'teams.update', 'tenant' => 'Team', 'team' => 'team', 'member' => null],
                         ['method' => 'DELETE', 'uri' => '/settings/teams/{team}/members/{member}', 'name' => 'team-members.destroy', 'tenant' => 'Team', 'team' => 'team', 'member' => 'member'],
@@ -194,5 +198,94 @@ class RoleProbeVerificationTest extends TestCase
         $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may do what in a team'));
         $this->assertSame(1, collect($this->driver->executed)->where('command', ['php', 'roles.php'])->count());
         $this->assertSame(0, collect($this->driver->executed)->filter(fn (array $run) => array_slice($run['command'], 0, 4) === self::PROBE)->count());
+    }
+
+    /**
+     * What the owner reads about trying the change as each role, and the
+     * check's own result.
+     *
+     * @return array{result: array<string, mixed>|null, said: list<string>, status: VerificationStatus}
+     */
+    protected function verified(): array
+    {
+        $change = FeatureRequest::factory()->generated()->create();
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+
+        return [
+            'result' => collect($verification->results)->firstWhere('name', 'Who may do what in a team'),
+            'said' => array_values(array_filter(array_map(fn (array $line) => $line['kind'] === 'gap' ? $line['text'] : '', app(DescribeProof::class)->handle($change)), fn (string $text) => str_contains($text, 'role'))),
+            'status' => $verification->status,
+        ];
+    }
+
+    public function test_spatie_roles_that_could_not_be_read_are_told_to_the_owner(): void
+    {
+        $this->answer(before: [], after: [], tenants: [], unread: 'failed');
+
+        $verified = $this->verified();
+
+        $said = 'I could not try this change as each role in a team. Your app makes its roles when it sets up its database, and that did not work here.';
+        $this->assertSame(['skipped', $said], [$verified['result']['outcome'], $verified['result']['output']]);
+        $this->assertSame([$said], $verified['said']);
+        $this->assertNotSame(VerificationStatus::Failed, $verified['status']);
+        $this->assertSame(0, collect($this->driver->executed)->filter(fn (array $run) => array_slice($run['command'], 0, 4) === self::PROBE)->count());
+    }
+
+    public function test_an_app_without_roles_set_up_or_requests_that_did_not_run_say_so(): void
+    {
+        $this->answer(before: [], after: [], tenants: [], unread: 'empty');
+        $this->assertSame(['I could not try this change as each role in a team. Your app sets up no roles in its database, so there were none to try.'], $this->verified()['said']);
+
+        $answer = $this->driver->onExec;
+        $this->driver->onExec = function (string $workspace, array $command, int $timeout) use ($answer) {
+            /** @var list<string> $command */
+            return $command === ['php', 'roles.php']
+                ? new CommandResult(exitCode: 255, output: 'PHP Fatal error: Class "App\Models\Team" not found', errorOutput: '', durationMs: 5)
+                : $answer($workspace, $command, $timeout);
+        };
+        // Its tests passed, so the app starts: output that is not the
+        // script's is our script breaking.
+        $this->assertSame(['This is our fault: I could not try this change as each role in a team. We have been told.'], $this->verified()['said']);
+
+        // Every request broke, so no role proved anything either way.
+        $this->answer(before: [], after: []);
+        $answer = $this->driver->onExec;
+        $this->driver->onExec = function (string $workspace, array $command, int $timeout) use ($answer) {
+            /** @var list<string> $command */
+            $result = $answer($workspace, $command, $timeout);
+
+            if (array_slice($command, 0, 4) === self::PROBE) {
+                $this->driver->files["{$workspace}:probes.jsonl"] = implode("\n", array_map(fn (int $id) => json_encode(['id' => $id, 'status' => 500, 'changed' => false, 'invalid' => false]), range(0, 9)));
+            }
+
+            return $result;
+        };
+        $verified = $this->verified();
+        $this->assertSame('skipped', $verified['result']['outcome']);
+        $this->assertSame(["I could not try this change as each role in a team. The requests did not run in your app's tests here."], $verified['said']);
+    }
+
+    public function test_our_own_failure_is_said_as_ours_and_an_app_without_team_roles_stays_quiet(): void
+    {
+        $this->answer(before: [], after: []);
+        $answer = $this->driver->onExec;
+        $this->driver->onExec = function (string $workspace, array $command, int $timeout) use ($answer) {
+            /** @var list<string> $command */
+            if (array_slice($command, 0, 4) === self::PROBE) {
+                throw new RuntimeException('The probe test could not be written.');
+            }
+
+            return $answer($workspace, $command, $timeout);
+        };
+
+        $this->assertSame(['This is our fault: I could not try this change as each role in a team. We have been told.'], $this->verified()['said']);
+
+        $this->answer(before: [], after: [], tenants: []);
+        $verified = $this->verified();
+        $this->assertNull($verified['result']);
+        $this->assertSame([], $verified['said']);
     }
 }

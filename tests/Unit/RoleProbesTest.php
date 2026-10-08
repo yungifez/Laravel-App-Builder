@@ -43,7 +43,7 @@ class RoleProbesTest extends TestCase
             'routes' => [['method' => 'PATCH', 'uri' => '/clubs/{club}', 'name' => null, 'tenant' => 'Club', 'team' => 'club', 'member' => null]],
         ]));
 
-        $this->assertSame(['tenants' => [], 'routes' => []], $found);
+        $this->assertSame(['tenants' => [], 'routes' => [], 'unread' => null], $found);
         $this->assertSame([], RoleProbes::plan($found, 60));
     }
 
@@ -160,7 +160,7 @@ class RoleProbesTest extends TestCase
             ['method' => 'PATCH', 'uri' => '/teams/{team}', 'name' => 'teams.update', 'tenant' => 'Team', 'team' => 'team', 'member' => null],
         ]]));
 
-        $this->assertSame(['tenants' => [], 'routes' => []], $found);
+        $this->assertSame(['tenants' => [], 'routes' => [], 'unread' => null], $found);
         $this->assertSame([], RoleProbes::plan($found, 60));
 
         // Teams mode named with a key that is not a column is not read.
@@ -240,5 +240,17 @@ XML)], ['APP_ENV' => 'local', 'DB_CONNECTION' => 'pgsql']);
             'phpunit.xml' => '<phpunit><php>',
             'phpunit.xml.dist' => $this->phpunit('        <env name="DB_DATABASE" value="shop_test"/>'),
         ])['env']['DB_DATABASE']);
+    }
+
+    public function test_spatie_roles_that_were_not_read_are_told_apart_from_an_app_without_roles(): void
+    {
+        $read = fn (mixed $unread) => RoleProbes::found((string) json_encode(['tenants' => [], 'routes' => [], 'unread' => $unread]))['unread'];
+
+        $this->assertSame('failed', $read('failed'));
+        $this->assertSame('empty', $read('empty'));
+        $this->assertNull($read(null));
+        $this->assertNull($read('anything else'));
+        $this->assertNull(RoleProbes::found((string) json_encode(['tenants' => [], 'routes' => []]))['unread']);
+        $this->assertSame('This is our fault: I could not try this change as each role in a team. We have been told.', RoleProbes::skipped('ours'));
     }
 }
