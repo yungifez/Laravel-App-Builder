@@ -208,6 +208,18 @@ class PreviewHappeningsTest extends TestCase
                 ->where('happenings.requests.0.page', 'Updated the about users avatars part of a page')));
     }
 
+    public function test_a_task_the_app_ran_on_its_own_is_named_in_words()
+    {
+        $this->recorded([
+            ['n' => 0, 'method' => 'ARTISAN', 'route' => 'delete:non-email-verified-users', 'status' => 200, 'effects' => []],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                ->where('happenings.requests.0.page', 'Ran a task: Delete non email verified users')));
+    }
+
     public function test_an_app_that_did_nothing_yet_or_does_not_run_has_nothing_to_show()
     {
         $this->actingAs($this->owner)

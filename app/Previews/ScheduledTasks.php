@@ -55,10 +55,17 @@ class ScheduledTasks
     /**
      * What the task does, in the app's own words when it gave some.
      */
-    protected static function words(string $command, ?string $description): string
+    public static function words(string $command, ?string $description = null): string
     {
-        if (filled($description)) {
+        // A queued job is listed by its class, as its own description too.
+        $class = fn (string $text) => preg_match('/^\\\\?[A-Za-z_]\w*(\\\\[A-Za-z_]\w*)+$/', $text) === 1;
+
+        if (filled($description) && ! $class($description)) {
             return Str::ucfirst($description);
+        }
+
+        if ($class($command)) {
+            return Str::ucfirst(Str::lower(Str::headline(class_basename($command))));
         }
 
         if (str_starts_with($command, 'Closure at: ')) {

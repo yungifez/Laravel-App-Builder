@@ -1171,7 +1171,7 @@ export type AppClock = {
     /** Whether a jump is under way. */
     moving: boolean;
     /** What the last jump ran: each task, how often and how often it failed. */
-    ran: { words: string; times: number; failed: number }[];
+    ran: { words: string; times: number; due: number; failed: number }[];
     error: string | null;
 };
 

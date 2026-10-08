@@ -61,14 +61,16 @@ class PreviewClock
      * Get each time a task would have run after "from", up to "to", oldest
      * first. A task that runs often keeps only its last "each" times, so a
      * month of a task that runs every minute stays a few runs; at most
-     * "most" runs are kept in all, the latest ones.
+     * "most" runs are kept in all, the latest ones. "due" counts each
+     * task's times before any were left out, so the owner can be told.
      *
      * @param  list<array{name: string, expression: string, timezone: string}>  $tasks
-     * @return list<array{task: string, at: CarbonImmutable}>
+     * @return array{runs: list<array{task: string, at: CarbonImmutable}>, due: array<string, int>}
      */
     public static function due(array $tasks, CarbonImmutable $from, CarbonImmutable $to, int $each, int $most): array
     {
         $runs = [];
+        $due = [];
 
         foreach ($tasks as $task) {
             try {
@@ -84,6 +86,7 @@ class PreviewClock
             while (($next = rescue(fn () => CarbonImmutable::instance($cron->getNextRunDate($at, 0, false, $task['timezone'])), null, report: false)) !== null && $next->lessThanOrEqualTo($to)) {
                 $times[] = $next;
                 $times = array_slice($times, -$each);
+                $due[$task['name']] = ($due[$task['name']] ?? 0) + 1;
                 $at = $next;
             }
 
@@ -94,7 +97,7 @@ class PreviewClock
 
         usort($runs, fn (array $a, array $b) => $a['at'] <=> $b['at']);
 
-        return array_slice($runs, -$most);
+        return ['runs' => array_slice($runs, -$most), 'due' => $due];
     }
 
     /**

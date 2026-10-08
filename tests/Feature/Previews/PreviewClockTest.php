@@ -98,9 +98,10 @@ class PreviewClockTest extends TestCase
                 ->where('clock.moving', false)
                 ->where('clock.error', null)
                 ->where('clock.ran', [
-                    ['words' => 'Reminders send daily', 'times' => 7, 'failed' => 0],
-                    ['words' => 'Send the weekly report', 'times' => 1, 'failed' => 0],
-                    ['words' => 'Invoices check', 'times' => 7, 'failed' => 0],
+                    ['words' => 'Reminders send daily', 'times' => 7, 'due' => 7, 'failed' => 0],
+                    ['words' => 'Send the weekly report', 'times' => 1, 'due' => 1, 'failed' => 0],
+                    // Due each minute of the week, so the owner is told only the last 7 ran.
+                    ['words' => 'Invoices check', 'times' => 7, 'due' => 7 * 1440, 'failed' => 0],
                 ])));
     }
 

@@ -94,12 +94,19 @@ const today = computed(() =>
         : '',
 );
 
-// What the last jump ran, in one line.
+// What the last jump ran, in one line. A task due more often than it
+// was run says so, so "×7" never stands for a day of hourly runs.
 const ranWords = computed(() =>
     (props.clock?.ran ?? [])
-        .map((task) =>
-            task.times === 1 ? task.words : `${task.words} ×${task.times}`,
-        )
+        .map((task) => {
+            if (task.due > task.times) {
+                return `${task.words} ×${task.due} (we ran the last ${task.times})`;
+            }
+
+            return task.times === 1
+                ? task.words
+                : `${task.words} ×${task.times}`;
+        })
         .join(', '),
 );
 const failedWords = computed(() =>

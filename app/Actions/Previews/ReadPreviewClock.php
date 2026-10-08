@@ -18,7 +18,7 @@ class ReadPreviewClock
      * whether a jump is under way, and what the last jump ran. Null while
      * the app does not run or cannot be moved.
      *
-     * @return array{ahead: int, now: string, moving: bool, ran: list<array{words: string, times: int, failed: int}>, error: string|null}|null
+     * @return array{ahead: int, now: string, moving: bool, ran: list<array{words: string, times: int, due: int, failed: int}>, error: string|null}|null
      */
     public function handle(Project $project): ?array
     {
@@ -31,7 +31,7 @@ class ReadPreviewClock
 
         $directory = trim(Config::string('builder.preview.recorder.directory'), '/');
         $ahead = PreviewClock::ahead((string) rescue(fn () => $this->workspaces->driver($workspace->driver)->readFile((string) $workspace->driver_id, "{$directory}/clock.json"), '', report: false));
-        /** @var array{ran: list<array{words: string, times: int, failed: int}>, error: string|null} $outcome */
+        /** @var array{ran: list<array{words: string, times: int, due: int, failed: int}>, error: string|null} $outcome */
         $outcome = Cache::get(self::outcomeKey($preview), ['ran' => [], 'error' => null]);
 
         return [

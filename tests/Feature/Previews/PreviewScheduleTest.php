@@ -46,6 +46,8 @@ class PreviewScheduleTest extends TestCase
             $this->task('Closure at: routes/console.php:12', '0 9 * * 1'),
             $this->task('php artisan invoices:check', '* * * * *', repeat: 10),
             $this->task('php artisan report', '5 4 1,15 * *'),
+            // A queued job is listed by its class, as its description too.
+            $this->task('App\\Jobs\\CleanUnusedUploadedImages', '0 * * * *', 'App\\Jobs\\CleanUnusedUploadedImages'),
         ];
         $this->driver->onExec = fn (string $workspace, array $command) => new CommandResult(
             exitCode: 0,
@@ -60,7 +62,7 @@ class PreviewScheduleTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->missing('schedule')->reloadOnly('schedule', fn (Assert $page) => $page
-                ->count('schedule', 5)
+                ->count('schedule', 6)
                 ->where('schedule.0.words', 'Reminders send daily')
                 ->where('schedule.0.name', 'reminders:send-daily')
                 ->where('schedule.0.when', 'Every day at 08:00 UTC')
@@ -71,7 +73,9 @@ class PreviewScheduleTest extends TestCase
                 ->where('schedule.2.name', 'Closure')
                 ->where('schedule.2.when', 'Every Monday at 09:00 UTC')
                 ->where('schedule.3.when', 'Every 10 seconds')
-                ->where('schedule.4.when', 'On its own timetable')));
+                ->where('schedule.4.when', 'On its own timetable')
+                ->where('schedule.5.words', 'Clean unused uploaded images')
+                ->where('schedule.5.when', 'Every hour')));
     }
 
     public function test_the_owner_runs_a_task_now()

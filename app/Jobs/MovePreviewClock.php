@@ -58,14 +58,14 @@ class MovePreviewClock implements ShouldQueue
         $id = (string) $workspace->driver_id;
         $directory = trim(Config::string('builder.preview.recorder.directory'), '/');
         $timeout = Config::integer('builder.preview.clock.timeout');
-        $run = fn (string ...$command) => $runWorkspaceCommand->handle($workspace, PreviewClock::command($directory, ...$command), $timeout, $preview->environment());
+        $runCommand = fn (string ...$command) => $runWorkspaceCommand->handle($workspace, PreviewClock::command($directory, ...$command), $timeout, $preview->environment());
         $setClock = fn (int $ahead) => $driver->writeFile($id, "{$directory}/clock.json", PreviewClock::file($ahead));
 
         // Each command the schedule starts loads the recorder, and with it the clock.
         $driver->writeFile($id, "{$directory}/ini/recorder.ini", 'auto_prepend_file='.Config::string('builder.preview.recorder.prepend')."\n");
 
         $ahead = PreviewClock::ahead((string) rescue(fn () => $driver->readFile($id, "{$directory}/clock.json"), '', report: false));
-        $listed = $run('php', 'artisan', 'schedule:list', '--json', '--no-interaction');
+        $listed = $runCommand('php', 'artisan', 'schedule:list', '--json', '--no-interaction');
 
         if ($listed->exit_code !== 0) {
             $this->finish(['ran' => [], 'error' => __('Your app could not say what it runs on its own. See Problems for what went wrong.')]);
@@ -77,15 +77,16 @@ class MovePreviewClock implements ShouldQueue
         $from = Date::now()->toImmutable()->addSeconds($ahead);
         $to = PreviewClock::jump($from, $this->jump, $tasks[0]['timezone'] ?? 'UTC');
         $ran = [];
+        $due = PreviewClock::due($tasks, $from, $to, Config::integer('builder.preview.clock.each'), Config::integer('builder.preview.clock.most'));
 
-        foreach (PreviewClock::due($tasks, $from, $to, Config::integer('builder.preview.clock.each'), Config::integer('builder.preview.clock.most')) as $due) {
-            $setClock(max(0, $due['at']->getTimestamp() - Date::now()->getTimestamp()));
-            $result = $run('php', 'artisan', 'schedule:test', '--name='.$due['task'], '--no-interaction');
-            $task = collect($tasks)->firstWhere('name', $due['task']);
+        foreach ($due['runs'] as $run) {
+            $setClock(max(0, $run['at']->getTimestamp() - Date::now()->getTimestamp()));
+            $result = $runCommand('php', 'artisan', 'schedule:test', '--name='.$run['task'], '--no-interaction');
+            $task = collect($tasks)->firstWhere('name', $run['task']);
 
-            $ran[$due['task']] ??= ['words' => $task['words'] ?? $due['task'], 'times' => 0, 'failed' => 0];
-            $ran[$due['task']]['times']++;
-            $ran[$due['task']]['failed'] += $result->exit_code === 0 && ! $result->timed_out ? 0 : 1;
+            $ran[$run['task']] ??= ['words' => $task['words'] ?? $run['task'], 'times' => 0, 'due' => $due['due'][$run['task']] ?? 0, 'failed' => 0];
+            $ran[$run['task']]['times']++;
+            $ran[$run['task']]['failed'] += $result->exit_code === 0 && ! $result->timed_out ? 0 : 1;
         }
 
         // The skipped time is added to where the clock stood, so it runs on
@@ -105,7 +106,7 @@ class MovePreviewClock implements ShouldQueue
     /**
      * Keep what the jump did for the owner, and let them jump again.
      *
-     * @param  array{ran: list<array{words: string, times: int, failed: int}>, error: string|null}  $outcome
+     * @param  array{ran: list<array{words: string, times: int, due: int, failed: int}>, error: string|null}  $outcome
      */
     protected function finish(array $outcome): void
     {

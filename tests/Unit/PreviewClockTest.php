@@ -28,12 +28,14 @@ class PreviewClockTest extends TestCase
         $runs = PreviewClock::due($tasks, CarbonImmutable::parse('2026-10-05 12:00:00'), CarbonImmutable::parse('2026-10-08 12:00:00'), 2, 3);
 
         // Each task keeps its last 2, and the 3 latest of those are kept in all.
-        $this->assertSame([['daily', '2026-10-08 08:00'], ['often', '2026-10-08 11:59'], ['often', '2026-10-08 12:00']], array_map(fn (array $run) => [$run['task'], $run['at']->format('Y-m-d H:i')], $runs));
+        $this->assertSame([['daily', '2026-10-08 08:00'], ['often', '2026-10-08 11:59'], ['often', '2026-10-08 12:00']], array_map(fn (array $run) => [$run['task'], $run['at']->format('Y-m-d H:i')], $runs['runs']));
+        // Each task still counts every time it was due, so the owner can be told what was left out.
+        $this->assertSame(['daily' => 3, 'often' => 3 * 1440], $runs['due']);
     }
 
     public function test_a_timetable_that_cannot_be_read_or_the_clock_file_that_says_nothing_moves_nothing()
     {
-        $this->assertSame([], PreviewClock::due([['name' => 'odd', 'expression' => 'every so often', 'timezone' => 'UTC']], CarbonImmutable::parse('2026-10-05'), CarbonImmutable::parse('2026-11-05'), 7, 40));
+        $this->assertSame(['runs' => [], 'due' => []], PreviewClock::due([['name' => 'odd', 'expression' => 'every so often', 'timezone' => 'UTC']], CarbonImmutable::parse('2026-10-05'), CarbonImmutable::parse('2026-11-05'), 7, 40));
         $this->assertSame(0, PreviewClock::ahead(''));
         $this->assertSame(0, PreviewClock::ahead('{"ahead":-5}'));
         $this->assertSame(3600, PreviewClock::ahead(PreviewClock::file(3600)));

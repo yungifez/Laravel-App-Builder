@@ -4,6 +4,7 @@ namespace App\Actions\Previews;
 
 use App\Features\AppRoutes;
 use App\Models\Project;
+use App\Previews\ScheduledTasks;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -186,7 +187,7 @@ class ReadPreviewHappenings
         $path = $route === '' ? __('a page') : $route;
 
         return match (true) {
-            $method === 'ARTISAN' => (string) __('Ran a task: :name', ['name' => $route]),
+            $method === 'ARTISAN' => (string) __('Ran a task: :name', ['name' => ScheduledTasks::words($route)]),
             $method === 'JOB' => (string) __('Ran in the background: :name', ['name' => $this->name($route)]),
             $method === 'GET', $method === 'HEAD' => (string) __('Opened :path', ['path' => $path]),
             $method === 'DELETE' => (string) __('Deleted from :path', ['path' => $path]),
