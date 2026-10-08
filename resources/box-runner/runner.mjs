@@ -51,10 +51,12 @@ import {
 } from 'node:crypto';
 import {
     chmodSync,
-    chownSync,
     closeSync,
     constants,
+    fchmodSync,
+    fchownSync,
     fstatSync,
+    ftruncateSync,
     mkdirSync,
     mkdtempSync,
     openSync,
@@ -271,10 +273,19 @@ function freeId() {
 }
 
 /** Make a folder the workspace user's alone. */
-function own(path, id) {
+function own(path, id, mode = 0o700) {
     mkdirSync(path, { recursive: true });
-    chownSync(path, id, id);
-    chmodSync(path, 0o700);
+    const fd = openSync(
+        path,
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+
+    try {
+        fchownSync(fd, id, id);
+        fchmodSync(fd, mode);
+    } finally {
+        closeSync(fd);
+    }
 }
 
 /**
@@ -1215,16 +1226,45 @@ const handlers = {
         const directory = servicesDirectory(command.box);
         const as = identity(command.box);
 
-        mkdirSync(directory, { recursive: true });
+        // The workspace may write its log, but never replace the log's
+        // name or its parent with a link for the privileged runner to follow.
+        if (switching) {
+            own(directory, 0, 0o711);
+        } else {
+            mkdirSync(directory, { recursive: true });
+        }
 
         const log = join(directory, `${Number(port)}.log`);
 
-        writeFileSync(log, '');
-
         if (switching) {
-            own(directory, as.ids.uid);
-            chownSync(log, as.ids.uid, as.ids.gid);
+            const fd = openSync(
+                log,
+                constants.O_WRONLY |
+                    constants.O_CREAT |
+                    constants.O_NOFOLLOW |
+                    constants.O_NONBLOCK,
+                0o600,
+            );
+
+            try {
+                const file = fstatSync(fd);
+
+                if (!file.isFile() || file.nlink !== 1) {
+                    throw new Error(
+                        'A service log must be a regular file without links.',
+                    );
+                }
+
+                ftruncateSync(fd, 0);
+                fchownSync(fd, as.ids.uid, as.ids.gid);
+                fchmodSync(fd, 0o600);
+            } finally {
+                closeSync(fd);
+            }
+
             fencePort(command.box, Number(port), as.ids.uid);
+        } else {
+            writeFileSync(log, '');
         }
 
         const service = spawn(
@@ -1380,8 +1420,7 @@ async function main() {
     // own, but not list or read the others.
     if (switching) {
         for (const shared of [root, homes(), join(root, '.services')]) {
-            mkdirSync(shared, { recursive: true });
-            chmodSync(shared, 0o711);
+            own(shared, 0, 0o711);
         }
 
         for (const name of workspaces()) {
