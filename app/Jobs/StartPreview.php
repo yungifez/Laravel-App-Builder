@@ -223,8 +223,8 @@ class StartPreview implements ShouldQueue
     /**
      * How the server loads the trace recorder, which "What happened" and
      * "What if it fails" read: the recorder's folder is made in the
-     * workspace, and a fault the owner set before this start is dropped,
-     * so the app starts with all working. Nothing when the recorder is
+     * workspace, and a fault or a clock the owner set before this start is
+     * dropped, so the app starts with all working, today. Nothing when the recorder is
      * off or not in the image.
      *
      * @return array{shell: string, directory: string, prepend: string}|null
@@ -239,7 +239,7 @@ class StartPreview implements ShouldQueue
 
         return [
             // $1 is the recorder's folder; the rest is the server command.
-            'shell' => 'if [ -f '.escapeshellarg($prepend).' ]; then mkdir -p "$1" && rm -f "$1/fault.json" && export TRACE_RECORDER_DIR="$PWD/$1"; fi; shift; cd public && exec "$@"',
+            'shell' => 'if [ -f '.escapeshellarg($prepend).' ]; then mkdir -p "$1" && rm -f "$1/fault.json" "$1/clock.json" && export TRACE_RECORDER_DIR="$PWD/$1"; fi; shift; cd public && exec "$@"',
             'directory' => trim(Config::string('builder.preview.recorder.directory'), '/'),
             'prepend' => $prepend,
         ];

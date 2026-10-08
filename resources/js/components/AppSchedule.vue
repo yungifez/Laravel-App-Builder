@@ -1,20 +1,113 @@
 <script setup lang="ts">
-import { Form } from '@inertiajs/vue3';
+import { Form, router, usePoll } from '@inertiajs/vue3';
 import { Clock } from '@lucide/vue';
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { toast } from 'vue-sonner';
+import PreviewClockController from '@/actions/App/Http/Controllers/PreviewClockController';
 import PreviewScheduledTaskRunController from '@/actions/App/Http/Controllers/PreviewScheduledTaskRunController';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
-import type { ScheduledTask } from '@/types';
+import type { AppClock, ScheduledTask } from '@/types';
 
-defineProps<{
+const props = defineProps<{
     projectId: string;
     schedule: ScheduledTask[] | null | undefined;
+    clock?: AppClock | null;
     // The change the owner is trying, when the tools work on its copy.
     copy?: string | null;
 }>();
 
 const emit = defineEmits<{ ran: [] }>();
+
+const jumps = [
+    { key: 'day', label: 'A day' },
+    { key: 'week', label: 'A week' },
+    { key: 'month', label: 'A month' },
+] as const;
+
+// The jump asked for, until the app has moved.
+const asked = ref<string | null>(null);
+const moving = computed(() => asked.value !== null || !!props.clock?.moving);
+
+// A jump runs in the background: follow it until it is done.
+const clockPoll = usePoll(
+    2000,
+    { only: ['clock', 'schedule'] },
+    { autoStart: false },
+);
+
+watch(
+    () => props.clock?.moving,
+    (now, before) => {
+        if (now) {
+            clockPoll.start();
+
+            return;
+        }
+
+        clockPoll.stop();
+
+        // What the skipped time ran may have sent email or hit a problem.
+        if (before) {
+            emit('ran');
+        }
+    },
+    { immediate: true },
+);
+
+function move(jump: string): void {
+    asked.value = jump;
+    router.put(
+        PreviewClockController.update.url(props.projectId, {
+            query: { copy: props.copy },
+        }),
+        { jump },
+        {
+            preserveScroll: true,
+            preserveState: true,
+            only: ['clock', 'schedule'],
+            onSuccess: () => {
+                if (jump === 'today') {
+                    toast('Your app is back to today');
+                }
+            },
+            onError: (errors) =>
+                toast.error(
+                    errors.jump ??
+                        'Your app could not move in time. This is our fault. Try again.',
+                ),
+            onFinish: () => (asked.value = null),
+        },
+    );
+}
+
+// The date in the app, the way the owner reads dates.
+const today = computed(() =>
+    props.clock
+        ? new Date(props.clock.now).toLocaleString(undefined, {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+              hour: 'numeric',
+              minute: '2-digit',
+          })
+        : '',
+);
+
+// What the last jump ran, in one line.
+const ranWords = computed(() =>
+    (props.clock?.ran ?? [])
+        .map((task) =>
+            task.times === 1 ? task.words : `${task.words} ×${task.times}`,
+        )
+        .join(', '),
+);
+const failedWords = computed(() =>
+    (props.clock?.ran ?? [])
+        .filter((task) => task.failed > 0)
+        .map((task) => task.words)
+        .join(', '),
+);
 
 // The task run last, so the owner sees it went through.
 const ran = ref<string | null>(null);
@@ -25,7 +118,13 @@ function next(iso: string | null): string {
         return '';
     }
 
-    const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+    // From the time in the app, which can be ahead of the real one.
+    const minutes = Math.round(
+        (new Date(iso).getTime() -
+            Date.now() -
+            (props.clock?.ahead ?? 0) * 1000) /
+            60000,
+    );
 
     if (minutes < 1) {
         return 'runs next in under a minute';
@@ -50,6 +149,69 @@ function next(iso: string | null): string {
         class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border bg-background"
         data-test="app-schedule"
     >
+        <!-- Time sits at the top, so the tasks below run by the app's day. -->
+        <div
+            v-if="clock"
+            class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2 text-sm"
+            :class="clock.ahead > 0 && 'bg-primary/10'"
+            data-test="app-clock"
+        >
+            <p class="min-w-0 flex-1">
+                <span class="text-muted-foreground">In your app it is</span>
+                {{ today }}
+            </p>
+            <div class="flex shrink-0 items-center gap-1">
+                <span class="mr-1 text-muted-foreground">Jump ahead</span>
+                <Button
+                    v-for="jump in jumps"
+                    :key="jump.key"
+                    size="sm"
+                    variant="outline"
+                    class="h-11 sm:h-8"
+                    :disabled="moving"
+                    :data-test="`app-clock-${jump.key}`"
+                    @click="move(jump.key)"
+                    >{{ jump.label }}</Button
+                >
+                <Button
+                    v-if="clock.ahead > 0"
+                    size="sm"
+                    variant="ghost"
+                    class="h-11 sm:h-8"
+                    :disabled="moving"
+                    data-test="app-clock-today"
+                    @click="move('today')"
+                    >Back to today</Button
+                >
+            </div>
+            <p
+                v-if="moving"
+                class="basis-full text-xs text-muted-foreground"
+                data-test="app-clock-moving"
+            >
+                Moving ahead, and running what your app would have done in that
+                time…
+            </p>
+            <p
+                v-else-if="clock.error"
+                class="basis-full text-xs text-destructive"
+                data-test="app-clock-error"
+            >
+                {{ clock.error }}
+            </p>
+            <p
+                v-else-if="clock.ahead > 0"
+                class="basis-full text-xs text-muted-foreground"
+                data-test="app-clock-ran"
+            >
+                <template v-if="ranWords">Ran {{ ranWords }}. </template>
+                <span v-if="failedWords" class="text-destructive"
+                    >{{ failedWords }} failed. See Problems.
+                </span>
+                What happened in that time stays when you go back.
+            </p>
+        </div>
+
         <div
             v-if="schedule === undefined"
             class="flex flex-1 items-center justify-center text-sm text-muted-foreground"

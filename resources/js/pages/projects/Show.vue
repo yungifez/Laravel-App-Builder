@@ -138,6 +138,7 @@ import type {
     AppProblem,
     SavedRows,
     ScheduledTask,
+    AppClock,
     StoredFile,
     SavedTable,
     VisualEditSummary,
@@ -164,6 +165,7 @@ const props = defineProps<{
     data?: SavedTable[] | null;
     rows?: SavedRows | null;
     schedule?: ScheduledTask[] | null;
+    clock?: AppClock | null;
     happenings?: AppHappened;
     files?: StoredFile[] | null;
     pages?: AppPage[] | null;
@@ -292,7 +294,9 @@ watch(
                       ? ['emails', 'notices']
                       : value === 'happened'
                         ? ['happenings']
-                        : [value],
+                        : value === 'schedule'
+                          ? ['schedule', 'clock']
+                          : [value],
         }),
 );
 
@@ -666,7 +670,7 @@ watch(
                     ...(showing.value === 'data'
                         ? ['data', 'files']
                         : showing.value === 'schedule'
-                          ? ['schedule']
+                          ? ['schedule', 'clock']
                           : showing.value === 'emails'
                             ? ['notices']
                             : showing.value === 'happened'
@@ -2611,6 +2615,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 class="min-h-0 flex-1"
                 :project-id="project.id"
                 :schedule="schedule"
+                :clock="clock"
                 :copy="copy"
                 @ran="router.reload({ only: ['emails', 'problems'] })"
             />

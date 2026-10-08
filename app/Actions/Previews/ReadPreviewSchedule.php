@@ -14,7 +14,7 @@ class ReadPreviewSchedule
      * Get the tasks the app on show runs on its own, or null while it does
      * not run. They are read through the app itself.
      *
-     * @return list<array{name: string, words: string, when: string, next: string|null, expression: string, command: string}>|null
+     * @return list<array{name: string, words: string, when: string, next: string|null, expression: string, command: string, timezone: string, repeat: int|null}>|null
      */
     public function handle(Project $project): ?array
     {

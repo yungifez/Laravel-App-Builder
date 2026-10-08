@@ -59,6 +59,7 @@ use App\Http\Controllers\Operations\PersonController as OperationsPersonControll
 use App\Http\Controllers\Operations\PersonPlanController;
 use App\Http\Controllers\Operations\PersonSuspensionController;
 use App\Http\Controllers\PageConsistencyController;
+use App\Http\Controllers\PreviewClockController;
 use App\Http\Controllers\PreviewController;
 use App\Http\Controllers\PreviewDataController;
 use App\Http\Controllers\PreviewEmailController;
@@ -182,6 +183,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('projects/{project}/preview-data', [PreviewDataController::class, 'update'])->name('preview-data.update');
     Route::post('projects/{project}/preview-schedule-runs', [PreviewScheduledTaskRunController::class, 'store'])->name('preview-schedule-runs.store');
     Route::put('projects/{project}/preview-fault', [PreviewFaultController::class, 'update'])->name('preview-fault.update');
+    Route::put('projects/{project}/preview-clock', [PreviewClockController::class, 'update'])->name('preview-clock.update');
     Route::get('projects/{project}/preview-files', [PreviewFileController::class, 'show'])->name('preview-files.show');
     Route::get('projects/{project}/editor', [ProjectEditorController::class, 'show'])->name('projects.editor.show');
     Route::post('projects/{project}/previews', [ProjectPreviewController::class, 'store'])->name('projects.previews.store');

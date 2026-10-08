@@ -1162,6 +1162,19 @@ export type ScheduledTask = {
     command: string;
 };
 
+/** How far ahead in time the app on show has been moved. */
+export type AppClock = {
+    /** Seconds ahead of the real clock. */
+    ahead: number;
+    /** What the time is in the app now. */
+    now: string;
+    /** Whether a jump is under way. */
+    moving: boolean;
+    /** What the last jump ran: each task, how often and how often it failed. */
+    ran: { words: string; times: number; failed: number }[];
+    error: string | null;
+};
+
 /** A file the app on show stored, such as an upload. */
 export type StoredFile = {
     /** The path from the app's storage folder. */

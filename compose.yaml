@@ -67,6 +67,7 @@ services:
             - './resources/box-runner:/opt/box-runner:ro'
             - './resources/agent-runner:/opt/agent-runner:ro'
             - './resources/preview-tools:/opt/preview-tools:ro'
+            - './resources/trace-recorder:/opt/trace-recorder:ro'
             - './resources/screen-check/check.mjs:/opt/screen-check/check.mjs:ro'
             - box-workspaces:/workspaces
         depends_on:

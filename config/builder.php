@@ -1518,6 +1518,18 @@ return [
             'directory' => 'storage/logs/recorder',
         ],
 
+        // Moving the app on show ahead a day, a week or a month, through
+        // the recorder's clock. What the app's schedule would have run in
+        // the skipped time runs, oldest first: each task at most "each"
+        // times (its latest), and at most "most" runs in all, each within
+        // "timeout" seconds.
+        'clock' => [
+            'enabled' => (bool) env('BUILDER_PREVIEW_CLOCK', true),
+            'each' => (int) env('BUILDER_PREVIEW_CLOCK_EACH', 7),
+            'most' => (int) env('BUILDER_PREVIEW_CLOCK_MOST', 40),
+            'timeout' => (int) env('BUILDER_PREVIEW_CLOCK_TIMEOUT', 300),
+        ],
+
         // The app's log inside the workspace. Email the app sends is written
         // here, and the builder shows it to the owner.
         'log' => env('BUILDER_PREVIEW_LOG', 'storage/logs/laravel.log'),

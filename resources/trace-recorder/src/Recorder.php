@@ -2,6 +2,8 @@
 
 namespace TraceRecorder;
 
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Closure;
 use Error;
 use Exception;
@@ -9,6 +11,8 @@ use Illuminate\Cache\Events\ForgettingKey;
 use Illuminate\Cache\Events\RetrievingKey;
 use Illuminate\Cache\Events\WritingKey;
 use Illuminate\Console\Events\ArtisanStarting;
+use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Contracts\Console\Kernel as Console;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Foundation\Application;
@@ -109,6 +113,11 @@ use WeakMap;
  * there: the owner of the app sees what a visitor would see when the mail
  * server, an outside service or the disk is down. A test run never has
  * that file in its folder.
+ *
+ * And a file "clock.json" there can move the app ahead in time by "ahead"
+ * seconds. Each request and command reads it as it starts, so the app's
+ * clock runs on from that point while the owner tries their app a day, a
+ * week or a month from now. A test run never has that file either.
  *
  * A test can turn off all middleware, as each test of a Livewire component
  * does. The recorder's own middleware then does not run, so the request is
@@ -272,6 +281,8 @@ class Recorder
         $this->fakes = new Fakes($app, $this);
         $this->test = $this->runningTest();
         $this->fault = $this->faultToCause();
+        // The schedule asks the time before any command of the app starts.
+        $this->moveClock();
     }
 
     /**
@@ -306,6 +317,37 @@ class Recorder
      * The kind of thing that fails in every request now, outside a test.
      */
     protected ?string $live = null;
+
+    /**
+     * How many seconds this recorder moved the app's clock ahead.
+     */
+    protected int $ahead = 0;
+
+    /**
+     * Move the app's clock as far ahead as the recording folder says. The
+     * clock is left alone while no file says so, so a test that moves time
+     * itself keeps its own.
+     */
+    protected function moveClock(): void
+    {
+        try {
+            $file = rtrim($this->directory, '/').'/clock.json';
+            $clock = is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+            $ahead = is_array($clock) && is_int($clock['ahead'] ?? null) ? max(0, $clock['ahead']) : 0;
+
+            if ($ahead === $this->ahead) {
+                return;
+            }
+
+            $this->ahead = $ahead;
+            // Carbon 2 keeps each class's clock apart; Carbon 3 shares one.
+            $now = $ahead === 0 ? null : fn ($real) => $real->addSeconds($ahead);
+            Carbon::setTestNow($now);
+            CarbonImmutable::setTestNow($now);
+        } catch (Throwable) {
+            //
+        }
+    }
 
     /**
      * Read the kind of thing to make fail now, from the recording folder.
@@ -376,6 +418,10 @@ class Recorder
         // The console says when a command starts and how it ended.
         $events->listen(ArtisanStarting::class, fn (ArtisanStarting $event) => $this->hear($event->artisan));
         $this->hear($this->console());
+        // Outside tests Laravel tells the app itself, as a task of the
+        // schedule the owner skipped ahead to runs.
+        $events->listen(CommandStarting::class, fn (CommandStarting $event) => $this->app->runningUnitTests() ? null : $this->commandStarts($event));
+        $events->listen(CommandFinished::class, fn (CommandFinished $event) => $this->app->runningUnitTests() ? null : $this->commandEnds($event));
 
         // The app's disks say when the app writes, moves or deletes a file. An app that has
         // disks of a class of its own keeps them, and they are not seen.
@@ -531,6 +577,7 @@ class Recorder
         $this->matched = null;
         $this->ended = null;
         $this->requests++;
+        $this->moveClock();
         $this->live = $this->liveFault();
         $this->markLive();
         $this->jobs = 0;
@@ -660,6 +707,40 @@ class Recorder
         if ($this->alone !== null && $event->getInput() === $this->alone) {
             $this->ended = 500;
         }
+    }
+
+    /**
+     * Start the trace of a command of the app's own code, outside a test,
+     * the way one in a test starts.
+     */
+    protected function commandStarts(CommandStarting $event): void
+    {
+        try {
+            $command = $event->command === null ? null : ($this->app->make(Console::class)->all()[$event->command] ?? null);
+
+            if ($this->alone !== null || ! is_object($command) || $this->inside() || ! $this->ownCommand($command)) {
+                return;
+            }
+
+            $this->begin(self::COMMAND);
+            $this->alone = $event->input;
+            $this->matched = $event->command;
+            $this->wait();
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * End the trace of a command of the app's own code, outside a test.
+     */
+    protected function commandEnds(CommandFinished $event): void
+    {
+        if ($this->alone === null || $event->input !== $this->alone) {
+            return;
+        }
+
+        $this->end($event->exitCode !== 0, 'exit '.$event->exitCode);
     }
 
     /**

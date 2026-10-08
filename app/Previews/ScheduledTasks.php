@@ -14,7 +14,7 @@ class ScheduledTasks
     /**
      * Read the tasks, in the order the app lists them.
      *
-     * @return list<array{name: string, words: string, when: string, next: string|null, expression: string, command: string}>
+     * @return list<array{name: string, words: string, when: string, next: string|null, expression: string, command: string, timezone: string, repeat: int|null}>
      */
     public static function in(string $output): array
     {
@@ -31,6 +31,8 @@ class ScheduledTasks
                 'next' => is_string($task['next_due_date'] ?? null) ? rescue(fn () => CarbonImmutable::parse($task['next_due_date'])->toIso8601String(), null, report: false) : null,
                 'expression' => (string) $task['expression'],
                 'command' => (string) $task['command'],
+                'timezone' => is_string($task['timezone'] ?? null) ? $task['timezone'] : 'UTC',
+                'repeat' => is_int($task['repeat_seconds'] ?? null) ? $task['repeat_seconds'] : null,
             ])
             // A task listed once for each of its times is one task here.
             ->unique('name')

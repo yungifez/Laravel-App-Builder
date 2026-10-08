@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Features\DescribeFeatureRequest;
 use App\Actions\Previews\DescribeProjectPreview;
+use App\Actions\Previews\ReadPreviewClock;
 use App\Actions\Previews\ReadPreviewData;
 use App\Actions\Previews\ReadPreviewEmails;
 use App\Actions\Previews\ReadPreviewFiles;
@@ -163,7 +164,7 @@ class ProjectController extends Controller
      * app running beside it, and the design panel for changing how it looks.
      * The element the owner selected is loaded on request.
      */
-    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewNotices $readPreviewNotices, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewFiles $readPreviewFiles, ReadPreviewHappenings $readPreviewHappenings, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors, DescribeDesignEdits $describeDesignEdits, DesignDrafts $designDrafts, DescribeFirstVersion $describeFirstVersion): Response
+    public function show(Request $request, Project $project, ProjectRepository $repository, SummarizeProjectTelemetry $summarizeTelemetry, SummarizeChanges $summarizeChanges, DescribeProjectPreview $describePreview, InspectSelection $inspectSelection, DescribeFeatureRequest $describeFeatureRequest, DescribeUnpublished $describeUnpublished, ReadPreviewEmails $readPreviewEmails, ReadPreviewNotices $readPreviewNotices, ReadPreviewPeople $readPreviewPeople, ReadPreviewProblems $readPreviewProblems, ReadPreviewData $readPreviewData, ReadPreviewRows $readPreviewRows, ReadPreviewSchedule $readPreviewSchedule, ReadPreviewClock $readPreviewClock, ReadPreviewFiles $readPreviewFiles, ReadPreviewHappenings $readPreviewHappenings, ReadPreviewPages $readPreviewPages, ReadAppColors $readAppColors, DescribeDesignEdits $describeDesignEdits, DesignDrafts $designDrafts, DescribeFirstVersion $describeFirstVersion): Response
     {
         Gate::authorize('view', $project);
 
@@ -209,6 +210,8 @@ class ProjectController extends Controller
             'files' => Inertia::optional(fn () => $readPreviewFiles->handle($project)),
             // And the tasks it runs on its own.
             'schedule' => Inertia::optional(fn () => $readPreviewSchedule->handle($project)),
+            // And how far ahead in time it has been moved.
+            'clock' => Inertia::optional(fn () => $readPreviewClock->handle($project)),
             // What it did behind each page, and what the owner made fail.
             'happenings' => Inertia::optional(fn () => $readPreviewHappenings->handle($project)),
             // And its pages, to open one from the address bar.

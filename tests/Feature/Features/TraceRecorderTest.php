@@ -6,6 +6,8 @@ use App\Features\AppFaults;
 use App\Features\AppTraces;
 use App\Models\User;
 use Closure;
+use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Exceptions\Handler;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
@@ -14,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
@@ -28,6 +31,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Fixtures\RecordedApp;
 use Tests\Fixtures\RecordedCarefulJob;
@@ -435,6 +440,38 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([false, true], array_map(fn (array $effect) => $effect['failed'] ?? false, $written[1]['effects']));
     }
 
+    public function test_the_clock_named_in_the_recording_folder_moves_the_app_ahead_and_runs_on_from_there()
+    {
+        Route::get('/_clock', fn () => now()->toIso8601String());
+        $this->record();
+        $today = now();
+
+        // The owner moves their app on show a week ahead: each request starts in that week.
+        File::put("{$this->directory}/clock.json", json_encode(['ahead' => 7 * 86400]));
+        $first = Date::parse($this->get('/_clock')->getContent());
+        $this->assertTrue($first->between($today->addWeek()->subMinute(), $today->addWeek()->addMinute()));
+        // The clock is not frozen there: it runs on as the real one does.
+        usleep(1_100_000);
+        $this->assertTrue(Date::parse($this->get('/_clock')->getContent())->greaterThan($first));
+
+        // Back to today.
+        File::put("{$this->directory}/clock.json", json_encode(['ahead' => 0]));
+        $this->assertTrue(Date::parse($this->get('/_clock')->getContent())->between($today->subMinute(), $today->addMinute()));
+    }
+
+    public function test_a_test_that_moves_time_itself_keeps_its_own_clock()
+    {
+        Route::get('/_clock', fn () => now()->toDateString());
+        $this->record();
+
+        $this->travelTo('2031-05-04 10:00:00');
+        $this->assertSame('2031-05-04', $this->get('/_clock')->getContent());
+
+        // A file that says nothing, or nonsense, moves nothing either.
+        File::put("{$this->directory}/clock.json", json_encode(['ahead' => 'soon']));
+        $this->assertSame('2031-05-04', $this->get('/_clock')->getContent());
+    }
+
     public function test_a_failure_made_up_for_the_owner_points_at_their_app_and_never_at_our_recorder()
     {
         Route::post('/_failing/order', [RecordedApp::class, 'order']);
@@ -783,6 +820,27 @@ class TraceRecorderTest extends TestCase
         $this->assertSame([['exit 0'], ['error']], [$requests[0]['shape'], $requests[3]['shape']]);
         $this->assertSame(['command', [RecordedCommand::class.'::handle']], [$requests[0]['effects'][0]['phase'], $requests[0]['effects'][0]['frames']]);
         $this->assertStringStartsWith(RecordedCommand::PATH.':', (string) $requests[0]['effects'][1]['at']);
+    }
+
+    public function test_outside_a_test_the_app_s_own_command_is_recorded_from_laravel_s_console_events()
+    {
+        Artisan::registerCommand(new RecordedCommand);
+        // The app runs as it does on show, where Laravel tells it of each command.
+        $this->app['env'] = 'local';
+        $recorded = $this->record();
+        $output = new BufferedOutput;
+
+        foreach ([['recorded:remind', 0], ['env', 0], ['recorded:remind', 1]] as [$name, $exit]) {
+            $input = new ArrayInput([]);
+            Event::dispatch(new CommandStarting($name, $input, $output));
+            Event::dispatch(new CommandFinished($name, $input, $output, $exit));
+        }
+
+        // A command of the framework is not the app's work.
+        $this->assertSame([
+            ['ARTISAN', 'recorded:remind', 200, ['exit 0']],
+            ['ARTISAN', 'recorded:remind', 500, ['exit 1']],
+        ], array_map(fn (array $request) => [$request['method'], $request['route'], $request['status'], $request['shape']], $recorded()));
     }
 
     public function test_a_command_that_an_error_ends_after_it_saved_is_found()

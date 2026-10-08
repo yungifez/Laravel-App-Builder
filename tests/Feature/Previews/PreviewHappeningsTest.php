@@ -255,8 +255,8 @@ class PreviewHappeningsTest extends TestCase
         $command = (new \ReflectionMethod($job, 'serverCommand'))->invoke($job, 20001, '127.0.0.1');
 
         $shell = $command[array_search('-c', $command, true) + 1];
-        // The folder is made, a fault from before is dropped, and the recorder records into it.
-        $this->assertStringContainsString('mkdir -p "$1" && rm -f "$1/fault.json" && export TRACE_RECORDER_DIR="$PWD/$1"', $shell);
+        // The folder is made, a fault or a clock from before is dropped, and the recorder records into it.
+        $this->assertStringContainsString('mkdir -p "$1" && rm -f "$1/fault.json" "$1/clock.json" && export TRACE_RECORDER_DIR="$PWD/$1"', $shell);
         $this->assertStringContainsString("[ -f '/opt/trace-recorder/prepend.php' ]", $shell);
         $this->assertContains('storage/logs/recorder', $command);
         $this->assertContains('auto_prepend_file=/opt/trace-recorder/prepend.php', $command);

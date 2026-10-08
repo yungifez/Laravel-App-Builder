@@ -3107,7 +3107,16 @@ reads the preview's workspace, so the app itself does not change.
   (`schedule:list`), each with when it runs in plain words and how long
   until it runs next. "Run it now" runs one at once (`schedule:test`), so
   a daily reminder email can be tried without waiting a day. What it sent
-  or ran into shows in the other tabs.
+  or ran into shows in the other tabs. **Jump ahead** (built) moves the app
+  a day, a week or a month on, by the calendar in the app's timezone. The
+  recorder reads `clock.json` in its folder as each request and command
+  starts, and runs Carbon's clock that far ahead of the real one. A queued
+  job runs each task the skipped time held, oldest first, with the clock
+  set to its moment (`schedule:test`; at most `each` runs of a task and
+  `most` in all, `builder.preview.clock`). It then moves the app's
+  database or file sessions on too, so the owner stays signed in. "Back to
+  today" keeps what happened. A new start of the app starts today. The
+  database's own clock and the browser's do not move.
 - **Pages** (built). The address beside Back and Forward opens a list of
   the app's pages, read through the app itself (`route:list`): each web
   address that needs nothing filled in, with a lock when a visitor must
