@@ -5,6 +5,7 @@ namespace App\Actions\Runs;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\SelectAreas;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Context\AreaNames;
 use App\Enums\FeatureRequestStatus;
 use App\Models\Run;
 use App\Models\Workspace;
@@ -72,7 +73,30 @@ class GatherPlanningContext
             routes: in_array('artisan', $files, true) ? $this->routes($workspace) : [],
             frontend: $this->frontend($workspace, $files),
             areas: $areas,
+            names: $this->names($workspace, array_values($ours)),
         );
+    }
+
+    /**
+     * Read the names the code of the change's areas already uses: the data
+     * its controllers pass to their pages and its models' relations, so the
+     * plan names them as the app does, such as "can.deleteTeam" rather than
+     * a new "canDelete". Up to "max_name_files" files and "max_names" lines.
+     *
+     * @param  list<string>  $files  The files of the change's areas
+     * @return list<string>
+     */
+    protected function names(Workspace $workspace, array $files): array
+    {
+        $code = array_values(array_filter($files, fn (string $path) => preg_match('#^app/(Http/Controllers|Models)/.+\.php$#', $path) === 1));
+        sort($code);
+        $lines = [];
+
+        foreach ($this->contents($workspace, array_slice($code, 0, (int) config('builder.construction.planning.max_name_files'))) as $path => $contents) {
+            array_push($lines, ...AreaNames::pages($path, $contents), ...AreaNames::relations($path, $contents));
+        }
+
+        return array_slice($lines, 0, (int) config('builder.construction.planning.max_names'));
     }
 
     /**

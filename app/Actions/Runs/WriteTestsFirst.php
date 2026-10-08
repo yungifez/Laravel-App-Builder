@@ -4,6 +4,7 @@ namespace App\Actions\Runs;
 
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Ai\Agents\TestWriter;
+use App\Context\AreaNames;
 use App\Context\Capability;
 use App\Enums\ModelRole;
 use App\Features\PatchSummary;
@@ -416,22 +417,6 @@ class WriteTestsFirst
     }
 
     /**
-     * Get the relation methods a model declares, such as "Team: members()
-     * is belongsToMany(User)", read from its code.
-     *
-     * @return list<string>
-     */
-    protected function relations(string $path, string $contents): array
-    {
-        preg_match_all('/function\s+(\w+)\s*\([^)]*\)[^{]*\{\s*return\s+\$this->(hasOne|hasMany|belongsTo|belongsToMany|hasOneThrough|hasManyThrough|morphTo|morphOne|morphMany|morphToMany|morphedByMany)\(\s*(?:\\\\?(?:[\w\\\\]+\\\\)?(\w+)::class)?/', $contents, $matches, PREG_SET_ORDER);
-
-        return array_map(
-            fn (array $match) => basename($path, '.php').": {$match[1]}() is {$match[2]}(".($match[3] ?? '').')',
-            $matches,
-        );
-    }
-
-    /**
      * Get the app's model files, in a fixed order.
      *
      * @return list<string>
@@ -503,7 +488,7 @@ class WriteTestsFirst
             $sections[] = "## Named routes of this part of the app\n\nUse these names and addresses; do not make up others.\n\n- ".Str::limit(implode("\n- ", $routes), $bytes, "\n- …");
         }
 
-        $relations = array_merge([], ...array_map(fn (string $path) => $this->relations($path, $read($path)), array_slice($areaModels, 0, 8)));
+        $relations = array_merge([], ...array_map(fn (string $path) => AreaNames::relations($path, $read($path)), array_slice($areaModels, 0, 8)));
 
         if ($relations !== []) {
             $sections[] = "## Relations on this part's models\n\n- ".implode("\n- ", $relations);

@@ -242,6 +242,10 @@ abstract class AgentDriver implements ConstructionDriver
             $sections[] = "## Addresses in the app\n\nEach address and the code that handles it.\n\n".implode("\n", array_map(fn (string $route) => "- {$route}", $context->routes));
         }
 
+        if ($context->names !== []) {
+            $sections[] = "## Names this part of the app already uses\n\nThe data its pages get and its models' relations. Use these names in the plan; do not make up new ones for what is already there.\n\n".implode("\n", array_map(fn (string $name) => "- {$name}", $context->names));
+        }
+
         if ($context->answers !== []) {
             $sections[] = "## The owner's answers\n\nThe owner settled these for this request. Plan with them and do not ask about them again.\n\n".implode("\n", array_map(
                 fn (array $answer) => $answer['decided_by'] === 'owner'

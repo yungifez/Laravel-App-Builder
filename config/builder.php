@@ -433,10 +433,15 @@ return [
         // "max_files"), the app's addresses and the code that handles each
         // (up to "max_routes"), and these files when the project has them.
         // The addresses let the planner name the right files, so the
-        // coding agent spends less time searching for them.
+        // coding agent spends less time searching for them. The planner also
+        // sees the page data and relations of the change's areas, read from
+        // up to "max_name_files" of their controllers and models, in up to
+        // "max_names" lines.
         'planning' => [
             'max_files' => 800,
             'max_routes' => 300,
+            'max_name_files' => 12,
+            'max_names' => 60,
             'context_files' => ['AGENTS.md', 'CLAUDE.md', 'composer.json', 'routes/web.php'],
         ],
 
