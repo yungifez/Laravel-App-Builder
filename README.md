@@ -181,6 +181,14 @@ dev server, so there is no hot reload yet. The Docker workspace driver can run
 previews only on a network the control plane can reach
 (`WORKSPACE_DOCKER_NETWORK`, with `BUILDER_PREVIEW_LISTEN_HOST=0.0.0.0`).
 
+### Evaluation
+
+`fixtures/evaluation/` holds experiments that compare the pipeline with a
+plain coding agent; the harness is in `app/Evaluation` and the `eval:*`
+commands. Each suite's `README.md` says what it measures and how to run it.
+The harness can hand model calls to an outside responder
+(`BUILDER_EVAL_HANDOFF`); that setting is refused in production.
+
 ### AI SDK
 
 The app uses the Laravel AI SDK (`laravel/ai`) with its published default
