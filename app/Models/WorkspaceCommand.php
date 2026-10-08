@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Actions\Workspaces\RunWorkspaceCommand;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -45,5 +46,13 @@ class WorkspaceCommand extends Model
     public function workspace(): BelongsTo
     {
         return $this->belongsTo(Workspace::class);
+    }
+
+    /**
+     * Determine if the beginning of the command's output was cut off.
+     */
+    public function outputTruncated(): bool
+    {
+        return str_starts_with($this->output, RunWorkspaceCommand::TRUNCATION_MARKER);
     }
 }

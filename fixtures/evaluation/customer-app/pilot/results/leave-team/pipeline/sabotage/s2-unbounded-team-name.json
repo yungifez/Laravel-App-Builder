@@ -1,0 +1,257 @@
+{
+    "applicable": true,
+    "verification": {
+        "status": "unverified",
+        "results": [
+            {
+                "name": "Apply change #11",
+                "stage": "apply",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 5,
+                "output": ""
+            },
+            {
+                "name": "Link PHP dependencies",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 653,
+                "output": ""
+            },
+            {
+                "name": "Link Node dependencies",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 296,
+                "output": ""
+            },
+            {
+                "name": "Create .env",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 4,
+                "output": ""
+            },
+            {
+                "name": "Generate app key",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 205,
+                "output": "INFO  Application key set successfully."
+            },
+            {
+                "name": "Generate route helpers",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 329,
+                "output": "[Wayfinder] Generated actions in /tmp/builder-workspaces/workspace-01m4d4b5p3emkbje8pce9ataz0/resources/js/actions\n\n [Wayfinder] Generated routes in /tmp/builder-workspaces/workspace-01m4d4b5p3emkbje8pce9ataz0/resources/js/routes"
+            },
+            {
+                "name": "Tests",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 3761,
+                "output": "…✓ profile information can be updated                                   0.01s  \n  ✓ email verification status is unchanged when the email address is un… 0.02s  \n  ✓ user can delete their account                                        0.02s  \n  ✓ correct password must be provided to delete account                  0.02s  \n\n   PASS  Tests\\Feature\\Settings\\SecurityTest\n  ✓ security page is displayed                                           0.02s  \n  ✓ security page requires password confirmation when enabled            0.01s  \n  ✓ security page renders without two factor when feature is disabled    0.01s  \n  ✓ password can be updated                                              0.02s  \n  ✓ correct password must be provided to update password                 0.02s  \n\n   PASS  Tests\\Feature\\Teams\\LeaveTeamTest\n  ✓ members can leave a team                                             0.02s  \n  ✓ admins can leave a team                                              0.03s  \n  ✓ leaving the current team moves the user to their personal team       0.03s  \n  ✓ leaving another team keeps the current team                          0.02s  \n  ✓ a user cannot switch to a team they left                             0.02s  \n  ✓ the owner cannot leave their team                                    0.02s  \n  ✓ a personal team cannot be left                                       0.02s  \n  ✓ non members cannot leave a team                                      0.02s  \n  ✓ guests are redirected to the login page                              0.02s  \n  ✓ leaving only removes the user making the request                     0.02s  \n  ✓ the settings page lets members leave                                 0.03s  \n  ✓ the settings page hides leaving from the owner                       0.02s  \n  ✓ the settings page hides leaving on a personal team                   0.02s  \n\n   PASS  Tests\\Feature\\Teams\\PersonalTeamTest\n  ✓ registration creates a personal team owned by the new user           0.04s  \n\n   PASS  Tests\\Feature\\Teams\\RemoveTeamMemberTest\n  ✓ owners can remove members                                            0.02s  \n  ✓ a removed member working in the team moves to their personal team    0.03s  \n  ✓ the owner cannot be removed                                          0.05s  \n  ✓ members cannot remove other members                                  0.02s  \n\n   PASS  Tests\\Feature\\Teams\\SwitchCurrentTeamTest\n  ✓ members can switch to a team they belong to                          0.02s  \n  ✓ users cannot switch to a team they do not belong to                  0.03s  \n\n   PASS  Tests\\Feature\\Teams\\TeamMemberRoleTest\n  ✓ admins can change a members role                                     0.02s  \n  ✓ the owners role cannot be changed                                    0.02s  \n  ✓ the owner role cannot be assigned                                    0.02s  \n  ✓ members cannot change roles                                          0.02s  \n  ✓ users outside the team cannot be targeted                            0.02s  \n\n   PASS  Tests\\Feature\\Teams\\TeamSettingsTest\n  ✓ guests are redirected to the login page                              0.01s  \n  ✓ members see their current team and its members                       0.02s  \n  ✓ owners can manage the team                                           0.02s  \n  ✓ users without a team get not found                                   0.01s  \n\n   PASS  Tests\\Feature\\Teams\\UpdateTeamTest\n  ✓ owners can rename the team                                           0.02s  \n  ✓ admins can rename the team                                           0.02s  \n  ✓ members cannot rename the team                                       0.02s  \n  ✓ outsiders cannot rename the team                                     0.02s  \n  ✓ permission to rename follows configuration                           0.02s  \n  ✓ team name is required                                                0.02s  \n\n  Tests:    78 passed (285 assertions)\n  Duration: 3.49s"
+            },
+            {
+                "name": "Static analysis",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 2029,
+                "output": "[OK] No errors                                                                 \n\n\nNote: Using configuration file /tmp/builder-workspaces/workspace-01m4d4b5p3emkbje8pce9ataz0/phpstan.neon."
+            },
+            {
+                "name": "PHP formatting",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 1237,
+                "output": "............................................................................\n  ............\n\n  ──────────────────────────────────────────────────────────────────── Laravel  \n    PASS   .......................................................... 88 files"
+            },
+            {
+                "name": "Frontend format and lint",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 4342,
+                "output": "pass: All 75 files are correctly formatted (2018ms, 4 threads)\npass: Found no warnings or lint errors in 64 files (1.2s, 4 threads)"
+            },
+            {
+                "name": "TypeScript",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 8216,
+                "output": "> types:check\n> vue-tsc --noEmit"
+            },
+            {
+                "name": "Protected acceptance tests",
+                "stage": "acceptance",
+                "outcome": "not_applicable",
+                "exit_code": null,
+                "timed_out": false,
+                "duration_ms": 0,
+                "output": "No protected acceptance tests apply to this change."
+            }
+        ]
+    },
+    "review": {
+        "approved": false,
+        "summary": "The leave-team feature is well built and meets every acceptance criterion: a policy only lets admins and members of a non-personal team leave, the route sits behind auth, the action detaches only the requesting user and falls back to their personal team, the settings page shows a confirmed 'Leave team' button only to eligible people, and tests cover each criterion. All checks passed. However, the diff also removes the 255-character limit on team names in the rename request, an unrelated change the plan does not mention that weakens input validation on renaming a team. This must be reverted before approval.",
+        "findings": [
+            {
+                "severity": "blocking",
+                "summary": "Unrelated change: the 'max:255' rule was removed from the team name validation. The plan does not ask for this. It leaves team-name input unbounded, so an over-long name can reach the database and cause a server error or store oversized data. It also changes the rename-team behaviour, which is not part of this request. Restore 'max:255'.",
+                "file": "app/Http/Requests/Settings/TeamUpdateRequest.php"
+            },
+            {
+                "severity": "minor",
+                "summary": "The leave route sits outside the route group that holds the other team member routes. This is fine, since it relies on the policy through its form request, but it should be confirmed that the surrounding group applies the same auth and verified middleware as the sibling team routes.",
+                "file": "routes/settings.php"
+            },
+            {
+                "severity": "minor",
+                "summary": "LeaveTeam can set current_team_id to null if no fallback team is found. The personal-team rule should prevent that, but a defensive guard or comment would make the invariant explicit.",
+                "file": "app/Actions/Teams/LeaveTeam.php"
+            }
+        ],
+        "changes": [
+            {
+                "area": "membership",
+                "behavior": "People can leave a team they were added to",
+                "before": "Only the team's owner or an admin could take someone out of a team. A person could not remove themselves.",
+                "now": "An admin or member of someone else's team can leave it themselves. Afterwards they no longer see that team and cannot switch to it. The owner cannot leave their own team, and nobody can leave their personal team.",
+                "area_name": "Membership",
+                "section": "requested"
+            },
+            {
+                "area": "teams",
+                "behavior": "'Leave team' button on the team settings page",
+                "before": "The team settings page had no option to leave the team.",
+                "now": "People who are allowed to leave see a 'Leave team' section with a warning and a button that asks them to confirm. The owner does not see it, and it does not appear on personal teams.",
+                "area_name": "Teams",
+                "section": "requested"
+            },
+            {
+                "area": "membership",
+                "behavior": "What happens after leaving",
+                "before": "Not applicable.",
+                "now": "After leaving, the person is taken to the dashboard with a 'You left the team.' message. If they were working in the team they left, they are switched to their personal team.",
+                "area_name": "Membership",
+                "section": "requested"
+            },
+            {
+                "area": "teams",
+                "behavior": "Length limit on team names when renaming",
+                "before": "A team name could be at most 255 characters. Longer names were rejected with a clear message.",
+                "now": "The length limit is gone, so very long names are no longer stopped by the form and may instead cause an error when saving. This was not part of the request.",
+                "area_name": "Teams",
+                "section": "requested"
+            }
+        ],
+        "classification": {
+            "requested": {
+                "teams": [
+                    "app/Http/Controllers/Settings/TeamController.php",
+                    "app/Http/Requests/Settings/TeamUpdateRequest.php",
+                    "resources/js/pages/settings/Team.vue"
+                ],
+                "membership": [
+                    "app/Policies/TeamPolicy.php"
+                ]
+            },
+            "may_also_affect": [],
+            "unexpected": [],
+            "unclaimed": [
+                "app/Actions/Teams/LeaveTeam.php",
+                "app/Http/Controllers/Settings/TeamMembershipController.php",
+                "app/Http/Requests/Settings/TeamMembershipDestroyRequest.php",
+                "routes/settings.php",
+                "tests/Feature/Teams/LeaveTeamTest.php"
+            ],
+            "context_updates": [
+                ".builder/capabilities/membership.md"
+            ],
+            "targets": [
+                "membership",
+                "teams"
+            ]
+        },
+        "preserved": [
+            {
+                "area": "membership",
+                "statement": "Only the owner and admins can remove other members from a team.",
+                "evidence": "verified",
+                "unchanged": false,
+                "tests": 2
+            },
+            {
+                "area": "membership",
+                "statement": "The owner always stays in their team and keeps the owner role.",
+                "evidence": "verified",
+                "unchanged": false,
+                "tests": 2
+            },
+            {
+                "area": "membership",
+                "statement": "Only the owner and admins can change members' roles; members cannot.",
+                "evidence": "verified",
+                "unchanged": false,
+                "tests": 2
+            },
+            {
+                "area": "teams",
+                "statement": "Everyone keeps a personal team and can never be left without one.",
+                "evidence": "verified",
+                "unchanged": false,
+                "tests": 4
+            },
+            {
+                "area": "teams",
+                "statement": "People can still switch between the teams they belong to, and cannot switch to teams they are not in.",
+                "evidence": "verified",
+                "unchanged": false,
+                "tests": 4
+            },
+            {
+                "area": "teams",
+                "statement": "Only the owner and admins can rename the team.",
+                "evidence": "verified",
+                "unchanged": false,
+                "tests": 4
+            },
+            {
+                "area": "membership",
+                "statement": "Members can still see the teams they belong to.",
+                "evidence": "verified",
+                "unchanged": false,
+                "tests": 2
+            },
+            {
+                "area": "account",
+                "statement": "Deleting an account and signing up (which creates a personal team) keep working as before.",
+                "evidence": "verified",
+                "unchanged": true,
+                "tests": 9
+            }
+        ]
+    }
+}

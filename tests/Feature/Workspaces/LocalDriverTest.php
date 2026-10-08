@@ -3,6 +3,7 @@
 namespace Tests\Feature\Workspaces;
 
 use App\Workspaces\Drivers\LocalDriver;
+use App\Workspaces\WorkspaceManager;
 use App\Workspaces\WorkspaceSpec;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -32,6 +33,22 @@ class LocalDriverTest extends TestCase
         File::deleteDirectory($this->root);
 
         parent::tearDown();
+    }
+
+    public function test_the_driver_is_refused_in_production_unless_allowed()
+    {
+        $this->app['env'] = 'production';
+
+        try {
+            (new WorkspaceManager($this->app))->driver('local');
+            $this->fail('The local driver was created in production.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('WORKSPACE_LOCAL_IN_PRODUCTION', $exception->getMessage());
+        }
+
+        config(['workspaces.drivers.local.allow_in_production' => true]);
+
+        $this->assertInstanceOf(LocalDriver::class, (new WorkspaceManager($this->app))->driver('local'));
     }
 
     public function test_commands_run_in_the_workspace_with_a_scrubbed_environment()

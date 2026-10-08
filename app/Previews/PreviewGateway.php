@@ -125,11 +125,15 @@ class PreviewGateway
             && (($sharedGrant['share_token_hash'] ?? null) === null
                 || $preview->project()->where('share_token_hash', $sharedGrant['share_token_hash'])->where('share_expires_at', '>', now())->exists());
 
-        $valid = $shared || ($preview->status === PreviewStatus::Ready
-            && (Cache::pull(GrantPreviewAccess::ownerKey($preview, $grant)) === true
-                || ($preview->grant_hash !== null
-                    && hash_equals($preview->grant_hash, hash('sha256', $grant))
-                    && $preview->grant_expires_at?->isFuture())));
+        // A grant is spent once: from the cache, or from the preview when the
+        // cache lost it.
+        $owner = ! $shared && $preview->status === PreviewStatus::Ready;
+        $pulled = $owner && Cache::pull(GrantPreviewAccess::ownerKey($preview, $grant)) === true;
+        $stored = $owner && ! $pulled
+            && $preview->grant_hash !== null
+            && hash_equals($preview->grant_hash, hash('sha256', $grant))
+            && $preview->grant_expires_at?->isFuture();
+        $valid = $shared || $pulled || $stored;
 
         if (! $valid) {
             return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));
@@ -139,12 +143,22 @@ class PreviewGateway
         $minutes = (int) config('builder.preview.session_minutes');
 
         if (! $shared) {
-            $preview->update([
-                'grant_hash' => null,
-                'grant_expires_at' => null,
-                'session_hash' => hash('sha256', $secret),
-                'session_expires_at' => now()->addMinutes($minutes),
-            ]);
+            // Spend a stored grant atomically, so two requests racing with
+            // the same grant cannot both get a session.
+            $spent = Preview::query()
+                ->whereKey($preview->id)
+                ->when($stored, fn ($query) => $query->where('grant_hash', $preview->grant_hash))
+                ->update([
+                    'grant_hash' => null,
+                    'grant_expires_at' => null,
+                    'session_hash' => hash('sha256', $secret),
+                    'session_expires_at' => now()->addMinutes($minutes),
+                    'updated_at' => now(),
+                ]);
+
+            if ($spent !== 1) {
+                return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));
+            }
         }
 
         // The owner can have the app open in the builder and in a tab of its

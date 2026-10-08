@@ -13,6 +13,7 @@ use App\Workspaces\WorkspaceManager;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -79,5 +80,7 @@ class AppServiceProvider extends ServiceProvider
                 DevCommands::artisan("queue:listen --queue={$queue} --tries=1 --timeout=0", $name);
             }
         }
+        // Inertia pages receive resources as plain props, not under "data".
+        JsonResource::withoutWrapping();
     }
 }

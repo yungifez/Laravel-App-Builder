@@ -1,8 +1,8 @@
 # Builder control plane
 
-Internal builder prototype. This repository currently contains only the
-development foundation (work order G0.1): a Laravel + Inertia + Vue control-plane
-app with starter authentication, an internal landing screen, local PostgreSQL and
+Internal builder prototype. This repository is the control plane: a Laravel +
+Inertia + Vue app with starter authentication, projects and feature requests,
+construction runs, verification and previews, backed by local PostgreSQL and
 Redis, a guarded test database, standard check commands and a CI workflow.
 
 The repository root is the Laravel application (Laravel 13, Inertia 3, Vue 3,
@@ -281,7 +281,8 @@ Runs and verification run on the queue, so keep a worker running
 `.env.example`). Workspaces run in the `runner` service with Sail (see
 [Workspaces in Sail](#workspaces-in-sail)). The `local` workspace driver runs
 in a temporary directory on this machine with a scrubbed environment. It is
-for trusted fixtures only (see `config/workspaces.php`).
+for trusted fixtures only (see `config/workspaces.php`), and it is refused when
+`APP_ENV=production` unless `WORKSPACE_LOCAL_IN_PRODUCTION=true`.
 
 ### Previews
 
@@ -338,6 +339,14 @@ on for development. A publish that has not changed for
 `BUILDER_PUBLISH_STALLED_MINUTES` (70) while it checks, sends or confirms lost
 its job. `php artisan publishing:reconcile` (scheduled every five minutes) ends
 it with a next step for the owner.
+
+### Evaluation
+
+`fixtures/evaluation/` holds experiments that compare the pipeline with a
+plain coding agent; the harness is in `app/Evaluation` and the `eval:*`
+commands. Each suite's `README.md` says what it measures and how to run it.
+The harness can hand model calls to an outside responder
+(`BUILDER_EVAL_HANDOFF`); that setting is refused in production.
 
 ### AI SDK
 

@@ -126,8 +126,7 @@ class StartPreview implements ShouldQueue
             }
 
             $this->ensureStarting();
-            $port = $allocatePreviewPort->handle();
-            $this->preview->update(['port' => $port]);
+            $port = $allocatePreviewPort->handle($this->preview);
 
             $upstream = $driver->serviceUrl((string) $workspace->driver_id, $port);
             $driver->startService((string) $workspace->driver_id, $this->serverCommand($port, RunnerDoor::listenHost($upstream)), $port);

@@ -5,6 +5,7 @@ namespace Tests\Feature\Operations;
 use App\Actions\Operations\FindAttentionItems;
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\GenericReviewer;
 use App\Ai\Agents\NotesDrafter;
 use App\Ai\Agents\NotesKeeper;
 use App\Ai\Agents\ShapePlanner;
@@ -24,7 +25,7 @@ class AnswerFormatCheckTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected const AGENTS = [ChangeReviewer::class, FeaturePlanner::class, NotesDrafter::class, NotesKeeper::class, ShapePlanner::class, TestWriter::class];
+    protected const AGENTS = [ChangeReviewer::class, FeaturePlanner::class, GenericReviewer::class, NotesDrafter::class, NotesKeeper::class, ShapePlanner::class, TestWriter::class];
 
     protected function setUp(): void
     {
@@ -64,6 +65,7 @@ class AnswerFormatCheckTest extends TestCase
         $this->assertSame([
             'ChangeReviewer' => ['accepted' => true, 'role' => 'reviewer', 'reason' => null],
             'FeaturePlanner' => ['accepted' => true, 'role' => 'planner', 'reason' => null],
+            'GenericReviewer' => ['accepted' => true, 'role' => 'reviewer', 'reason' => null],
             'NotesDrafter' => ['accepted' => true, 'role' => 'planner', 'reason' => null],
             'NotesKeeper' => ['accepted' => true, 'role' => 'reviewer', 'reason' => null],
             'ShapePlanner' => ['accepted' => true, 'role' => 'planner', 'reason' => null],
@@ -88,7 +90,7 @@ class AnswerFormatCheckTest extends TestCase
         $this->assertSame(['accepted' => false, 'role' => null, 'reason' => 'no_tier'], $results['UntieredWriter']);
         GreetingWriter::assertPrompted(fn (AgentPrompt $prompt) => $prompt->prompt === CheckAnswerFormats::PROMPT);
         UntieredWriter::assertNeverPrompted();
-        $this->assertCount(8, $results);
+        $this->assertCount(9, $results);
     }
 
     public function test_a_refused_format_is_reported_with_the_service_error_the_others_still_run_and_it_needs_attention()

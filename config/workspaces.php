@@ -86,6 +86,9 @@ return [
             // its files, including .env. Allow it only for apps you trust,
             // such as our own fixtures, and never in production.
             'agents' => (bool) env('WORKSPACE_LOCAL_AGENTS', false),
+            // Customer code runs unisolated on this host, so the driver is
+            // refused in production unless explicitly allowed.
+            'allow_in_production' => (bool) env('WORKSPACE_LOCAL_IN_PRODUCTION', false),
             // Only these variables reach commands; everything else is scrubbed.
             'env_passthrough' => [
                 'PATH', 'HOME', 'LANG', 'COMPOSER_HOME', 'COMPOSER_ALLOW_SUPERUSER',

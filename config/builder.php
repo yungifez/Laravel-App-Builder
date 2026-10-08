@@ -25,7 +25,7 @@ return [
     | The generator turns an owner's feature request into a change (a patch)
     | for the project, plus the steps in that change the owner can select and
     | ask to change. The "reference" generator replays known-good solutions
-    | listed in a manifest; it stands in for the AI agent until that exists.
+    | listed in a manifest, without a model.
     |
     */
 

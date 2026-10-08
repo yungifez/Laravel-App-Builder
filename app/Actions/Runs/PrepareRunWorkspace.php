@@ -17,6 +17,7 @@ use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\RunCancelled;
 use App\Runs\RunLease;
 use App\Runs\SetupFailure;
+use App\Runs\ToolContext;
 use App\Workspaces\Drivers\CopyExclusions;
 use App\Workspaces\WorkspaceFiles;
 use App\Workspaces\WorkspaceManager;
@@ -100,6 +101,9 @@ class PrepareRunWorkspace
                 if (! $this->checkStepNeeds->met($workspace, $step)) {
                     continue;
                 }
+
+                // The step blocks this worker for up to its timeout.
+                Run::holdLease($lease, $step['timeout'] + ToolContext::LEASE_MARGIN_SECONDS);
 
                 $this->run(
                     $workspace,

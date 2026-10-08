@@ -18,6 +18,7 @@ use App\Workspaces\WorkspaceManager;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Throwable;
 
 /**
  * Runs tool calls for a run's writer, on the server's terms.
@@ -59,7 +60,7 @@ class ToolExecutor
         }
 
         $run = Run::query()->findOrFail($lease->runId);
-        $context = $this->context($run);
+        $context = $this->context($run, $lease);
         $handler = $this->tool($tool);
 
         try {
@@ -76,6 +77,14 @@ class ToolExecutor
             return $this->settle($lease, $claim, OperationStatus::Rejected, error: $exception->getMessage());
         } catch (ToolFailed $exception) {
             return $this->settle($lease, $claim, OperationStatus::Failed, error: $exception->getMessage());
+        } catch (LeaseLost|RunCancelled|BudgetExhausted $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            // Settle anything else as failed: an operation left pending
+            // would refuse every later change to the workspace.
+            report($exception);
+
+            return $this->settle($lease, $claim, OperationStatus::Failed, error: __('The tool failed: :reason', ['reason' => $exception->getMessage()]));
         }
     }
 
@@ -258,7 +267,7 @@ class ToolExecutor
     /**
      * Build the context tools run in: the run's own workspace only.
      */
-    protected function context(Run $run): ToolContext
+    protected function context(Run $run, RunLease $lease): ToolContext
     {
         $workspace = $run->workspace ?? throw new ToolFailed(__('The run has no workspace.'));
 
@@ -271,6 +280,7 @@ class ToolExecutor
             driver: $this->workspaces->driver($workspace->driver),
             runWorkspaceCommand: $this->runWorkspaceCommand,
             protectedPaths: $protectedPaths,
+            lease: $lease,
         );
     }
 

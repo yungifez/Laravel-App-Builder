@@ -1,0 +1,12 @@
+diff --git a/app/Http/Requests/Settings/TeamUpdateRequest.php b/app/Http/Requests/Settings/TeamUpdateRequest.php
+--- a/app/Http/Requests/Settings/TeamUpdateRequest.php
++++ b/app/Http/Requests/Settings/TeamUpdateRequest.php
+@@ -27,7 +27,7 @@
+     public function rules(): array
+     {
+         return [
+-            'name' => ['required', 'string', 'max:255'],
++            'name' => ['required', 'string'],
+         ];
+     }
+ }

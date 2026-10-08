@@ -39,6 +39,9 @@
     32. [Deterministic verification engines](direction/32-deterministic-verification-engines.md)
     33. [Architectural boundaries and the chaos engine](direction/33-architecture-boundaries-and-chaos.md)
     34. [Deterministic format policy](direction/34-format-policy.md)
+    35. [OpenAI agent SDK as failover](direction/35-openai-agent-failover.md)
+    36. [Competitive analysis by effect, and positioning](direction/36-competitive-analysis-and-positioning.md)
+    37. [Control plane on Laravel Cloud, runtimes on Forge](direction/37-cloud-control-plane-and-forge-runtimes.md)
 - **[source/](source/)**: the original planning documents.
     - [Implementation plan v1](source/implementation-plan-v1.md): gates G0–G6,
       the invitation contract and the pilot plan.

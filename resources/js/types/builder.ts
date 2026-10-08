@@ -419,9 +419,18 @@ export type RunReview = {
         area: string | null;
         area_name: string | null;
         statement: string;
-        evidence: 'verified' | 'untouched' | 'not_checked';
+        evidence:
+            | 'regression_suspected'
+            | 'tests_failed'
+            | 'related_tests_passed'
+            | 'not_edited'
+            | 'not_checked'
+            // Stored before the evidence was made stricter.
+            | 'verified'
+            | 'untouched';
         unchanged: boolean;
         tests: number;
+        review_objected?: boolean;
     }[];
     // How well each touched part's tests cover it.
     coverage: {

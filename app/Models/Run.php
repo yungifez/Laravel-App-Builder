@@ -6,6 +6,8 @@ use App\Enums\RunStatus;
 use App\Enums\StopReason;
 use App\Models\Concerns\HasPublicId;
 use App\Scaffolding\Scaffold;
+use App\Runs\Exceptions\LeaseLost;
+use App\Runs\RunLease;
 use Carbon\CarbonImmutable;
 use Database\Factories\RunFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -14,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Support\Facades\DB;
 
 /**
  * One attempt to build a feature request's change in a workspace.
@@ -182,6 +185,28 @@ class Run extends Model
         $keptTrying = $this->events()->where('type', 'status')->where('data->reason', 'kept_trying')->count();
 
         return (int) config('builder.construction.budgets.repairs') * (1 + $keptTrying);
+    }
+
+    /**
+     * Keep the lease for at least the given time, for a command that blocks
+     * the worker longer than a lease lasts, so the run is not taken over
+     * while the command still runs.
+     *
+     * @throws LeaseLost when the lease no longer holds the run.
+     */
+    public static function holdLease(RunLease $lease, int $seconds): void
+    {
+        DB::transaction(function () use ($lease, $seconds) {
+            $run = self::query()->lockForUpdate()->findOrFail($lease->runId);
+
+            $lease->assertHeldOn($run);
+
+            $until = now()->addSeconds(max($seconds, (int) config('builder.construction.lease_seconds')));
+
+            if ($run->lease_expires_at === null || $run->lease_expires_at->isBefore($until)) {
+                $run->update(['lease_expires_at' => $until]);
+            }
+        });
     }
 
     /**

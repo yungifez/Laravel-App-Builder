@@ -1412,10 +1412,11 @@ class AgentDriverTest extends TestCase
         // Without a test map, only the changed files back a line; a made-up area has none.
         $this->assertSame(['in_change', 'in_change', 'not_in_change'], array_column($run->review['changes'], 'evidence'));
         $this->assertSame([
-            ['area' => 'teams', 'statement' => 'A team always has a name.', 'evidence' => 'verified', 'unchanged' => false, 'tests' => 1],
-            ['area' => 'account', 'statement' => 'People can still sign up.', 'evidence' => 'untouched', 'unchanged' => true, 'tests' => 0],
-            ['area' => 'settings', 'statement' => 'Owners can still invite.', 'evidence' => 'not_checked', 'unchanged' => false, 'tests' => 0],
-            ['area' => null, 'statement' => 'Nothing else changes.', 'evidence' => 'not_checked', 'unchanged' => false, 'tests' => 0],
+            ['area' => 'teams', 'statement' => 'A team always has a name.', 'evidence' => 'related_tests_passed', 'unchanged' => false, 'tests' => 1, 'review_objected' => false],
+            ['area' => 'account', 'statement' => 'People can still sign up.', 'evidence' => 'not_edited', 'unchanged' => true, 'tests' => 0, 'review_objected' => false],
+            // The change reached settings where the brief did not expect it.
+            ['area' => 'settings', 'statement' => 'Owners can still invite.', 'evidence' => 'regression_suspected', 'unchanged' => false, 'tests' => 0, 'review_objected' => false],
+            ['area' => null, 'statement' => 'Nothing else changes.', 'evidence' => 'not_checked', 'unchanged' => false, 'tests' => 0, 'review_objected' => false],
         ], $run->review['preserved']);
         ChangeReviewer::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '## Areas this change touched')
             && str_contains($prompt->prompt, '- settings (not expected): Settings; config/teams.php')
@@ -1436,7 +1437,7 @@ class AgentDriverTest extends TestCase
                 ->where('run.plan.understood_as', 'Data change')
                 ->where('run.plan.preserve.1', 'People can still sign up.')
                 ->where('run.review.preserved.0.area_name', 'Teams')
-                ->where('run.review.preserved.1.evidence', 'untouched'));
+                ->where('run.review.preserved.1.evidence', 'not_edited'));
     }
 
     public function test_a_context_file_that_cannot_be_read_is_reported_and_does_not_stop_the_run()

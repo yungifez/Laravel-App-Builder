@@ -1,0 +1,20 @@
+{
+    "seed": 2,
+    "tasks": {
+        "leave-team": {
+            "A": "structured",
+            "B": "plain",
+            "C": "pipeline"
+        },
+        "delete-team": {
+            "A": "plain",
+            "B": "pipeline",
+            "C": "structured"
+        },
+        "owner-only-removal": {
+            "A": "pipeline",
+            "B": "plain",
+            "C": "structured"
+        }
+    }
+}
