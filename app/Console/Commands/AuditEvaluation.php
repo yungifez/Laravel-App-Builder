@@ -20,6 +20,14 @@ class AuditEvaluation extends Command
     protected const HIDDEN = ['fixtures/evaluation', 'fixtures/reference-solutions', 'fixtures/acceptance', 'tests/Hidden', 'storage/app/evaluation', 'comparison-canary'];
 
     /**
+     * Tools that only report back to the orchestrator. Mentioning a path in a
+     * report is not access, so their arguments are not audited.
+     *
+     * @var list<string>
+     */
+    protected const REPORTING = ['SubagentHandback', 'SendMessage'];
+
+    /**
      * Execute the console command.
      */
     public function handle(): int
@@ -88,7 +96,7 @@ class AuditEvaluation extends Command
      */
     protected function collect(array $node, array &$inputs): void
     {
-        if (($node['type'] ?? null) === 'tool_use' && is_array($node['input'] ?? null)) {
+        if (($node['type'] ?? null) === 'tool_use' && is_array($node['input'] ?? null) && ! in_array($node['name'] ?? null, self::REPORTING, true)) {
             $inputs[] = (string) json_encode($node['input'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
             return;
