@@ -1,0 +1,50 @@
+{
+    "applied": true,
+    "empty": false,
+    "hidden": {
+        "name": "Hidden tests",
+        "outcome": "passed",
+        "exit_code": 0,
+        "output": "PHPUnit 12.5.36 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.4.28-dev\nConfiguration: /tmp/builder-evaluation/score-owner-only-removal-plain/tests/Hidden/phpunit.xml\n\n.....                                                               5 / 5 (100%)\n\nTime: 00:00.406, Memory: 54.50 MB\n\nOK (5 tests, 5 assertions)",
+        "failed_tests": [],
+        "tests": 5,
+        "failures": 0
+    },
+    "checks": [
+        {
+            "name": "Tests",
+            "outcome": "passed",
+            "exit_code": 0,
+            "output": "…oFactorChallengeTest\n  ✓ two factor challenge redirects to login when not authenticated       0.02s  \n  ✓ two factor challenge can be rendered                                 0.23s  \n\n   PASS  Tests\\Feature\\Auth\\VerificationNotificationTest\n  ✓ sends verification notification                                      0.02s  \n  ✓ does not send verification notification if email is verified         0.01s  \n\n   PASS  Tests\\Feature\\DashboardTest\n  ✓ guests are redirected to the login page                              0.01s  \n  ✓ authenticated users can visit the dashboard                          0.01s  \n\n   PASS  Tests\\Feature\\ExampleTest\n  ✓ returns a successful response                                        0.02s  \n\n   PASS  Tests\\Feature\\Settings\\ProfileUpdateTest\n  ✓ profile page is displayed                                            0.03s  \n  ✓ profile information can be updated                                   0.02s  \n  ✓ email verification status is unchanged when the email address is un… 0.03s  \n  ✓ user can delete their account                                        0.02s  \n  ✓ correct password must be provided to delete account                  0.02s  \n\n   PASS  Tests\\Feature\\Settings\\SecurityTest\n  ✓ security page is displayed                                           0.04s  \n  ✓ security page requires password confirmation when enabled            0.03s  \n  ✓ security page renders without two factor when feature is disabled    0.03s  \n  ✓ password can be updated                                              0.03s  \n  ✓ correct password must be provided to update password                 0.02s  \n\n   PASS  Tests\\Feature\\Teams\\PersonalTeamTest\n  ✓ registration creates a personal team owned by the new user           0.05s  \n\n   PASS  Tests\\Feature\\Teams\\RemoveTeamMemberTest\n  ✓ owners can remove members                                            0.03s  \n  ✓ a removed member working in the team moves to their personal team    0.02s  \n  ✓ the owner cannot be removed                                          0.02s  \n  ✓ admins cannot remove members                                         0.02s  \n  ✓ admins cannot remove other admins                                    0.03s  \n  ✓ members cannot remove other members                                  0.02s  \n\n   PASS  Tests\\Feature\\Teams\\SwitchCurrentTeamTest\n  ✓ members can switch to a team they belong to                          0.03s  \n  ✓ users cannot switch to a team they do not belong to                  0.02s  \n\n   PASS  Tests\\Feature\\Teams\\TeamMemberRoleTest\n  ✓ admins can change a members role                                     0.03s  \n  ✓ the owners role cannot be changed                                    0.03s  \n  ✓ the owner role cannot be assigned                                    0.03s  \n  ✓ members cannot change roles                                          0.03s  \n  ✓ users outside the team cannot be targeted                            0.02s  \n\n   PASS  Tests\\Feature\\Teams\\TeamSettingsTest\n  ✓ guests are redirected to the login page                              0.02s  \n  ✓ members see their current team and its members                       0.03s  \n  ✓ owners can manage the team                                           0.02s  \n  ✓ admins can manage the team but not remove members                    0.03s  \n  ✓ users without a team get not found                                   0.02s  \n\n   PASS  Tests\\Feature\\Teams\\UpdateTeamTest\n  ✓ owners can rename the team                                           0.02s  \n  ✓ admins can rename the team                                           0.02s  \n  ✓ members cannot rename the team                                       0.02s  \n  ✓ outsiders cannot rename the team                                     0.03s  \n  ✓ permission to rename follows configuration                           0.02s  \n  ✓ team name is required                                                0.02s  \n\n  Tests:    69 passed (253 assertions)\n  Duration: 3.57s",
+            "failed_tests": []
+        },
+        {
+            "name": "Static analysis",
+            "outcome": "passed",
+            "exit_code": 0,
+            "output": "[OK] No errors                                                                 \n\n\nNote: Using configuration file /tmp/builder-evaluation/score-owner-only-removal-plain/phpstan.neon.",
+            "failed_tests": []
+        },
+        {
+            "name": "PHP formatting",
+            "outcome": "passed",
+            "exit_code": 0,
+            "output": "............................................................................\n  ........\n\n  ──────────────────────────────────────────────────────────────────── Laravel  \n    PASS   .......................................................... 84 files",
+            "failed_tests": []
+        },
+        {
+            "name": "Frontend format and lint",
+            "outcome": "passed",
+            "exit_code": 0,
+            "output": "pass: All 75 files are correctly formatted (2000ms, 4 threads)\npass: Found no warnings or lint errors in 64 files (1.2s, 4 threads)",
+            "failed_tests": []
+        },
+        {
+            "name": "TypeScript",
+            "outcome": "passed",
+            "exit_code": 0,
+            "output": "> types:check\n> vue-tsc --noEmit",
+            "failed_tests": []
+        }
+    ]
+}

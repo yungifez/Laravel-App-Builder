@@ -15,7 +15,7 @@ class ReportWriter
      *
      * @param  array<string, mixed>  $plan
      * @param  array<string, mixed>|null  $review
-     * @param  list<array{name: string, outcome: string, stage?: string}>  $checks
+     * @param  array<mixed>  $checks  Verification results, possibly read back from JSON
      */
     public function pipeline(string $request, array $plan, ?array $review, string $verificationStatus, array $checks): string
     {
@@ -90,8 +90,10 @@ class ReportWriter
 
         // Only the checks themselves, as the other reports show: applying the
         // change and the workspace setup are not checks.
-        foreach (array_filter($checks, fn (array $check) => in_array($check['stage'] ?? 'checks', ['checks', 'acceptance'], true)) as $check) {
-            $lines[] = "- {$check['name']}: {$check['outcome']}";
+        foreach ($checks as $check) {
+            if (is_array($check) && in_array($check['stage'] ?? 'checks', ['checks', 'acceptance'], true)) {
+                $lines[] = '- '.(is_string($check['name'] ?? null) ? $check['name'] : '(unnamed)').': '.(is_string($check['outcome'] ?? null) ? $check['outcome'] : 'unknown');
+            }
         }
 
         $assumptions = is_array($plan['assumptions'] ?? null) ? $plan['assumptions'] : [];

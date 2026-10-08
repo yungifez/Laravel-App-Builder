@@ -99,3 +99,20 @@ and it already answers the verification question. Before a full run:
    must legitimately rewrite existing tests, and more ambiguous requests.
 4. Run the owner sessions (part B) now on `results/bundles/`. They do not
    depend on the above.
+
+## Addendum: the evidence fix (after the pilot)
+
+The overclaiming labels were fixed in commit `9b6448b` (strict evidence
+values, and an enforced rule that the review and the evidence cannot
+disagree silently). The pilot's stored evidence was reassessed with it,
+with no model calls, in `results-evidence-fix/`. That is a regression
+check on known cases, not an evaluation. The results above are the
+baseline and stay as they were.
+
+Next comparison, as agreed in review of these results: two coding arms
+(pipeline, plain agent with strong project instructions), and three
+verification conditions applied to the same code snapshots (tests only;
+tests plus a generic AI review; tests plus the pipeline's behaviour-aware
+review and evidence), on new tasks and sabotage the fix has not seen. Owner
+sessions on the baseline bundles are only fit for a diagnostic of false
+reassurance, since their pipeline reports contain the known overclaim.

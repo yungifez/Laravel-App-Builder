@@ -1,0 +1,246 @@
+{
+    "applicable": true,
+    "verification": {
+        "status": "unverified",
+        "results": [
+            {
+                "name": "Apply change #15",
+                "stage": "apply",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 6,
+                "output": ""
+            },
+            {
+                "name": "Link PHP dependencies",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 533,
+                "output": ""
+            },
+            {
+                "name": "Link Node dependencies",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 268,
+                "output": ""
+            },
+            {
+                "name": "Create .env",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 4,
+                "output": ""
+            },
+            {
+                "name": "Generate app key",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 183,
+                "output": "INFO  Application key set successfully."
+            },
+            {
+                "name": "Generate route helpers",
+                "stage": "setup",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 425,
+                "output": "[Wayfinder] Generated actions in /tmp/builder-workspaces/workspace-01m4d4jzgqfzh9bcfv195bzrta/resources/js/actions\n\n [Wayfinder] Generated routes in /tmp/builder-workspaces/workspace-01m4d4jzgqfzh9bcfv195bzrta/resources/js/routes"
+            },
+            {
+                "name": "Tests",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 3693,
+                "output": "…             0.23s  \n\n   PASS  Tests\\Feature\\Auth\\VerificationNotificationTest\n  ✓ sends verification notification                                      0.03s  \n  ✓ does not send verification notification if email is verified         0.02s  \n\n   PASS  Tests\\Feature\\DashboardTest\n  ✓ guests are redirected to the login page                              0.02s  \n  ✓ authenticated users can visit the dashboard                          0.02s  \n\n   PASS  Tests\\Feature\\ExampleTest\n  ✓ returns a successful response                                        0.02s  \n\n   PASS  Tests\\Feature\\Settings\\ProfileUpdateTest\n  ✓ profile page is displayed                                            0.02s  \n  ✓ profile information can be updated                                   0.02s  \n  ✓ email verification status is unchanged when the email address is un… 0.02s  \n  ✓ user can delete their account                                        0.02s  \n  ✓ correct password must be provided to delete account                  0.02s  \n\n   PASS  Tests\\Feature\\Settings\\SecurityTest\n  ✓ security page is displayed                                           0.03s  \n  ✓ security page requires password confirmation when enabled            0.02s  \n  ✓ security page renders without two factor when feature is disabled    0.02s  \n  ✓ password can be updated                                              0.02s  \n  ✓ correct password must be provided to update password                 0.02s  \n\n   PASS  Tests\\Feature\\Teams\\PersonalTeamTest\n  ✓ registration creates a personal team owned by the new user           0.04s  \n\n   PASS  Tests\\Feature\\Teams\\RemoveTeamMemberTest\n  ✓ owners can remove members                                            0.02s  \n  ✓ owners can remove admins                                             0.02s  \n  ✓ admins cannot remove members                                         0.03s  \n  ✓ admins cannot remove other admins                                    0.03s  \n  ✓ a removed member working in the team moves to their personal team    0.02s  \n  ✓ the owner cannot be removed                                          0.02s  \n  ✓ admins cannot remove the owner                                       0.02s  \n  ✓ members cannot remove other members                                  0.02s  \n\n   PASS  Tests\\Feature\\Teams\\SwitchCurrentTeamTest\n  ✓ members can switch to a team they belong to                          0.03s  \n  ✓ users cannot switch to a team they do not belong to                  0.02s  \n\n   PASS  Tests\\Feature\\Teams\\TeamMemberRoleTest\n  ✓ admins can change a members role                                     0.03s  \n  ✓ the owners role cannot be changed                                    0.02s  \n  ✓ the owner role cannot be assigned                                    0.02s  \n  ✓ members cannot change roles                                          0.02s  \n  ✓ users outside the team cannot be targeted                            0.02s  \n\n   PASS  Tests\\Feature\\Teams\\TeamSettingsTest\n  ✓ guests are redirected to the login page                              0.02s  \n  ✓ members see their current team and its members                       0.02s  \n  ✓ owners can manage the team                                           0.02s  \n  ✓ admins can manage the team but not remove members                    0.03s  \n  ✓ users without a team get not found                                   0.02s  \n\n   PASS  Tests\\Feature\\Teams\\UpdateTeamTest\n  ✓ owners can rename the team                                           0.02s  \n  ✓ admins can rename the team                                           0.02s  \n  ✓ members cannot rename the team                                       0.02s  \n  ✓ outsiders cannot rename the team                                     0.02s  \n  ✓ permission to rename follows configuration                           0.02s  \n  ✓ team name is required                                                0.02s  \n\n  Tests:    71 passed (260 assertions)\n  Duration: 3.42s"
+            },
+            {
+                "name": "Static analysis",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 1950,
+                "output": "[OK] No errors                                                                 \n\n\nNote: Using configuration file /tmp/builder-workspaces/workspace-01m4d4jzgqfzh9bcfv195bzrta/phpstan.neon."
+            },
+            {
+                "name": "PHP formatting",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 1147,
+                "output": "............................................................................\n  ........\n\n  ──────────────────────────────────────────────────────────────────── Laravel  \n    PASS   .......................................................... 84 files"
+            },
+            {
+                "name": "Frontend format and lint",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 4211,
+                "output": "pass: All 75 files are correctly formatted (1851ms, 4 threads)\npass: Found no warnings or lint errors in 64 files (1.1s, 4 threads)"
+            },
+            {
+                "name": "TypeScript",
+                "stage": "checks",
+                "outcome": "passed",
+                "exit_code": 0,
+                "timed_out": false,
+                "duration_ms": 8820,
+                "output": "> types:check\n> vue-tsc --noEmit"
+            },
+            {
+                "name": "Protected acceptance tests",
+                "stage": "acceptance",
+                "outcome": "not_applicable",
+                "exit_code": null,
+                "timed_out": false,
+                "duration_ms": 0,
+                "output": "No protected acceptance tests apply to this change."
+            }
+        ]
+    },
+    "review": {
+        "approved": false,
+        "summary": "The core change is correct: the 'members:remove' permission is gone from the admin role in config/teams.php, so only the owner (who holds every permission through the wildcard) can remove people. New tests cover these cases: the owner removes members and admins, admins are refused (403) when they try to remove a member, another admin or the owner, the owner cannot remove themselves, and admins still get the rename and change-role options but not the remove option. However, the diff also removes the 255-character limit on team names in the team update request. Nobody asked for that change. It weakens input validation in the Teams area, so the change cannot be approved as it stands.",
+        "findings": [
+            {
+                "severity": "blocking",
+                "summary": "An unrequested change removes the 'max:255' rule from the team name. Team names are no longer length-checked. That weakens input validation, and very long names could cause a database error (500) instead of a clear validation message. This is outside the plan and touches team renaming, which is listed under 'Must stay as it is'. Restore the 'max:255' rule.",
+                "file": "app/Http/Requests/Settings/TeamUpdateRequest.php"
+            },
+            {
+                "severity": "minor",
+                "summary": "The old 'owner cannot be removed' test (an admin trying to remove the owner, expecting a validation error) is now a 403 check. That fits the new rules. A new test keeps the owner-self-removal case with the validation error. Nothing is lost, but the change of assertion is worth noting.",
+                "file": "tests/Feature/Teams/RemoveTeamMemberTest.php"
+            },
+            {
+                "severity": "minor",
+                "summary": "The overall verification status is 'unverified' because no protected acceptance tests apply, even though every check passed. The hidden remove option is only tested through the 'can.removeMembers' page flag. The front end itself was not checked.",
+                "file": "tests/Feature/Teams/TeamSettingsTest.php"
+            }
+        ],
+        "changes": [
+            {
+                "area": "membership",
+                "behavior": "Who can remove people from a team",
+                "before": "Both the team owner and team admins could remove members from the team.",
+                "now": "Only the team owner can remove members or admins. Admins are refused if they try.",
+                "area_name": "Membership",
+                "section": "requested"
+            },
+            {
+                "area": "membership",
+                "behavior": "Remove option on the team settings page",
+                "before": "Admins saw the option to remove members.",
+                "now": "Only the team owner sees the remove option. Admins and members do not.",
+                "area_name": "Membership",
+                "section": "requested"
+            },
+            {
+                "area": "teams",
+                "behavior": "Length limit on team names when renaming a team",
+                "before": "A team name could be at most 255 characters. Longer names were rejected with a clear message.",
+                "now": "Team names have no length limit, so very long names are accepted by the form and may fail with an error when saved. This was not part of the request.",
+                "area_name": "Teams",
+                "section": "may_also_affect"
+            }
+        ],
+        "classification": {
+            "requested": {
+                "membership": [
+                    "config/teams.php",
+                    "tests/Feature/Teams/RemoveTeamMemberTest.php"
+                ]
+            },
+            "may_also_affect": {
+                "teams": [
+                    "app/Http/Requests/Settings/TeamUpdateRequest.php",
+                    "tests/Feature/Teams/TeamSettingsTest.php"
+                ]
+            },
+            "unexpected": [],
+            "unclaimed": [
+                "tests/Unit/TeamRoleTest.php"
+            ],
+            "context_updates": [
+                ".builder/capabilities/membership.md",
+                ".builder/project.md"
+            ],
+            "targets": [
+                "membership"
+            ]
+        },
+        "preserved": [
+            {
+                "area": "membership",
+                "statement": "Admins can still change members' roles.",
+                "evidence": "related_tests_passed",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": true
+            },
+            {
+                "area": "teams",
+                "statement": "Admins can still rename the team.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 4,
+                "review_objected": false
+            },
+            {
+                "area": "membership",
+                "statement": "The team owner can still remove members and admins.",
+                "evidence": "related_tests_passed",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": true
+            },
+            {
+                "area": "membership",
+                "statement": "The team owner cannot be removed from their own team.",
+                "evidence": "related_tests_passed",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": true
+            },
+            {
+                "area": "membership",
+                "statement": "Ordinary members still cannot remove anyone.",
+                "evidence": "related_tests_passed",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": true
+            },
+            {
+                "area": "teams",
+                "statement": "Everyone keeps their personal team and can still switch between their teams.",
+                "evidence": "regression_suspected",
+                "unchanged": false,
+                "tests": 4,
+                "review_objected": false
+            },
+            {
+                "area": "membership",
+                "statement": "Members can still see the team they belong to.",
+                "evidence": "related_tests_passed",
+                "unchanged": false,
+                "tests": 2,
+                "review_objected": true
+            }
+        ]
+    }
+}

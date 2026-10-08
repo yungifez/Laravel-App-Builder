@@ -1,0 +1,496 @@
+diff --git a/.builder/capabilities/membership.md b/.builder/capabilities/membership.md
+index e36cd40..de27de3 100644
+--- a/.builder/capabilities/membership.md
++++ b/.builder/capabilities/membership.md
+@@ -34,7 +34,9 @@ ## Rules
+   owner cannot be removed.
+ - Owners and admins can change other members' roles to admin or member.
+ - Owners and admins can remove members.
+-- What each role may do is set in one place (config/teams.php).
++- What each role may do is set in one place (config/teams.php). The one
++  exception is deleting a team: only the owner may do it, whatever the
++  configuration says (TeamPolicy::delete).
+ 
+ ## What each behaviour does
+ 
+diff --git a/.builder/capabilities/teams.md b/.builder/capabilities/teams.md
+index 78c69e6..73d7935 100644
+--- a/.builder/capabilities/teams.md
++++ b/.builder/capabilities/teams.md
+@@ -3,13 +3,16 @@
+ summary: People work in teams; everyone has a personal team and can switch between their teams.
+ paths:
+     - app/Actions/Teams/CreateTeam.php
++    - app/Actions/Teams/DeleteTeam.php
+     - app/Actions/Teams/SwitchCurrentTeam.php
+     - app/Actions/Teams/UpdateTeamName.php
+     - app/Models/Team.php
+     - app/Http/Controllers/CurrentTeamController.php
+     - app/Http/Controllers/Settings/TeamController.php
++    - app/Http/Requests/Settings/TeamDestroyRequest.php
+     - app/Http/Requests/Settings/TeamUpdateRequest.php
+     - resources/js/pages/settings/Team.vue
++    - tests/Feature/Teams/DeleteTeamTest.php
+     - tests/Feature/Teams/PersonalTeamTest.php
+     - tests/Feature/Teams/SwitchCurrentTeamTest.php
+     - tests/Feature/Teams/TeamSettingsTest.php
+@@ -21,10 +24,12 @@
+       name: Switch the current team
+     - key: rename-team
+       name: Rename a team
++    - key: delete-team
++      name: Delete a team
+ effects:
+     - to: membership
+       strength: strong
+-      reason: Creating a team makes its creator the owner member.
++      reason: Creating a team makes its creator the owner member; deleting a team removes all of its memberships.
+       source: analysis
+ ---
+ 
+@@ -34,6 +39,7 @@ ## Rules
+ 
+ - Everyone gets a personal team when they sign up, and is its owner.
+ - Owners and admins can rename a team.
++- Only the owner can delete a team, and personal teams can never be deleted.
+ 
+ ## What each behaviour does
+ 
+@@ -49,3 +55,11 @@ ### Switch the current team
+ ### Rename a team
+ 
+ Owners and admins change the team's name in the team settings.
++
++### Delete a team
++
++The owner deletes a team from the team settings after confirming in a dialog.
++The team and all of its memberships are removed permanently, and everyone who
++was working in it is moved back to their personal team (or another team they
++belong to). The owner is taken to the dashboard. Personal teams have no delete
++option.
+diff --git a/app/Actions/Teams/DeleteTeam.php b/app/Actions/Teams/DeleteTeam.php
+new file mode 100644
+index 0000000..882561d
+--- /dev/null
++++ b/app/Actions/Teams/DeleteTeam.php
+@@ -0,0 +1,36 @@
++<?php
++
++namespace App\Actions\Teams;
++
++use App\Models\Team;
++use App\Models\User;
++use Illuminate\Support\Facades\DB;
++
++class DeleteTeam
++{
++    /**
++     * Permanently delete the team and its memberships.
++     *
++     * Anyone working in the team is moved to another team they belong to,
++     * preferring their personal team.
++     */
++    public function handle(Team $team): void
++    {
++        DB::transaction(function () use ($team) {
++            $team->members()->detach();
++
++            User::query()
++                ->where('current_team_id', $team->id)
++                ->each(function (User $user) {
++                    $fallbackTeam = $user->teams()
++                        ->orderByDesc('personal_team')
++                        ->orderBy('teams.id')
++                        ->first();
++
++                    $user->forceFill(['current_team_id' => $fallbackTeam?->id])->save();
++                });
++
++            $team->delete();
++        });
++    }
++}
+diff --git a/app/Http/Controllers/Settings/TeamController.php b/app/Http/Controllers/Settings/TeamController.php
+index c1d0b4d..46cf8a2 100644
+--- a/app/Http/Controllers/Settings/TeamController.php
++++ b/app/Http/Controllers/Settings/TeamController.php
+@@ -2,9 +2,11 @@
+ 
+ namespace App\Http\Controllers\Settings;
+ 
++use App\Actions\Teams\DeleteTeam;
+ use App\Actions\Teams\UpdateTeamName;
+ use App\Enums\TeamRole;
+ use App\Http\Controllers\Controller;
++use App\Http\Requests\Settings\TeamDestroyRequest;
+ use App\Http\Requests\Settings\TeamUpdateRequest;
+ use App\Http\Resources\TeamMemberResource;
+ use App\Models\Team;
+@@ -39,6 +41,7 @@ public function edit(Request $request): Response
+                 'updateTeam' => $user->can('update', $team),
+                 'updateMemberRoles' => $user->can('updateMemberRole', $team),
+                 'removeMembers' => $user->can('removeMember', $team),
++                'deleteTeam' => $user->can('delete', $team),
+             ],
+         ]);
+     }
+@@ -54,4 +57,16 @@ public function update(TeamUpdateRequest $request, Team $team, UpdateTeamName $u
+ 
+         return to_route('teams.edit');
+     }
++
++    /**
++     * Delete the team.
++     */
++    public function destroy(TeamDestroyRequest $request, Team $team, DeleteTeam $deleteTeam): RedirectResponse
++    {
++        $deleteTeam->handle($team);
++
++        Inertia::flash('toast', ['type' => 'success', 'message' => __('Team deleted.')]);
++
++        return to_route('dashboard');
++    }
+ }
+diff --git a/app/Http/Requests/Settings/TeamDestroyRequest.php b/app/Http/Requests/Settings/TeamDestroyRequest.php
+new file mode 100644
+index 0000000..3158667
+--- /dev/null
++++ b/app/Http/Requests/Settings/TeamDestroyRequest.php
+@@ -0,0 +1,31 @@
++<?php
++
++namespace App\Http\Requests\Settings;
++
++use App\Models\Team;
++use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Foundation\Http\FormRequest;
++
++class TeamDestroyRequest extends FormRequest
++{
++    /**
++     * Determine if the user is authorized to make this request.
++     */
++    public function authorize(): bool
++    {
++        /** @var Team $team */
++        $team = $this->route('team');
++
++        return $this->user()->can('delete', $team);
++    }
++
++    /**
++     * Get the validation rules that apply to the request.
++     *
++     * @return array<string, ValidationRule|array<mixed>|string>
++     */
++    public function rules(): array
++    {
++        return [];
++    }
++}
+diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php
+index 55a4e90..e11e61d 100644
+--- a/app/Policies/TeamPolicy.php
++++ b/app/Policies/TeamPolicy.php
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Policies;
+ 
++use App\Enums\TeamRole;
+ use App\Models\Team;
+ use App\Models\User;
+ 
+@@ -38,4 +39,14 @@ public function removeMember(User $user, Team $team): bool
+     {
+         return $user->hasTeamPermission($team, 'members:remove');
+     }
++
++    /**
++     * Determine whether the user can delete the team.
++     *
++     * Only the owner may delete a team, and personal teams can never be deleted.
++     */
++    public function delete(User $user, Team $team): bool
++    {
++        return ! $team->personal_team && $user->teamRole($team) === TeamRole::Owner;
++    }
+ }
+diff --git a/config/teams.php b/config/teams.php
+index 4e27794..2e05714 100644
+--- a/config/teams.php
++++ b/config/teams.php
+@@ -12,7 +12,8 @@
+     | so changing them here changes who may perform each team action.
+     |
+     | Available permissions: "team:update", "members:update-role",
+-    | "members:remove".
++    | "members:remove". Deleting a team is not configurable: only the
++    | team's owner may delete it, and personal teams cannot be deleted.
+     |
+     */
+ 
+diff --git a/resources/js/pages/settings/Team.vue b/resources/js/pages/settings/Team.vue
+index 6a5f8c6..7a24f62 100644
+--- a/resources/js/pages/settings/Team.vue
++++ b/resources/js/pages/settings/Team.vue
+@@ -7,6 +7,16 @@ import Heading from '@/components/Heading.vue';
+ import InputError from '@/components/InputError.vue';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
++import {
++    Dialog,
++    DialogClose,
++    DialogContent,
++    DialogDescription,
++    DialogFooter,
++    DialogHeader,
++    DialogTitle,
++    DialogTrigger,
++} from '@/components/ui/dialog';
+ import { Input } from '@/components/ui/input';
+ import { Label } from '@/components/ui/label';
+ import {
+@@ -28,6 +38,7 @@ type Props = {
+         updateTeam: boolean;
+         updateMemberRoles: boolean;
+         removeMembers: boolean;
++        deleteTeam: boolean;
+     };
+ };
+ 
+@@ -202,4 +213,66 @@ defineOptions({
+             </li>
+         </ul>
+     </div>
++
++    <div
++        v-if="can.deleteTeam && !team.personal_team"
++        class="flex flex-col space-y-6"
++    >
++        <Heading
++            variant="small"
++            title="Delete team"
++            description="Permanently delete this team and remove all of its members"
++        />
++        <div
++            class="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10"
++        >
++            <div class="relative space-y-0.5 text-red-600 dark:text-red-100">
++                <p class="font-medium">Warning</p>
++                <p class="text-sm">
++                    Please proceed with caution, this cannot be undone.
++                </p>
++            </div>
++            <Dialog>
++                <DialogTrigger as-child>
++                    <Button variant="destructive" data-test="delete-team-button"
++                        >Delete team</Button
++                    >
++                </DialogTrigger>
++                <DialogContent>
++                    <Form
++                        v-bind="TeamController.destroy.form(team)"
++                        class="space-y-6"
++                        v-slot="{ processing }"
++                    >
++                        <DialogHeader class="space-y-3">
++                            <DialogTitle
++                                >Are you sure you want to delete this
++                                team?</DialogTitle
++                            >
++                            <DialogDescription>
++                                Once the team is deleted, all of its members
++                                lose access to it. Anyone working in this team
++                                is moved back to their personal team.
++                            </DialogDescription>
++                        </DialogHeader>
++
++                        <DialogFooter class="gap-2">
++                            <DialogClose as-child>
++                                <Button variant="secondary">Cancel</Button>
++                            </DialogClose>
++
++                            <Button
++                                type="submit"
++                                variant="destructive"
++                                :disabled="processing"
++                                data-test="confirm-delete-team-button"
++                            >
++                                Delete team
++                            </Button>
++                        </DialogFooter>
++                    </Form>
++                </DialogContent>
++            </Dialog>
++        </div>
++    </div>
+ </template>
+diff --git a/routes/settings.php b/routes/settings.php
+index 1d274eb..1d6ce7c 100644
+--- a/routes/settings.php
++++ b/routes/settings.php
+@@ -30,6 +30,7 @@
+ 
+     Route::get('settings/team', [TeamController::class, 'edit'])->name('teams.edit');
+     Route::patch('settings/teams/{team}', [TeamController::class, 'update'])->name('teams.update');
++    Route::delete('settings/teams/{team}', [TeamController::class, 'destroy'])->name('teams.destroy');
+ 
+     Route::scopeBindings()->group(function () {
+         Route::put('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'update'])->name('team-members.update');
+diff --git a/tests/Feature/Teams/DeleteTeamTest.php b/tests/Feature/Teams/DeleteTeamTest.php
+new file mode 100644
+index 0000000..6e9f031
+--- /dev/null
++++ b/tests/Feature/Teams/DeleteTeamTest.php
+@@ -0,0 +1,151 @@
++<?php
++
++namespace Tests\Feature\Teams;
++
++use App\Enums\TeamRole;
++use App\Models\Membership;
++use App\Models\Team;
++use App\Models\User;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Inertia\Testing\AssertableInertia as Assert;
++use Tests\Concerns\InteractsWithTeams;
++use Tests\TestCase;
++
++class DeleteTeamTest extends TestCase
++{
++    use InteractsWithTeams, RefreshDatabase;
++
++    public function test_owners_can_delete_the_team()
++    {
++        $owner = User::factory()->withPersonalTeam()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $this->addTeamMember($team, TeamRole::Admin);
++        $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($owner)
++            ->delete(route('teams.destroy', $team))
++            ->assertSessionHasNoErrors()
++            ->assertRedirect(route('dashboard'))
++            ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Team deleted.']);
++
++        $this->assertModelMissing($team);
++        $this->assertSame(0, Membership::query()->where('team_id', $team->id)->count());
++    }
++
++    public function test_users_working_in_the_deleted_team_move_to_their_personal_team()
++    {
++        $owner = User::factory()->withPersonalTeam()->create();
++        $ownerPersonalTeam = $owner->fresh()->currentTeam;
++        $team = $this->createTeamOwnedBy($owner);
++
++        $member = $this->addTeamMember($team, TeamRole::Member);
++        $memberPersonalTeam = $member->currentTeam;
++        $member->forceFill(['current_team_id' => $team->id])->save();
++
++        $otherMember = $this->addTeamMember($team, TeamRole::Admin);
++        $otherTeam = $this->createTeamOwnedBy(User::factory()->create(), 'Other');
++        $otherTeam->members()->attach($otherMember, ['role' => TeamRole::Member->value]);
++        $otherMember->forceFill(['current_team_id' => $otherTeam->id])->save();
++
++        $this->actingAs($owner)->delete(route('teams.destroy', $team));
++
++        $this->assertSame($ownerPersonalTeam->id, $owner->fresh()->current_team_id);
++        $this->assertSame($memberPersonalTeam->id, $member->fresh()->current_team_id);
++        $this->assertSame($otherTeam->id, $otherMember->fresh()->current_team_id);
++    }
++
++    public function test_admins_cannot_delete_the_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++
++        $this->actingAs($admin)
++            ->delete(route('teams.destroy', $team))
++            ->assertForbidden();
++
++        $this->assertModelExists($team);
++    }
++
++    public function test_admins_cannot_delete_the_team_even_when_granted_every_permission()
++    {
++        config(['teams.roles.admin.permissions' => ['*']]);
++
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++
++        $this->actingAs($admin)
++            ->delete(route('teams.destroy', $team))
++            ->assertForbidden();
++
++        $this->assertModelExists($team);
++    }
++
++    public function test_members_cannot_delete_the_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($member)
++            ->delete(route('teams.destroy', $team))
++            ->assertForbidden();
++
++        $this->assertModelExists($team);
++    }
++
++    public function test_outsiders_cannot_delete_the_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++
++        $this->actingAs(User::factory()->withPersonalTeam()->create())
++            ->delete(route('teams.destroy', $team))
++            ->assertForbidden();
++
++        $this->assertModelExists($team);
++    }
++
++    public function test_guests_are_redirected_to_the_login_page()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++
++        $this->delete(route('teams.destroy', $team))
++            ->assertRedirect(route('login'));
++
++        $this->assertModelExists($team);
++    }
++
++    public function test_personal_teams_cannot_be_deleted()
++    {
++        $owner = User::factory()->withPersonalTeam()->create();
++        /** @var Team $personalTeam */
++        $personalTeam = $owner->fresh()->currentTeam;
++
++        $this->actingAs($owner)
++            ->delete(route('teams.destroy', $personalTeam))
++            ->assertForbidden();
++
++        $this->assertModelExists($personalTeam);
++        $this->assertTrue($owner->belongsToTeam($personalTeam));
++    }
++
++    public function test_only_owners_of_non_personal_teams_see_the_delete_option()
++    {
++        $owner = User::factory()->withPersonalTeam()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++        $admin->forceFill(['current_team_id' => $team->id])->save();
++
++        $this->actingAs($owner)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page->where('can.deleteTeam', true));
++
++        $this->actingAs($admin)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page->where('can.deleteTeam', false));
++
++        $owner->forceFill(['current_team_id' => $owner->teams()->where('personal_team', true)->value('teams.id')])->save();
++
++        $this->actingAs($owner->fresh())
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page->where('can.deleteTeam', false));
++    }
++}

@@ -1,0 +1,501 @@
+diff --git a/.builder/capabilities/membership.md b/.builder/capabilities/membership.md
+index e36cd40..fae7e2e 100644
+--- a/.builder/capabilities/membership.md
++++ b/.builder/capabilities/membership.md
+@@ -2,6 +2,7 @@
+ capability: membership
+ summary: Who is in a team and what their role lets them do.
+ paths:
++    - app/Actions/Teams/LeaveTeam.php
+     - app/Actions/Teams/RemoveTeamMember.php
+     - app/Actions/Teams/UpdateTeamMemberRole.php
+     - app/Enums/TeamRole.php
+@@ -9,9 +10,12 @@
+     - app/Models/Concerns/HasTeams.php
+     - app/Policies/TeamPolicy.php
+     - app/Http/Controllers/Settings/TeamMemberController.php
++    - app/Http/Controllers/Settings/TeamMembershipController.php
+     - app/Http/Requests/Settings/TeamMemberDestroyRequest.php
+     - app/Http/Requests/Settings/TeamMemberUpdateRequest.php
++    - app/Http/Requests/Settings/TeamMembershipDestroyRequest.php
+     - config/teams.php
++    - tests/Feature/Teams/LeaveTeamTest.php
+     - tests/Feature/Teams/RemoveTeamMemberTest.php
+     - tests/Feature/Teams/TeamMemberRoleTest.php
+ behaviors:
+@@ -19,6 +23,8 @@
+       name: Change a member's role
+     - key: remove-member
+       name: Remove a member
++    - key: leave-team
++      name: Leave a team
+ effects:
+     - to: teams
+       strength: possible
+@@ -34,6 +40,8 @@ ## Rules
+   owner cannot be removed.
+ - Owners and admins can change other members' roles to admin or member.
+ - Owners and admins can remove members.
++- Admins and members can leave a team they belong to. The owner cannot leave
++  the team they own, and nobody can leave their personal team.
+ - What each role may do is set in one place (config/teams.php).
+ 
+ ## What each behaviour does
+@@ -46,3 +54,10 @@ ### Change a member's role
+ ### Remove a member
+ 
+ An owner or admin removes someone from the team; they lose access to it.
++
++### Leave a team
++
++In the team settings, an admin or member of someone else's team chooses
++"Leave team" and confirms. They are removed from the team, lose access to it,
++and are taken to the dashboard. If it was their current team, their current
++team becomes their personal team.
+diff --git a/app/Actions/Teams/LeaveTeam.php b/app/Actions/Teams/LeaveTeam.php
+new file mode 100644
+index 0000000..139a120
+--- /dev/null
++++ b/app/Actions/Teams/LeaveTeam.php
+@@ -0,0 +1,32 @@
++<?php
++
++namespace App\Actions\Teams;
++
++use App\Models\Team;
++use App\Models\User;
++use Illuminate\Support\Facades\DB;
++
++class LeaveTeam
++{
++    /**
++     * Remove the user from a team they chose to leave.
++     *
++     * A user who was working in the team is moved to another team they
++     * belong to, preferring their personal team.
++     */
++    public function handle(User $user, Team $team): void
++    {
++        DB::transaction(function () use ($user, $team) {
++            $team->members()->detach($user->id);
++
++            if ($user->isCurrentTeam($team)) {
++                $fallbackTeam = $user->teams()
++                    ->orderByDesc('personal_team')
++                    ->orderBy('teams.id')
++                    ->first();
++
++                $user->forceFill(['current_team_id' => $fallbackTeam?->id])->save();
++            }
++        });
++    }
++}
+diff --git a/app/Http/Controllers/Settings/TeamController.php b/app/Http/Controllers/Settings/TeamController.php
+index c1d0b4d..f8238c0 100644
+--- a/app/Http/Controllers/Settings/TeamController.php
++++ b/app/Http/Controllers/Settings/TeamController.php
+@@ -40,6 +40,7 @@ public function edit(Request $request): Response
+                 'updateMemberRoles' => $user->can('updateMemberRole', $team),
+                 'removeMembers' => $user->can('removeMember', $team),
+             ],
++            'canLeave' => $user->can('leave', $team),
+         ]);
+     }
+ 
+diff --git a/app/Http/Controllers/Settings/TeamMembershipController.php b/app/Http/Controllers/Settings/TeamMembershipController.php
+new file mode 100644
+index 0000000..b4d33f7
+--- /dev/null
++++ b/app/Http/Controllers/Settings/TeamMembershipController.php
+@@ -0,0 +1,25 @@
++<?php
++
++namespace App\Http\Controllers\Settings;
++
++use App\Actions\Teams\LeaveTeam;
++use App\Http\Controllers\Controller;
++use App\Http\Requests\Settings\TeamMembershipDestroyRequest;
++use App\Models\Team;
++use Illuminate\Http\RedirectResponse;
++use Inertia\Inertia;
++
++class TeamMembershipController extends Controller
++{
++    /**
++     * Leave the given team.
++     */
++    public function destroy(TeamMembershipDestroyRequest $request, Team $team, LeaveTeam $leaveTeam): RedirectResponse
++    {
++        $leaveTeam->handle($request->user(), $team);
++
++        Inertia::flash('toast', ['type' => 'success', 'message' => __('You left the team.')]);
++
++        return to_route('dashboard');
++    }
++}
+diff --git a/app/Http/Requests/Settings/TeamMembershipDestroyRequest.php b/app/Http/Requests/Settings/TeamMembershipDestroyRequest.php
+new file mode 100644
+index 0000000..15995e7
+--- /dev/null
++++ b/app/Http/Requests/Settings/TeamMembershipDestroyRequest.php
+@@ -0,0 +1,31 @@
++<?php
++
++namespace App\Http\Requests\Settings;
++
++use App\Models\Team;
++use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Foundation\Http\FormRequest;
++
++class TeamMembershipDestroyRequest extends FormRequest
++{
++    /**
++     * Determine if the user is authorized to make this request.
++     */
++    public function authorize(): bool
++    {
++        /** @var Team $team */
++        $team = $this->route('team');
++
++        return $this->user()->can('leave', $team);
++    }
++
++    /**
++     * Get the validation rules that apply to the request.
++     *
++     * @return array<string, ValidationRule|array<mixed>|string>
++     */
++    public function rules(): array
++    {
++        return [];
++    }
++}
+diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php
+index 55a4e90..3f59fac 100644
+--- a/app/Policies/TeamPolicy.php
++++ b/app/Policies/TeamPolicy.php
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Policies;
+ 
++use App\Enums\TeamRole;
+ use App\Models\Team;
+ use App\Models\User;
+ 
+@@ -38,4 +39,18 @@ public function removeMember(User $user, Team $team): bool
+     {
+         return $user->hasTeamPermission($team, 'members:remove');
+     }
++
++    /**
++     * Determine whether the user can leave the team.
++     *
++     * The owner cannot leave the team they own, and nobody can leave a personal team.
++     */
++    public function leave(User $user, Team $team): bool
++    {
++        $role = $user->teamRole($team);
++
++        return $role !== null
++            && $role !== TeamRole::Owner
++            && ! $team->personal_team;
++    }
+ }
+diff --git a/resources/js/pages/settings/Team.vue b/resources/js/pages/settings/Team.vue
+index 6a5f8c6..7fd51a9 100644
+--- a/resources/js/pages/settings/Team.vue
++++ b/resources/js/pages/settings/Team.vue
+@@ -3,10 +3,21 @@ import { Form, Head } from '@inertiajs/vue3';
+ import CurrentTeamController from '@/actions/App/Http/Controllers/CurrentTeamController';
+ import TeamController from '@/actions/App/Http/Controllers/Settings/TeamController';
+ import TeamMemberController from '@/actions/App/Http/Controllers/Settings/TeamMemberController';
++import TeamMembershipController from '@/actions/App/Http/Controllers/Settings/TeamMembershipController';
+ import Heading from '@/components/Heading.vue';
+ import InputError from '@/components/InputError.vue';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
++import {
++    Dialog,
++    DialogClose,
++    DialogContent,
++    DialogDescription,
++    DialogFooter,
++    DialogHeader,
++    DialogTitle,
++    DialogTrigger,
++} from '@/components/ui/dialog';
+ import { Input } from '@/components/ui/input';
+ import { Label } from '@/components/ui/label';
+ import {
+@@ -29,6 +40,7 @@ type Props = {
+         updateMemberRoles: boolean;
+         removeMembers: boolean;
+     };
++    canLeave: boolean;
+ };
+ 
+ defineProps<Props>();
+@@ -202,4 +214,64 @@ defineOptions({
+             </li>
+         </ul>
+     </div>
++
++    <div v-if="canLeave" class="flex flex-col space-y-6">
++        <Heading
++            variant="small"
++            title="Leave team"
++            description="Remove yourself from this team"
++        />
++
++        <div
++            class="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10"
++        >
++            <div class="relative space-y-0.5 text-red-600 dark:text-red-100">
++                <p class="font-medium">Warning</p>
++                <p class="text-sm">
++                    You will lose access to this team until someone adds you
++                    again.
++                </p>
++            </div>
++
++            <Dialog>
++                <DialogTrigger as-child>
++                    <Button variant="destructive" data-test="leave-team-button">
++                        Leave team
++                    </Button>
++                </DialogTrigger>
++                <DialogContent>
++                    <Form
++                        v-bind="TeamMembershipController.destroy.form(team)"
++                        class="space-y-6"
++                        v-slot="{ processing }"
++                    >
++                        <DialogHeader class="space-y-3">
++                            <DialogTitle>
++                                Are you sure you want to leave {{ team.name }}?
++                            </DialogTitle>
++                            <DialogDescription>
++                                You will no longer be able to see or switch to
++                                this team.
++                            </DialogDescription>
++                        </DialogHeader>
++
++                        <DialogFooter class="gap-2">
++                            <DialogClose as-child>
++                                <Button variant="secondary">Cancel</Button>
++                            </DialogClose>
++
++                            <Button
++                                type="submit"
++                                variant="destructive"
++                                :disabled="processing"
++                                data-test="confirm-leave-team-button"
++                            >
++                                Leave team
++                            </Button>
++                        </DialogFooter>
++                    </Form>
++                </DialogContent>
++            </Dialog>
++        </div>
++    </div>
+ </template>
+diff --git a/routes/settings.php b/routes/settings.php
+index 1d274eb..31bd865 100644
+--- a/routes/settings.php
++++ b/routes/settings.php
+@@ -5,6 +5,7 @@
+ use App\Http\Controllers\Settings\SecurityController;
+ use App\Http\Controllers\Settings\TeamController;
+ use App\Http\Controllers\Settings\TeamMemberController;
++use App\Http\Controllers\Settings\TeamMembershipController;
+ use Illuminate\Auth\Middleware\RequirePassword;
+ use Illuminate\Support\Facades\Route;
+ 
+@@ -36,6 +37,8 @@
+         Route::delete('settings/teams/{team}/members/{member}', [TeamMemberController::class, 'destroy'])->name('team-members.destroy');
+     });
+ 
++    Route::delete('settings/teams/{team}/membership', [TeamMembershipController::class, 'destroy'])->name('team-membership.destroy');
++
+     Route::put('current-team/{team}', [CurrentTeamController::class, 'update'])->name('current-team.update');
+ });
+ 
+diff --git a/tests/Feature/Teams/LeaveTeamTest.php b/tests/Feature/Teams/LeaveTeamTest.php
+new file mode 100644
+index 0000000..1416d59
+--- /dev/null
++++ b/tests/Feature/Teams/LeaveTeamTest.php
+@@ -0,0 +1,172 @@
++<?php
++
++namespace Tests\Feature\Teams;
++
++use App\Enums\TeamRole;
++use App\Models\User;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Inertia\Testing\AssertableInertia as Assert;
++use Tests\Concerns\InteractsWithTeams;
++use Tests\TestCase;
++
++class LeaveTeamTest extends TestCase
++{
++    use InteractsWithTeams, RefreshDatabase;
++
++    public function test_members_can_leave_a_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($member)
++            ->delete(route('team-membership.destroy', $team))
++            ->assertSessionHasNoErrors()
++            ->assertRedirect(route('dashboard'))
++            ->assertInertiaFlash('toast.type', 'success');
++
++        $this->assertFalse($member->belongsToTeam($team));
++        $this->assertFalse($team->hasMember($member));
++    }
++
++    public function test_admins_can_leave_a_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++
++        $this->actingAs($admin)
++            ->delete(route('team-membership.destroy', $team))
++            ->assertRedirect(route('dashboard'));
++
++        $this->assertFalse($admin->belongsToTeam($team));
++    }
++
++    public function test_leaving_the_current_team_moves_the_user_to_their_personal_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++        $personalTeam = $member->currentTeam;
++        $member->forceFill(['current_team_id' => $team->id])->save();
++
++        $this->actingAs($member)->delete(route('team-membership.destroy', $team));
++
++        $this->assertSame($personalTeam->id, $member->fresh()->current_team_id);
++    }
++
++    public function test_leaving_another_team_keeps_the_current_team()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++        $personalTeam = $member->currentTeam;
++
++        $this->actingAs($member)->delete(route('team-membership.destroy', $team));
++
++        $this->assertSame($personalTeam->id, $member->fresh()->current_team_id);
++    }
++
++    public function test_a_user_cannot_switch_to_a_team_they_left()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($member)->delete(route('team-membership.destroy', $team));
++
++        $this->actingAs($member->fresh())
++            ->put(route('current-team.update', $team))
++            ->assertForbidden();
++    }
++
++    public function test_the_owner_cannot_leave_their_team()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++
++        $this->actingAs($owner)
++            ->delete(route('team-membership.destroy', $team))
++            ->assertForbidden();
++
++        $this->assertSame(TeamRole::Owner, $owner->teamRole($team));
++    }
++
++    public function test_a_personal_team_cannot_be_left()
++    {
++        $user = User::factory()->withPersonalTeam()->create();
++        $personalTeam = $user->fresh()->currentTeam;
++
++        $this->actingAs($user)
++            ->delete(route('team-membership.destroy', $personalTeam))
++            ->assertForbidden();
++
++        $this->assertTrue($user->belongsToTeam($personalTeam));
++    }
++
++    public function test_non_members_cannot_leave_a_team()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $member = $this->addTeamMember($team, TeamRole::Member);
++        $outsider = User::factory()->withPersonalTeam()->create();
++
++        $this->actingAs($outsider)
++            ->delete(route('team-membership.destroy', $team))
++            ->assertForbidden();
++
++        $this->assertSame(2, $team->members()->count());
++        $this->assertTrue($member->belongsToTeam($team));
++    }
++
++    public function test_guests_are_redirected_to_the_login_page()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++
++        $this->delete(route('team-membership.destroy', $team))
++            ->assertRedirect(route('login'));
++
++        $this->assertSame(1, $team->members()->count());
++    }
++
++    public function test_leaving_only_removes_the_user_making_the_request()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner);
++        $admin = $this->addTeamMember($team, TeamRole::Admin);
++        $member = $this->addTeamMember($team, TeamRole::Member);
++        $other = $this->addTeamMember($team, TeamRole::Member);
++
++        $this->actingAs($member)->delete(route('team-membership.destroy', $team));
++
++        $this->assertFalse($member->belongsToTeam($team));
++        $this->assertSame(TeamRole::Owner, $owner->teamRole($team));
++        $this->assertSame(TeamRole::Admin, $admin->teamRole($team));
++        $this->assertSame(TeamRole::Member, $other->teamRole($team));
++    }
++
++    public function test_the_settings_page_lets_members_leave()
++    {
++        $team = $this->createTeamOwnedBy(User::factory()->create());
++        $member = $this->addTeamMember($team, TeamRole::Member);
++        $member->forceFill(['current_team_id' => $team->id])->save();
++
++        $this->actingAs($member)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page->where('canLeave', true));
++    }
++
++    public function test_the_settings_page_hides_leaving_from_the_owner()
++    {
++        $owner = User::factory()->create();
++        $this->createTeamOwnedBy($owner);
++
++        $this->actingAs($owner)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page->where('canLeave', false));
++    }
++
++    public function test_the_settings_page_hides_leaving_on_a_personal_team()
++    {
++        $user = User::factory()->withPersonalTeam()->create();
++
++        $this->actingAs($user)
++            ->get(route('teams.edit'))
++            ->assertInertia(fn (Assert $page) => $page->where('canLeave', false));
++    }
++}
