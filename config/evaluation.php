@@ -37,4 +37,11 @@ return [
     // Where the plain agent's and the scorer's workspaces are made.
     'workspaces' => env('BUILDER_EVAL_WORKSPACES', sys_get_temp_dir().DIRECTORY_SEPARATOR.'builder-evaluation'),
 
+    'audit' => [
+        // Paths no agent may touch besides the hidden material, the hand-off
+        // directory and the results, comma separated: for example the
+        // orchestrator's own scratch directory.
+        'forbidden' => array_values(array_filter(explode(',', (string) env('BUILDER_EVAL_AUDIT_FORBIDDEN', '')))),
+    ],
+
 ];

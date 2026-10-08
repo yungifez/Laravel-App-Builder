@@ -1,0 +1,238 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/.builder/capabilities/account.md b/.builder/capabilities/account.md
+index ec3be7e..e558de8 100644
+--- a/.builder/capabilities/account.md
++++ b/.builder/capabilities/account.md
+@@ -3,6 +3,7 @@
+ summary: Signing up, logging in, email verification, password and profile settings.
+ paths:
+     - app/Actions/Fortify/*
++    - app/Actions/Teams/SyncPersonalTeamName.php
+     - app/Http/Controllers/Settings/ProfileController.php
+     - app/Http/Controllers/Settings/SecurityController.php
+     - app/Http/Requests/Settings/PasswordUpdateRequest.php
+@@ -20,11 +21,17 @@
+       name: Sign up
+     - key: delete-account
+       name: Delete my account
++    - key: change-name
++      name: Change my name
+ effects:
+     - to: teams
+       strength: strong
+       reason: Signing up creates the person's personal team.
+       source: analysis
++    - to: teams
++      strength: strong
++      reason: Changing your name renames your personal team.
++      source: analysis
+ ---
+ 
+ # Account
+@@ -33,3 +40,13 @@ ## Rules
+ 
+ - People must verify their email address before using the app.
+ - Deleting an account requires the current password.
++- Changing your name renames your personal team to match, the same way it is
++  named at sign-up (for example "Grace's Team"). Other teams keep their names,
++  and nothing is renamed when the name stays the same.
++
++## What each behaviour does
++
++### Change my name
++
++In the profile settings, someone changes their name; their personal team is
++renamed after their new first name.
+diff --git a/.builder/capabilities/teams.md b/.builder/capabilities/teams.md
+index 78c69e6..6b31b61 100644
+--- a/.builder/capabilities/teams.md
++++ b/.builder/capabilities/teams.md
+@@ -40,7 +40,8 @@ ## What each behaviour does
+ ### Get a personal team on sign-up
+ 
+ When someone registers, a team named after them is created and they become its
+-owner.
++owner. When they later change their name, the personal team is renamed to
++match.
+ 
+ ### Switch the current team
+ 
+diff --git a/app/Actions/Fortify/CreateNewUser.php b/app/Actions/Fortify/CreateNewUser.php
+index 1d61b7f..8bd65cc 100644
+--- a/app/Actions/Fortify/CreateNewUser.php
++++ b/app/Actions/Fortify/CreateNewUser.php
+@@ -3,6 +3,7 @@
+ namespace App\Actions\Fortify;
+ 
+ use App\Actions\Teams\CreateTeam;
++use App\Actions\Teams\SyncPersonalTeamName;
+ use App\Concerns\PasswordValidationRules;
+ use App\Concerns\ProfileValidationRules;
+ use App\Models\User;
+@@ -14,7 +15,10 @@ class CreateNewUser implements CreatesNewUsers
+ {
+     use PasswordValidationRules, ProfileValidationRules;
+ 
+-    public function __construct(private CreateTeam $createTeam) {}
++    public function __construct(
++        private CreateTeam $createTeam,
++        private SyncPersonalTeamName $syncPersonalTeamName,
++    ) {}
+ 
+     /**
+      * Validate and create a newly registered user.
+@@ -35,17 +39,9 @@ public function create(array $input): User
+                 'password' => $input['password'],
+             ]);
+ 
+-            $this->createTeam->handle($user, $this->personalTeamName($user), personal: true);
++            $this->createTeam->handle($user, $this->syncPersonalTeamName->nameFor($user), personal: true);
+ 
+             return $user;
+         });
+     }
+-
+-    /**
+-     * Get the name of the user's personal team.
+-     */
+-    protected function personalTeamName(User $user): string
+-    {
+-        return __(':name\'s Team', ['name' => explode(' ', $user->name, 2)[0]]);
+-    }
+ }
+diff --git a/app/Actions/Teams/SyncPersonalTeamName.php b/app/Actions/Teams/SyncPersonalTeamName.php
+new file mode 100644
+index 0000000..2df28fc
+--- /dev/null
++++ b/app/Actions/Teams/SyncPersonalTeamName.php
+@@ -0,0 +1,30 @@
++<?php
++
++namespace App\Actions\Teams;
++
++use App\Enums\TeamRole;
++use App\Models\User;
++
++class SyncPersonalTeamName
++{
++    /**
++     * Rename the user's personal team after their current name.
++     */
++    public function handle(User $user): void
++    {
++        $team = $user->teams()
++            ->where('personal_team', true)
++            ->wherePivot('role', TeamRole::Owner->value)
++            ->first();
++
++        $team?->update(['name' => $this->nameFor($user)]);
++    }
++
++    /**
++     * Get the personal team name for the given user.
++     */
++    public function nameFor(User $user): string
++    {
++        return __(':name\'s Team', ['name' => explode(' ', $user->name, 2)[0]]);
++    }
++}
+diff --git a/app/Http/Controllers/Settings/ProfileController.php b/app/Http/Controllers/Settings/ProfileController.php
+index ec7579a..e693edb 100644
+--- a/app/Http/Controllers/Settings/ProfileController.php
++++ b/app/Http/Controllers/Settings/ProfileController.php
+@@ -2,6 +2,7 @@
+ 
+ namespace App\Http\Controllers\Settings;
+ 
++use App\Actions\Teams\SyncPersonalTeamName;
+ use App\Http\Controllers\Controller;
+ use App\Http\Requests\Settings\ProfileDeleteRequest;
+ use App\Http\Requests\Settings\ProfileUpdateRequest;
+@@ -27,16 +28,26 @@ public function edit(Request $request): Response
+ 
+     /**
+      * Update the user's profile information.
++     *
++     * A changed name also renames the user's personal team.
+      */
+-    public function update(ProfileUpdateRequest $request): RedirectResponse
++    public function update(ProfileUpdateRequest $request, SyncPersonalTeamName $syncPersonalTeamName): RedirectResponse
+     {
+-        $request->user()->fill($request->validated());
++        $user = $request->user();
++
++        $user->fill($request->validated());
+ 
+-        if ($request->user()->isDirty('email')) {
+-            $request->user()->email_verified_at = null;
++        if ($user->isDirty('email')) {
++            $user->email_verified_at = null;
+         }
+ 
+-        $request->user()->save();
++        $nameChanged = $user->isDirty('name');
++
++        $user->save();
++
++        if ($nameChanged) {
++            $syncPersonalTeamName->handle($user);
++        }
+ 
+         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
+ 
+diff --git a/tests/Feature/Settings/ProfileUpdateTest.php b/tests/Feature/Settings/ProfileUpdateTest.php
+index e6c95ce..309e246 100644
+--- a/tests/Feature/Settings/ProfileUpdateTest.php
++++ b/tests/Feature/Settings/ProfileUpdateTest.php
+@@ -2,6 +2,7 @@
+ 
+ namespace Tests\Feature\Settings;
+ 
++use App\Models\Team;
+ use App\Models\User;
+ use Illuminate\Foundation\Testing\RefreshDatabase;
+ use Tests\TestCase;
+@@ -61,6 +62,42 @@ public function test_email_verification_status_is_unchanged_when_the_email_addre
+         $this->assertNotNull($user->refresh()->email_verified_at);
+     }
+ 
++    public function test_changing_the_name_renames_the_personal_team()
++    {
++        $user = User::factory()->withPersonalTeam()->create(['name' => 'Ada Lovelace']);
++        $sharedTeam = Team::factory()->ownedBy($user)->create(['name' => 'Acme']);
++
++        $this
++            ->actingAs($user)
++            ->patch(route('profile.update'), [
++                'name' => 'Grace Hopper',
++                'email' => $user->email,
++            ])
++            ->assertSessionHasNoErrors();
++
++        $personalTeam = $user->teams()->where('personal_team', true)->firstOrFail();
++
++        $this->assertSame("Grace's Team", $personalTeam->name);
++        $this->assertSame('Acme', $sharedTeam->fresh()->name);
++    }
++
++    public function test_keeping_the_name_leaves_the_personal_team_name_alone()
++    {
++        $user = User::factory()->withPersonalTeam()->create(['name' => 'Ada Lovelace']);
++        $personalTeam = $user->currentTeam;
++        $personalTeam->update(['name' => 'Engines']);
++
++        $this
++            ->actingAs($user)
++            ->patch(route('profile.update'), [
++                'name' => 'Ada Lovelace',
++                'email' => 'ada@example.com',
++            ])
++            ->assertSessionHasNoErrors();
++
++        $this->assertSame('Engines', $personalTeam->fresh()->name);
++    }
++
+     public function test_user_can_delete_their_account()
+     {
+         $user = User::factory()->create();

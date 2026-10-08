@@ -8,7 +8,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
-#[Signature('eval:audit {files* : Agent transcripts (JSONL) or patches to audit} {--forbid=* : Path fragments no tool call may touch (defaults to the hidden material)} {--canary= : The suite\'s canary (defaults to the suite\'s canary.txt)}')]
+#[Signature('eval:audit {files* : Agent transcripts (JSONL) or patches to audit} {--forbid=* : Path fragments no tool call may touch (defaults to the hidden material)} {--canary= : The suite\'s canary (defaults to the suite\'s canary.txt)} {--allow=* : Paths a tool call may name although they sit under a forbidden one, for example the agent\'s own hand-off request}')]
 #[Description('Check that agents never saw hidden material: no transcript or patch may contain the suite\'s canary, and no tool call may name a forbidden path')]
 class AuditEvaluation extends Command
 {
@@ -17,7 +17,11 @@ class AuditEvaluation extends Command
      *
      * @var list<string>
      */
-    protected const HIDDEN = ['fixtures/evaluation', 'fixtures/reference-solutions', 'fixtures/acceptance', 'tests/Hidden', 'storage/app/evaluation', 'comparison-canary'];
+    protected const HIDDEN = [
+        'fixtures/evaluation', 'fixtures/reference-solutions', 'fixtures/acceptance', 'tests/Hidden', 'storage/app/evaluation',
+        // Agent transcripts, the orchestrator's included.
+        '.jsonl', '.claude/projects',
+    ];
 
     /**
      * Tools that only report back to the orchestrator. Mentioning a path in a
@@ -35,7 +39,15 @@ class AuditEvaluation extends Command
         $canary = $this->option('canary') ?: trim((string) File::get(Suite::fromConfig()->directory.'/canary.txt'));
 
         /** @var list<string> $forbidden */
-        $forbidden = $this->option('forbid') ?: self::HIDDEN;
+        $forbidden = $this->option('forbid') ?: array_values(array_filter([
+            ...self::HIDDEN,
+            config('evaluation.handoff.path'),
+            config('evaluation.results'),
+            ...config('evaluation.audit.forbidden'),
+        ], fn ($fragment) => is_string($fragment) && $fragment !== ''));
+
+        /** @var list<string> $allowed */
+        $allowed = $this->option('allow');
 
         /** @var list<string> $files */
         $files = $this->argument('files');
@@ -50,6 +62,8 @@ class AuditEvaluation extends Command
             $inputs = $this->toolInputs($contents);
 
             foreach ($inputs as $input) {
+                $input = str_replace($allowed, '', $input);
+
                 foreach ($forbidden as $fragment) {
                     if (str_contains($input, $fragment)) {
                         $pathHits[$fragment] = ($pathHits[$fragment] ?? 0) + 1;

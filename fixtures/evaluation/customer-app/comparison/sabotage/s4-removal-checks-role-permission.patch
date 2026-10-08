@@ -1,0 +1,15 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/app/Http/Requests/Settings/TeamMemberDestroyRequest.php b/app/Http/Requests/Settings/TeamMemberDestroyRequest.php
+index 153845b..7af0b6b 100644
+--- a/app/Http/Requests/Settings/TeamMemberDestroyRequest.php
++++ b/app/Http/Requests/Settings/TeamMemberDestroyRequest.php
+@@ -16,7 +16,7 @@ public function authorize(): bool
+         /** @var Team $team */
+         $team = $this->route('team');
+ 
+-        return $this->user()->can('removeMember', $team);
++        return $this->user()->can('updateMemberRole', $team);
+     }
+ 
+     /**

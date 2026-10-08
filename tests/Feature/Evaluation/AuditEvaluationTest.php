@@ -27,4 +27,21 @@ class AuditEvaluationTest extends TestCase
         $this->artisan('eval:audit', ['files' => ["{$dir}/leaky.jsonl"], '--canary' => 'eval-canary-test'])->assertFailed();
         $this->artisan('eval:audit', ['files' => ["{$dir}/saw.jsonl"], '--canary' => 'eval-canary-test'])->assertFailed();
     }
+
+    public function test_an_allowed_path_does_not_excuse_a_forbidden_one_in_the_same_call()
+    {
+        $dir = sys_get_temp_dir().'/builder-eval-audit-test-'.Str::lower(Str::random(8));
+        File::ensureDirectoryExists($dir);
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($dir));
+
+        $call = fn (string $command) => json_encode(['type' => 'assistant', 'message' => ['content' => [['type' => 'tool_use', 'name' => 'Bash', 'input' => ['command' => $command]]]]]);
+
+        File::put("{$dir}/own.jsonl", $call('cat /tmp/handoff/42-coder.request.json'));
+        File::put("{$dir}/other.jsonl", $call('cat /tmp/handoff/42-coder.request.json /tmp/handoff/43-reviewer.request.json'));
+
+        $options = ['--canary' => 'eval-canary-test', '--forbid' => ['/tmp/handoff'], '--allow' => ['/tmp/handoff/42-coder']];
+
+        $this->artisan('eval:audit', ['files' => ["{$dir}/own.jsonl"], ...$options])->assertSuccessful();
+        $this->artisan('eval:audit', ['files' => ["{$dir}/other.jsonl"], ...$options])->assertFailed();
+    }
 }

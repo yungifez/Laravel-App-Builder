@@ -1,0 +1,19 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/app/Actions/Teams/UpdateTeamMemberRole.php b/app/Actions/Teams/UpdateTeamMemberRole.php
+index ab62cdd..dddd66f 100644
+--- a/app/Actions/Teams/UpdateTeamMemberRole.php
++++ b/app/Actions/Teams/UpdateTeamMemberRole.php
+@@ -16,12 +16,6 @@ class UpdateTeamMemberRole
+      */
+     public function handle(Team $team, User $member, TeamRole $role): void
+     {
+-        if ($member->teamRole($team) === TeamRole::Owner) {
+-            throw ValidationException::withMessages([
+-                'role' => __('The team owner\'s role cannot be changed.'),
+-            ]);
+-        }
+-
+         if (! in_array($role, TeamRole::assignable(), true)) {
+             throw ValidationException::withMessages([
+                 'role' => __('The selected role cannot be assigned.'),

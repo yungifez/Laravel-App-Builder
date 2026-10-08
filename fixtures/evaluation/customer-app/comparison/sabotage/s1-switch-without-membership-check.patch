@@ -1,0 +1,23 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/app/Http/Controllers/CurrentTeamController.php b/app/Http/Controllers/CurrentTeamController.php
+index 8f73f81..07c09f3 100644
+--- a/app/Http/Controllers/CurrentTeamController.php
++++ b/app/Http/Controllers/CurrentTeamController.php
+@@ -6,7 +6,6 @@
+ use App\Models\Team;
+ use Illuminate\Http\RedirectResponse;
+ use Illuminate\Http\Request;
+-use Illuminate\Support\Facades\Gate;
+ 
+ class CurrentTeamController extends Controller
+ {
+@@ -15,8 +14,6 @@ class CurrentTeamController extends Controller
+      */
+     public function update(Request $request, Team $team, SwitchCurrentTeam $switchCurrentTeam): RedirectResponse
+     {
+-        Gate::authorize('view', $team);
+-
+         $switchCurrentTeam->handle($request->user(), $team);
+ 
+         return to_route('teams.edit');

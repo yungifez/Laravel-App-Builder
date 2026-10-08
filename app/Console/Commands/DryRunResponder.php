@@ -88,7 +88,7 @@ class DryRunResponder extends Command
             'current_behavior' => 'Unknown in a dry run.',
             'preserve' => array_map(fn (string $area) => ['area' => $area, 'statement' => "Existing {$area} behaviour keeps working."], $areas),
             'capabilities' => $areas,
-            'steps' => [],
+            'steps' => [['key' => 'dry-run', 'kind' => 'behaviour', 'label' => 'Dry run', 'file' => 'unknown', 'symbol' => 'unknown', 'detail' => 'Dry run: no real step.']],
         ];
     }
 

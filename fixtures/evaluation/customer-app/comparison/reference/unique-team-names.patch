@@ -1,0 +1,119 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/.builder/capabilities/teams.md b/.builder/capabilities/teams.md
+index 78c69e6..604a0c8 100644
+--- a/.builder/capabilities/teams.md
++++ b/.builder/capabilities/teams.md
+@@ -34,6 +34,8 @@ ## Rules
+ 
+ - Everyone gets a personal team when they sign up, and is its owner.
+ - Owners and admins can rename a team.
++- A team cannot be renamed to the name of another team the person renaming it
++  is in. Teams that person is not in do not count.
+ 
+ ## What each behaviour does
+ 
+@@ -48,4 +50,6 @@ ### Switch the current team
+ 
+ ### Rename a team
+ 
+-Owners and admins change the team's name in the team settings.
++Owners and admins change the team's name in the team settings. The new name
++must differ from the names of the other teams they are in, so the team switcher
++stays clear. Saving the team under its current name is fine.
+diff --git a/app/Http/Requests/Settings/TeamUpdateRequest.php b/app/Http/Requests/Settings/TeamUpdateRequest.php
+index 8f00bf9..24f79ed 100644
+--- a/app/Http/Requests/Settings/TeamUpdateRequest.php
++++ b/app/Http/Requests/Settings/TeamUpdateRequest.php
+@@ -4,7 +4,9 @@
+ 
+ use App\Models\Team;
+ use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Database\Query\Builder;
+ use Illuminate\Foundation\Http\FormRequest;
++use Illuminate\Validation\Rule;
+ 
+ class TeamUpdateRequest extends FormRequest
+ {
+@@ -25,9 +27,34 @@ public function authorize(): bool
+      * @return array<string, ValidationRule|array<mixed>|string>
+      */
+     public function rules(): array
++    {
++        /** @var Team $team */
++        $team = $this->route('team');
++
++        return [
++            'name' => [
++                'required',
++                'string',
++                'max:255',
++                Rule::unique(Team::class, 'name')
++                    ->ignore($team->id)
++                    ->where(fn (Builder $query) => $query->whereIn(
++                        'id',
++                        $this->user()->teams()->select('teams.id'),
++                    )),
++            ],
++        ];
++    }
++
++    /**
++     * Get custom messages for validator errors.
++     *
++     * @return array<string, string>
++     */
++    public function messages(): array
+     {
+         return [
+-            'name' => ['required', 'string', 'max:255'],
++            'name.unique' => __('You are already in a team with this name.'),
+         ];
+     }
+ }
+diff --git a/tests/Feature/Teams/UpdateTeamTest.php b/tests/Feature/Teams/UpdateTeamTest.php
+index e6bc449..80f22ab 100644
+--- a/tests/Feature/Teams/UpdateTeamTest.php
++++ b/tests/Feature/Teams/UpdateTeamTest.php
+@@ -79,4 +79,41 @@ public function test_team_name_is_required()
+             ->patch(route('teams.update', $team), ['name' => ''])
+             ->assertSessionHasErrors('name');
+     }
++
++    public function test_team_cannot_take_the_name_of_another_team_the_user_is_in()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner, 'Acme');
++        $this->createTeamOwnedBy($owner, 'Globex');
++
++        $this->actingAs($owner)
++            ->patch(route('teams.update', $team), ['name' => 'Globex'])
++            ->assertSessionHasErrors('name');
++
++        $this->assertSame('Acme', $team->fresh()->name);
++    }
++
++    public function test_team_can_keep_its_current_name()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner, 'Acme');
++
++        $this->actingAs($owner)
++            ->patch(route('teams.update', $team), ['name' => 'Acme'])
++            ->assertSessionHasNoErrors()
++            ->assertRedirect(route('teams.edit'));
++    }
++
++    public function test_team_may_share_a_name_with_a_team_the_user_is_not_in()
++    {
++        $owner = User::factory()->create();
++        $team = $this->createTeamOwnedBy($owner, 'Acme');
++        $this->createTeamOwnedBy(User::factory()->create(), 'Globex');
++
++        $this->actingAs($owner)
++            ->patch(route('teams.update', $team), ['name' => 'Globex'])
++            ->assertSessionHasNoErrors();
++
++        $this->assertSame('Globex', $team->fresh()->name);
++    }
+ }

@@ -1,0 +1,101 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/.builder/capabilities/membership.md b/.builder/capabilities/membership.md
+index e36cd40..a075326 100644
+--- a/.builder/capabilities/membership.md
++++ b/.builder/capabilities/membership.md
+@@ -22,7 +22,7 @@
+ effects:
+     - to: teams
+       strength: possible
+-      reason: Roles decide who may rename a team.
++      reason: Roles decide who may rename a team (currently every role may).
+       source: analysis
+ ---
+ 
+diff --git a/.builder/capabilities/teams.md b/.builder/capabilities/teams.md
+index 78c69e6..9773d36 100644
+--- a/.builder/capabilities/teams.md
++++ b/.builder/capabilities/teams.md
+@@ -33,7 +33,8 @@ # Teams
+ ## Rules
+ 
+ - Everyone gets a personal team when they sign up, and is its owner.
+-- Owners and admins can rename a team.
++- Everyone in a team (owners, admins and members) can rename it. People
++  outside the team cannot.
+ 
+ ## What each behaviour does
+ 
+@@ -48,4 +49,4 @@ ### Switch the current team
+ 
+ ### Rename a team
+ 
+-Owners and admins change the team's name in the team settings.
++Anyone in the team changes the team's name in the team settings.
+diff --git a/.builder/project.md b/.builder/project.md
+index 0115a61..4ee9d2b 100644
+--- a/.builder/project.md
++++ b/.builder/project.md
+@@ -7,7 +7,7 @@ ## People
+ 
+ - **Owner**: created the team; can do everything in it.
+ - **Admin**: can rename the team, change members' roles and remove members.
+-- **Member**: belongs to the team and can see it.
++- **Member**: belongs to the team, can see it and can rename it.
+ 
+ ## Terms
+ 
+diff --git a/config/teams.php b/config/teams.php
+index 4e27794..a110ddb 100644
+--- a/config/teams.php
++++ b/config/teams.php
+@@ -30,7 +30,9 @@
+         ],
+ 
+         'member' => [
+-            'permissions' => [],
++            'permissions' => [
++                'team:update',
++            ],
+         ],
+     ],
+ 
+diff --git a/tests/Feature/Teams/TeamSettingsTest.php b/tests/Feature/Teams/TeamSettingsTest.php
+index acab3c0..50faa32 100644
+--- a/tests/Feature/Teams/TeamSettingsTest.php
++++ b/tests/Feature/Teams/TeamSettingsTest.php
+@@ -36,7 +36,7 @@ public function test_members_see_their_current_team_and_its_members()
+                 ->where('members.0.role', 'member')
+                 ->where('members.1.name', 'Olivia Owner')
+                 ->where('members.1.role', 'owner')
+-                ->where('can.updateTeam', false)
++                ->where('can.updateTeam', true)
+                 ->where('can.updateMemberRoles', false)
+                 ->where('can.removeMembers', false)
+             );
+diff --git a/tests/Feature/Teams/UpdateTeamTest.php b/tests/Feature/Teams/UpdateTeamTest.php
+index e6bc449..7056661 100644
+--- a/tests/Feature/Teams/UpdateTeamTest.php
++++ b/tests/Feature/Teams/UpdateTeamTest.php
+@@ -37,16 +37,17 @@ public function test_admins_can_rename_the_team()
+         $this->assertSame('Renamed', $team->fresh()->name);
+     }
+ 
+-    public function test_members_cannot_rename_the_team()
++    public function test_members_can_rename_the_team()
+     {
+         $team = $this->createTeamOwnedBy(User::factory()->create());
+         $member = $this->addTeamMember($team, TeamRole::Member);
+ 
+         $this->actingAs($member)
+             ->patch(route('teams.update', $team), ['name' => 'Renamed'])
+-            ->assertForbidden();
++            ->assertSessionHasNoErrors()
++            ->assertRedirect(route('teams.edit'));
+ 
+-        $this->assertSame('Acme', $team->fresh()->name);
++        $this->assertSame('Renamed', $team->fresh()->name);
+     }
+ 
+     public function test_outsiders_cannot_rename_the_team()

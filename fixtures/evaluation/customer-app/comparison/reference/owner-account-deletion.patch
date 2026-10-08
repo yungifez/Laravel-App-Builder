@@ -1,0 +1,152 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/.builder/capabilities/account.md b/.builder/capabilities/account.md
+index ec3be7e..614e650 100644
+--- a/.builder/capabilities/account.md
++++ b/.builder/capabilities/account.md
+@@ -25,6 +25,10 @@
+       strength: strong
+       reason: Signing up creates the person's personal team.
+       source: analysis
++    - to: membership
++      strength: strong
++      reason: Owners of a team that other people are in cannot delete their account.
++      source: analysis
+ ---
+ 
+ # Account
+@@ -33,3 +37,14 @@ ## Rules
+ 
+ - People must verify their email address before using the app.
+ - Deleting an account requires the current password.
++- Someone who owns a team that other people are in cannot delete their account;
++  they are told to sort that team out first. People who own only teams nobody
++  else is in, or who are admins or members elsewhere, can delete their account.
++
++## What each behaviour does
++
++### Delete my account
++
++Someone confirms with their password and their account is deleted. If they
++still own a team that other people are in, nothing is deleted and they are
++told why.
+diff --git a/app/Http/Requests/Settings/ProfileDeleteRequest.php b/app/Http/Requests/Settings/ProfileDeleteRequest.php
+index aec9174..58d3c84 100644
+--- a/app/Http/Requests/Settings/ProfileDeleteRequest.php
++++ b/app/Http/Requests/Settings/ProfileDeleteRequest.php
+@@ -3,8 +3,11 @@
+ namespace App\Http\Requests\Settings;
+ 
+ use App\Concerns\PasswordValidationRules;
++use App\Enums\TeamRole;
+ use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Database\Eloquent\Builder;
+ use Illuminate\Foundation\Http\FormRequest;
++use Illuminate\Validation\Validator;
+ 
+ class ProfileDeleteRequest extends FormRequest
+ {
+@@ -21,4 +24,39 @@ public function rules(): array
+             'password' => $this->currentPasswordRules(),
+         ];
+     }
++
++    /**
++     * Get the "after" validation callables for the request.
++     *
++     * People who own a team that other people are in must sort that team
++     * out before deleting their account.
++     *
++     * @return array<int, callable>
++     */
++    public function after(): array
++    {
++        return [
++            function (Validator $validator) {
++                if ($this->ownsTeamWithOtherMembers()) {
++                    $validator->errors()->add(
++                        'account',
++                        __('You own a team that other people are in. Sort that team out before deleting your account.'),
++                    );
++                }
++            },
++        ];
++    }
++
++    /**
++     * Determine if the user owns a team that anyone else belongs to.
++     */
++    protected function ownsTeamWithOtherMembers(): bool
++    {
++        $user = $this->user();
++
++        return $user->teams()
++            ->wherePivot('role', TeamRole::Owner->value)
++            ->whereHas('members', fn (Builder $query) => $query->whereKeyNot($user->id))
++            ->exists();
++    }
+ }
+diff --git a/resources/js/components/DeleteUser.vue b/resources/js/components/DeleteUser.vue
+index 871fb5e..3ed6c06 100644
+--- a/resources/js/components/DeleteUser.vue
++++ b/resources/js/components/DeleteUser.vue
+@@ -79,6 +79,7 @@ const passwordInput = useTemplateRef('passwordInput');
+                                 placeholder="Password"
+                             />
+                             <InputError :message="errors.password" />
++                            <InputError :message="errors.account" />
+                         </div>
+ 
+                         <DialogFooter class="gap-2">
+diff --git a/tests/Feature/Settings/ProfileUpdateTest.php b/tests/Feature/Settings/ProfileUpdateTest.php
+index e6c95ce..a29327f 100644
+--- a/tests/Feature/Settings/ProfileUpdateTest.php
++++ b/tests/Feature/Settings/ProfileUpdateTest.php
+@@ -2,6 +2,8 @@
+ 
+ namespace Tests\Feature\Settings;
+ 
++use App\Enums\TeamRole;
++use App\Models\Team;
+ use App\Models\User;
+ use Illuminate\Foundation\Testing\RefreshDatabase;
+ use Tests\TestCase;
+@@ -96,4 +98,38 @@ public function test_correct_password_must_be_provided_to_delete_account()
+ 
+         $this->assertNotNull($user->fresh());
+     }
++
++    public function test_owners_of_a_team_with_other_members_cannot_delete_their_account()
++    {
++        $user = User::factory()->create();
++        $team = Team::factory()->ownedBy($user)->create();
++        $team->members()->attach(User::factory()->create(), ['role' => TeamRole::Member->value]);
++
++        $this
++            ->actingAs($user)
++            ->from(route('profile.edit'))
++            ->delete(route('profile.destroy'), [
++                'password' => 'password',
++            ])
++            ->assertSessionHasErrors('account')
++            ->assertRedirect(route('profile.edit'));
++
++        $this->assertNotNull($user->fresh());
++        $this->assertAuthenticatedAs($user);
++    }
++
++    public function test_owners_of_teams_nobody_else_is_in_can_delete_their_account()
++    {
++        $user = User::factory()->withPersonalTeam()->create();
++
++        $this
++            ->actingAs($user)
++            ->delete(route('profile.destroy'), [
++                'password' => 'password',
++            ])
++            ->assertSessionHasNoErrors()
++            ->assertRedirect(route('home'));
++
++        $this->assertNull($user->fresh());
++    }
+ }

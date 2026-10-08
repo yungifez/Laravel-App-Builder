@@ -1,0 +1,234 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/.builder/capabilities/teams.md b/.builder/capabilities/teams.md
+index 78c69e6..a7faf41 100644
+--- a/.builder/capabilities/teams.md
++++ b/.builder/capabilities/teams.md
+@@ -8,8 +8,10 @@
+     - app/Models/Team.php
+     - app/Http/Controllers/CurrentTeamController.php
+     - app/Http/Controllers/Settings/TeamController.php
++    - app/Http/Requests/Settings/TeamStoreRequest.php
+     - app/Http/Requests/Settings/TeamUpdateRequest.php
+     - resources/js/pages/settings/Team.vue
++    - tests/Feature/Teams/CreateTeamTest.php
+     - tests/Feature/Teams/PersonalTeamTest.php
+     - tests/Feature/Teams/SwitchCurrentTeamTest.php
+     - tests/Feature/Teams/TeamSettingsTest.php
+@@ -21,6 +23,8 @@
+       name: Switch the current team
+     - key: rename-team
+       name: Rename a team
++    - key: create-team
++      name: Start a new team
+ effects:
+     - to: membership
+       strength: strong
+@@ -34,6 +38,7 @@ ## Rules
+ 
+ - Everyone gets a personal team when they sign up, and is its owner.
+ - Owners and admins can rename a team.
++- Anyone who is signed in can start a new team and becomes its owner.
+ 
+ ## What each behaviour does
+ 
+@@ -49,3 +54,9 @@ ### Switch the current team
+ ### Rename a team
+ 
+ Owners and admins change the team's name in the team settings.
++
++### Start a new team
++
++In the team settings, someone names a new team. They become its owner and only
++member, and are switched into it. Their personal team and other teams are
++unchanged.
+diff --git a/app/Http/Controllers/Settings/TeamController.php b/app/Http/Controllers/Settings/TeamController.php
+index c1d0b4d..a783bdc 100644
+--- a/app/Http/Controllers/Settings/TeamController.php
++++ b/app/Http/Controllers/Settings/TeamController.php
+@@ -2,9 +2,12 @@
+ 
+ namespace App\Http\Controllers\Settings;
+ 
++use App\Actions\Teams\CreateTeam;
++use App\Actions\Teams\SwitchCurrentTeam;
+ use App\Actions\Teams\UpdateTeamName;
+ use App\Enums\TeamRole;
+ use App\Http\Controllers\Controller;
++use App\Http\Requests\Settings\TeamStoreRequest;
+ use App\Http\Requests\Settings\TeamUpdateRequest;
+ use App\Http\Resources\TeamMemberResource;
+ use App\Models\Team;
+@@ -43,6 +46,22 @@ public function edit(Request $request): Response
+         ]);
+     }
+ 
++    /**
++     * Start a new team owned by the user and switch them into it.
++     */
++    public function store(TeamStoreRequest $request, CreateTeam $createTeam, SwitchCurrentTeam $switchCurrentTeam): RedirectResponse
++    {
++        $user = $request->user();
++
++        $team = $createTeam->handle($user, $request->validated('name'));
++
++        $switchCurrentTeam->handle($user, $team);
++
++        Inertia::flash('toast', ['type' => 'success', 'message' => __('Team created.')]);
++
++        return to_route('teams.edit');
++    }
++
+     /**
+      * Update the team's details.
+      */
+diff --git a/app/Http/Requests/Settings/TeamStoreRequest.php b/app/Http/Requests/Settings/TeamStoreRequest.php
+new file mode 100644
+index 0000000..f8e85d2
+--- /dev/null
++++ b/app/Http/Requests/Settings/TeamStoreRequest.php
+@@ -0,0 +1,31 @@
++<?php
++
++namespace App\Http\Requests\Settings;
++
++use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Foundation\Http\FormRequest;
++
++class TeamStoreRequest extends FormRequest
++{
++    /**
++     * Determine if the user is authorized to make this request.
++     *
++     * Anyone who is signed in may start a team.
++     */
++    public function authorize(): bool
++    {
++        return true;
++    }
++
++    /**
++     * Get the validation rules that apply to the request.
++     *
++     * @return array<string, ValidationRule|array<mixed>|string>
++     */
++    public function rules(): array
++    {
++        return [
++            'name' => ['required', 'string', 'max:255'],
++        ];
++    }
++}
+diff --git a/resources/js/pages/settings/Team.vue b/resources/js/pages/settings/Team.vue
+index 6a5f8c6..0131bef 100644
+--- a/resources/js/pages/settings/Team.vue
++++ b/resources/js/pages/settings/Team.vue
+@@ -171,6 +171,38 @@ defineOptions({
+         </ul>
+     </div>
+ 
++    <div class="flex flex-col space-y-6">
++        <Heading
++            variant="small"
++            title="New team"
++            description="Start another team and become its owner"
++        />
++
++        <Form
++            v-bind="TeamController.store.form()"
++            reset-on-success
++            class="space-y-6"
++            v-slot="{ errors, processing }"
++        >
++            <div class="grid gap-2">
++                <Label for="new-team-name">Team name</Label>
++                <Input
++                    id="new-team-name"
++                    class="mt-1 block w-full"
++                    name="name"
++                    required
++                />
++                <InputError class="mt-2" :message="errors.name" />
++            </div>
++
++            <div class="flex items-center gap-4">
++                <Button :disabled="processing" data-test="create-team-button">
++                    Create team
++                </Button>
++            </div>
++        </Form>
++    </div>
++
+     <div v-if="teams.length > 1" class="flex flex-col space-y-6">
+         <Heading
+             variant="small"
+diff --git a/routes/settings.php b/routes/settings.php
+index 1d274eb..478ecc3 100644
+--- a/routes/settings.php
++++ b/routes/settings.php
+@@ -29,6 +29,7 @@
+     Route::inertia('settings/appearance', 'settings/Appearance')->name('appearance.edit');
+ 
+     Route::get('settings/team', [TeamController::class, 'edit'])->name('teams.edit');
++    Route::post('settings/teams', [TeamController::class, 'store'])->name('teams.store');
+     Route::patch('settings/teams/{team}', [TeamController::class, 'update'])->name('teams.update');
+ 
+     Route::scopeBindings()->group(function () {
+diff --git a/tests/Feature/Teams/CreateTeamTest.php b/tests/Feature/Teams/CreateTeamTest.php
+new file mode 100644
+index 0000000..4c4be45
+--- /dev/null
++++ b/tests/Feature/Teams/CreateTeamTest.php
+@@ -0,0 +1,52 @@
++<?php
++
++namespace Tests\Feature\Teams;
++
++use App\Enums\TeamRole;
++use App\Models\Team;
++use App\Models\User;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++use Tests\TestCase;
++
++class CreateTeamTest extends TestCase
++{
++    use RefreshDatabase;
++
++    public function test_users_can_start_a_new_team()
++    {
++        $user = User::factory()->withPersonalTeam()->create();
++        $personalTeam = $user->currentTeam;
++
++        $this->actingAs($user)
++            ->post(route('teams.store'), ['name' => 'Globex'])
++            ->assertSessionHasNoErrors()
++            ->assertRedirect(route('teams.edit'));
++
++        $team = Team::where('name', 'Globex')->firstOrFail();
++
++        $this->assertFalse($team->personal_team);
++        $this->assertSame(TeamRole::Owner, $user->teamRole($team));
++        $this->assertSame(1, $team->members()->count());
++        $this->assertSame($team->id, $user->fresh()->current_team_id);
++        $this->assertSame(TeamRole::Owner, $user->teamRole($personalTeam));
++    }
++
++    public function test_the_team_name_is_required()
++    {
++        $user = User::factory()->withPersonalTeam()->create();
++
++        $this->actingAs($user)
++            ->post(route('teams.store'), ['name' => ''])
++            ->assertSessionHasErrors('name');
++
++        $this->assertSame(1, Team::count());
++    }
++
++    public function test_guests_cannot_start_a_team()
++    {
++        $this->post(route('teams.store'), ['name' => 'Globex'])
++            ->assertRedirect(route('login'));
++
++        $this->assertSame(0, Team::count());
++    }
++}

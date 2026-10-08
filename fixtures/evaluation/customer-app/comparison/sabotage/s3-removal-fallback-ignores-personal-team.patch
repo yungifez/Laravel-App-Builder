@@ -1,0 +1,27 @@
+eval-canary-1983c6400b99c598893b8227
+
+diff --git a/app/Actions/Teams/RemoveTeamMember.php b/app/Actions/Teams/RemoveTeamMember.php
+index 16ee3c7..3a1671e 100644
+--- a/app/Actions/Teams/RemoveTeamMember.php
++++ b/app/Actions/Teams/RemoveTeamMember.php
+@@ -14,7 +14,7 @@ class RemoveTeamMember
+      * Remove a member from the team.
+      *
+      * A removed member who was working in the team is moved to another team
+-     * they belong to, preferring their personal team.
++     * they belong to.
+      *
+      * @throws ValidationException
+      */
+@@ -30,10 +30,7 @@ public function handle(Team $team, User $member): void
+             $team->members()->detach($member->id);
+ 
+             if ($member->isCurrentTeam($team)) {
+-                $fallbackTeam = $member->teams()
+-                    ->orderByDesc('personal_team')
+-                    ->orderBy('teams.id')
+-                    ->first();
++                $fallbackTeam = $member->teams()->orderBy('teams.id')->first();
+ 
+                 $member->forceFill(['current_team_id' => $fallbackTeam?->id])->save();
+             }
