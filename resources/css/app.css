@@ -10,10 +10,12 @@
 @theme inline {
     /* Three faces, one job each: see DESIGN.md. */
     --font-sans:
-        'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif,
-        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Noto Color Emoji';
-    --font-display: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
+        'IBM Plex Sans', 'IBM Plex Sans metric fallback', ui-sans-serif,
+        system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display:
+        'Schibsted Grotesk', 'Schibsted Grotesk metric fallback', ui-sans-serif,
+        system-ui, sans-serif;
     --font-mono:
         'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -95,10 +97,87 @@ section[id] {
     body,
     html {
         --font-sans:
-            'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif,
-            'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-            'Noto Color Emoji';
+            'IBM Plex Sans', 'IBM Plex Sans metric fallback', ui-sans-serif,
+            system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+            'Segoe UI Symbol', 'Noto Color Emoji';
     }
+}
+
+/* Until a face arrives, text is set in a fallback sized to it, so the
+   swap does not move it: Arial, or Liberation Sans or Arimo, which share
+   Arial's metrics, for each weight in use. size-adjust is the width of
+   UI text in the face over the fallback's; the overrides keep its line
+   height. FontSwapTest fails if the faces change and text would move. */
+@font-face {
+    font-family: 'IBM Plex Sans metric fallback';
+    font-weight: 400;
+    src:
+        local('Arial'), local('ArialMT'), local('Liberation Sans'),
+        local('Arimo');
+    size-adjust: 100.54%;
+    ascent-override: 101.95%;
+    descent-override: 27.35%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'IBM Plex Sans metric fallback';
+    font-weight: 500;
+    src:
+        local('Arial'), local('ArialMT'), local('Liberation Sans'),
+        local('Arimo');
+    size-adjust: 102.49%;
+    ascent-override: 100.01%;
+    descent-override: 26.83%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'IBM Plex Sans metric fallback';
+    font-weight: 600;
+    src:
+        local('Arial Bold'), local('Arial-BoldMT'),
+        local('Liberation Sans Bold'), local('Arimo Bold');
+    size-adjust: 96.86%;
+    ascent-override: 105.82%;
+    descent-override: 28.39%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk metric fallback';
+    font-weight: 500;
+    src:
+        local('Arial'), local('ArialMT'), local('Liberation Sans'),
+        local('Arimo');
+    size-adjust: 104.69%;
+    ascent-override: 93.28%;
+    descent-override: 24.63%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk metric fallback';
+    font-weight: 600;
+    src:
+        local('Arial Bold'), local('Arial-BoldMT'),
+        local('Liberation Sans Bold'), local('Arimo Bold');
+    size-adjust: 99.69%;
+    ascent-override: 97.96%;
+    descent-override: 25.86%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk metric fallback';
+    font-weight: 700;
+    src:
+        local('Arial Bold'), local('Arial-BoldMT'),
+        local('Liberation Sans Bold'), local('Arimo Bold');
+    size-adjust: 101.72%;
+    ascent-override: 96.01%;
+    descent-override: 25.34%;
+    line-gap-override: 0%;
 }
 
 :root {

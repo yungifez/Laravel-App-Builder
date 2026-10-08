@@ -15,15 +15,25 @@ export default defineConfig({
                 'resources/js/sample-app.ts',
             ],
             refresh: true,
+            // Only the faces of body text, buttons and headlines are
+            // fetched first; the rest wait for text that uses them. Each
+            // face's fallback is sized per weight in app.css: the
+            // optimized one fits a single weight to Arial alone.
             fonts: [
                 bunny('IBM Plex Sans', {
                     weights: [400, 500, 600],
+                    preload: [{ weight: 400 }, { weight: 500 }],
+                    optimizedFallbacks: false,
                 }),
                 bunny('Schibsted Grotesk', {
                     weights: [500, 600, 700],
+                    preload: [{ weight: 600 }],
+                    optimizedFallbacks: false,
                 }),
                 bunny('IBM Plex Mono', {
                     weights: [400, 500],
+                    preload: false,
+                    optimizedFallbacks: false,
                 }),
             ],
         }),

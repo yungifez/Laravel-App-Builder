@@ -33,11 +33,12 @@ function allowToolPage(string $name = 'Claude'): string
     ]);
 }
 
-// Each button's place and size, once the fonts are in: until a face
-// arrives, the text is set in another and a button can be a pixel off.
-// The forms do not send, so the page stays here instead of going on to
-// the tool's site.
-const ALLOW_TOOL_BUTTONS = "(async () => { await document.fonts.ready; document.querySelectorAll('form').forEach((form) => form.addEventListener('submit', (event) => event.preventDefault(), true)); return [...document.querySelectorAll('button')].map((button) => { const box = button.getBoundingClientRect(); return [box.left, box.width, box.height].map(Math.round).join(); }).join(' '); })()";
+// Each button's place and size, once its face is in: until it arrives,
+// the text is set in another and a button can be a pixel off. Ready can
+// come before a face has begun to load, so each is asked for. The forms
+// do not send, so the page stays here instead of going on to the tool's
+// site.
+const ALLOW_TOOL_BUTTONS = "(async () => { await Promise.all([...document.querySelectorAll('button')].map((button) => { const style = getComputedStyle(button); return document.fonts.load([style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' '), button.textContent); })); document.querySelectorAll('form').forEach((form) => form.addEventListener('submit', (event) => event.preventDefault(), true)); return [...document.querySelectorAll('button')].map((button) => { const box = button.getBoundingClientRect(); return [box.left, box.width, box.height].map(Math.round).join(); }).join(' '); })()";
 
 const ALLOW_TOOL_PLACES = "[...document.querySelectorAll('button')].map((button) => { const box = button.getBoundingClientRect(); return [box.left, box.width, box.height].map(Math.round).join(); }).join(' ')";
 
