@@ -83,6 +83,31 @@ class ShareAppTest extends TestCase
         $this->get(route('shared-apps.show', str_repeat('a', 40)))->assertNotFound();
     }
 
+    public function test_stopping_sharing_revokes_unused_grants_even_after_the_owner_shares_again()
+    {
+        $preview = Preview::factory()->editable()->ready()->create();
+        $project = $preview->project;
+        [$store, $destroy] = [route('projects.share.store', $project), route('projects.share.destroy', $project)];
+        $this->actingAs($project->owner)->post($store)->assertRedirect();
+        $shared = route('shared-apps.show', $project->refresh()->share_token);
+        auth()->logout();
+        $pending = (string) $this->get($shared)->assertRedirect()->headers->get('Location');
+        $secondPending = (string) $this->get($shared)->assertRedirect()->headers->get('Location');
+
+        $this->actingAs($project->owner)->delete($destroy)->assertRedirect();
+        auth()->logout();
+        $this->get($pending)->assertForbidden();
+        $this->assertNull(Cache::get(PreviewGateway::sharedSessionsKey($preview)));
+
+        $this->actingAs($project->owner)->post($store)->assertRedirect();
+        $newShared = route('shared-apps.show', $project->refresh()->share_token);
+        auth()->logout();
+        $this->get($secondPending)->assertForbidden();
+        $newGrant = (string) $this->get($newShared)->assertRedirect()->headers->get('Location');
+        $this->assertNotSame('', $this->openSession($newGrant));
+        $this->assertCount(1, Cache::get(PreviewGateway::sharedSessionsKey($preview)));
+    }
+
     public function test_only_the_owner_can_share_the_app_or_stop_sharing_it()
     {
         $project = Project::factory()->create();
@@ -92,6 +117,22 @@ class ShareAppTest extends TestCase
         $this->actingAs($stranger)->delete(route('projects.share.destroy', $project))->assertForbidden();
 
         $this->assertNull($project->refresh()->share_token);
+    }
+
+    public function test_an_unused_grant_cannot_outlive_the_shared_link_it_came_from()
+    {
+        $preview = Preview::factory()->editable()->ready()->create();
+        $project = $preview->project;
+        $this->actingAs($project->owner)->post(route('projects.share.store', $project))->assertRedirect();
+        $shared = route('shared-apps.show', $project->refresh()->share_token);
+        $project->update(['share_expires_at' => now()->addSeconds(5)]);
+        auth()->logout();
+        $pending = (string) $this->get($shared)->assertRedirect()->headers->get('Location');
+
+        $this->travel(6)->seconds();
+
+        $this->get($pending)->assertForbidden();
+        $this->assertNull(Cache::get(PreviewGateway::sharedSessionsKey($preview)));
     }
 
     public function test_a_shared_app_that_is_asleep_is_started_once_while_people_wait()

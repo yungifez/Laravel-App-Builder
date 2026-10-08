@@ -111,13 +111,21 @@ class PreviewGateway
     {
         $grant = $request->query('grant');
 
+        if (! is_string($grant)) {
+            return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));
+        }
+
+        $sharedGrant = Cache::pull(GrantPreviewAccess::sharedKey($preview, $grant));
+
         // Someone the owner shared the app with, rather than the owner.
         $shared = $preview->status === PreviewStatus::Ready
-            && is_string($grant)
-            && Cache::pull(GrantPreviewAccess::sharedKey($preview, $grant)) === true;
+            && is_array($sharedGrant)
+            && is_string($sharedGrant['generation'] ?? null)
+            && $sharedGrant['generation'] === Cache::get(GrantPreviewAccess::sharedGenerationKey($preview))
+            && (($sharedGrant['share_token_hash'] ?? null) === null
+                || $preview->project()->where('share_token_hash', $sharedGrant['share_token_hash'])->where('share_expires_at', '>', now())->exists());
 
         $valid = $shared || ($preview->status === PreviewStatus::Ready
-            && is_string($grant)
             && (Cache::pull(GrantPreviewAccess::ownerKey($preview, $grant)) === true
                 || ($preview->grant_hash !== null
                     && hash_equals($preview->grant_hash, hash('sha256', $grant))
@@ -143,7 +151,7 @@ class PreviewGateway
         // own at once, so a new session does not end the ones before it.
         // People the owner shared it with have sessions of their own, so
         // they never end the owner's.
-        $key = $shared ? self::sharedSessionsKey($preview) : self::sessionsKey($preview);
+        $key = $shared ? self::sharedSessionsKey($preview, $sharedGrant['generation']) : self::sessionsKey($preview);
         /** @var array<string, int> $open */
         $open = Cache::get($key, []);
         $sessions = collect($open)
@@ -172,7 +180,7 @@ class PreviewGateway
 
         // A cookie of the app's own that came with the grant, such as the
         // session of the person the owner signs in as.
-        $cookie = Cache::pull(GrantPreviewAccess::cookieKey($preview, (string) $grant));
+        $cookie = Cache::pull(GrantPreviewAccess::cookieKey($preview, $grant));
 
         if (is_array($cookie)) {
             $response->headers->setCookie(Cookie::create(
@@ -226,9 +234,11 @@ class PreviewGateway
     /**
      * Where the sessions of people the owner shared the app with wait.
      */
-    public static function sharedSessionsKey(Preview $preview): string
+    public static function sharedSessionsKey(Preview $preview, ?string $generation = null): string
     {
-        return "previews:{$preview->id}:shared-sessions";
+        $generation ??= (string) Cache::get(GrantPreviewAccess::sharedGenerationKey($preview), 'none');
+
+        return "previews:{$preview->id}:shared-sessions:{$generation}";
     }
 
     /**

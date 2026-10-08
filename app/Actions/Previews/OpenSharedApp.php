@@ -40,7 +40,7 @@ class OpenSharedApp
             ->first();
 
         if ($preview?->status === PreviewStatus::Ready) {
-            return ['project' => $project, 'url' => $this->grantPreviewAccess->handle($preview, shared: true)];
+            return ['project' => $project, 'url' => $this->grantPreviewAccess->handle($preview, shared: true, shareTokenHash: $project->share_token_hash)];
         }
 
         // Started once: everyone who opens the link while it starts waits

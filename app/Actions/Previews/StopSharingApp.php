@@ -5,6 +5,7 @@ namespace App\Actions\Previews;
 use App\Models\Project;
 use App\Previews\PreviewGateway;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class StopSharingApp
 {
@@ -21,7 +22,9 @@ class StopSharingApp
         ]);
 
         foreach ($project->previews()->get() as $preview) {
-            Cache::forget(PreviewGateway::sharedSessionsKey($preview));
+            $sessions = PreviewGateway::sharedSessionsKey($preview);
+            Cache::forever(GrantPreviewAccess::sharedGenerationKey($preview), Str::random(40));
+            Cache::forget($sessions);
         }
     }
 }

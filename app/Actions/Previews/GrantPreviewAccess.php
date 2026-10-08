@@ -25,7 +25,7 @@ class GrantPreviewAccess
      *
      * @throws ValidationException when the preview is not running.
      */
-    public function handle(Preview $preview, ?string $path = null, ?array $cookie = null, bool $shared = false): string
+    public function handle(Preview $preview, ?string $path = null, ?array $cookie = null, bool $shared = false, ?string $shareTokenHash = null): string
     {
         if ($preview->status !== PreviewStatus::Ready) {
             throw ValidationException::withMessages([
@@ -36,7 +36,10 @@ class GrantPreviewAccess
         $grant = Str::random(48);
 
         if ($shared) {
-            Cache::put(self::sharedKey($preview, $grant), true, now()->addSeconds((int) config('builder.preview.grant_seconds')));
+            Cache::put(self::sharedKey($preview, $grant), [
+                'generation' => Cache::rememberForever(self::sharedGenerationKey($preview), fn () => Str::random(40)),
+                'share_token_hash' => $shareTokenHash,
+            ], now()->addSeconds((int) config('builder.preview.grant_seconds')));
 
             if ($cookie !== null) {
                 Cache::put(self::cookieKey($preview, $grant), $cookie, now()->addSeconds((int) config('builder.preview.grant_seconds')));
@@ -84,5 +87,13 @@ class GrantPreviewAccess
     public static function sharedKey(Preview $preview, string $grant): string
     {
         return "previews:{$preview->id}:shared-grant:".hash('sha256', $grant);
+    }
+
+    /**
+     * The generation changes when the owner ends shared access.
+     */
+    public static function sharedGenerationKey(Preview $preview): string
+    {
+        return "previews:{$preview->id}:shared-generation";
     }
 }
