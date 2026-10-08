@@ -15,7 +15,7 @@ class ReportWriter
      *
      * @param  array<string, mixed>  $plan
      * @param  array<string, mixed>|null  $review
-     * @param  list<array{name: string, outcome: string}>  $checks
+     * @param  list<array{name: string, outcome: string, stage?: string}>  $checks
      */
     public function pipeline(string $request, array $plan, ?array $review, string $verificationStatus, array $checks): string
     {
@@ -81,7 +81,9 @@ class ReportWriter
 
         array_push($lines, "## Checks: {$verificationStatus}", '');
 
-        foreach ($checks as $check) {
+        // Only the checks themselves, as the other reports show: applying the
+        // change and the workspace setup are not checks.
+        foreach (array_filter($checks, fn (array $check) => in_array($check['stage'] ?? 'checks', ['checks', 'acceptance'], true)) as $check) {
             $lines[] = "- {$check['name']}: {$check['outcome']}";
         }
 
