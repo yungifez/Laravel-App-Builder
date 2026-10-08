@@ -1,0 +1,12 @@
+diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php
+index 785a8ab..692c4a5 100644
+--- a/app/Policies/TeamPolicy.php
++++ b/app/Policies/TeamPolicy.php
+@@ -47,6 +47,6 @@ class TeamPolicy
+      */
+     public function delete(User $user, Team $team): bool
+     {
+-        return ! $team->personal_team && $user->hasTeamPermission($team, 'team:delete');
++        return ! $team->personal_team && $user->hasTeamPermission($team, 'team:update');
+     }
+ }

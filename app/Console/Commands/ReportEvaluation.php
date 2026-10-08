@@ -109,14 +109,14 @@ class ReportEvaluation extends Command
         $lines = ['Sabotage (added after the arm finished):', '', '| Sabotage | Covered by tests | Arm | Detected | Report on the affected area |', '| --- | --- | --- | --- | --- |'];
         $details = [];
 
-        foreach ($suite->sabotage() as $sabotage) {
+        foreach ($suite->sabotageFor($task) as $sabotage) {
             foreach (['pipeline', 'plain'] as $arm) {
                 $result = $results->json("{$task}/{$arm}/sabotage/{$sabotage['key']}.json");
                 $covered = $sabotage['covered_by_tests'] ? 'yes' : 'no';
                 $name = $arm === 'plain' ? 'plain and structured (same evidence)' : $arm;
 
                 if ($result === null || ($result['applicable'] ?? false) !== true) {
-                    $lines[] = "| {$sabotage['key']} | {$covered} | {$name} | ".($result === null ? 'not scored' : 'did not apply').' | |';
+                    $lines[] = "| {$sabotage['key']} | {$covered} | {$name} | ".($result === null ? 'not scored' : (isset($result['reason']) ? "not planted: {$result['reason']}" : 'did not apply')).' | |';
 
                     continue;
                 }

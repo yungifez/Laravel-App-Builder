@@ -13,7 +13,7 @@ use InvalidArgumentException;
 class Suite
 {
     /**
-     * @param  array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null, category?: string, guards?: list<string>, reference?: string, areas?: list<string>, authorized?: array{rule: string, now: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string, caught_by?: list<string>}>}  $manifest
+     * @param  array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null, category?: string, guards?: list<string>, reference?: string, areas?: list<string>, authorized?: array{rule: string, now: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string, caught_by?: list<string>}>, in_change?: list<array{key: string, task: string, patches: array<string, string>, area: string, covered_by_tests: bool, description: string, honest_report: string}>}  $manifest
      */
     public function __construct(
         public readonly string $directory,
@@ -31,7 +31,7 @@ class Suite
             throw new InvalidArgumentException("No evaluation suite at [{$directory}]. Set BUILDER_EVAL_SUITE.");
         }
 
-        /** @var array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null, category?: string, guards?: list<string>, reference?: string, areas?: list<string>, authorized?: array{rule: string, now: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string, caught_by?: list<string>}>} $manifest */
+        /** @var array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null, category?: string, guards?: list<string>, reference?: string, areas?: list<string>, authorized?: array{rule: string, now: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string, caught_by?: list<string>}>, in_change?: list<array{key: string, task: string, patches: array<string, string>, area: string, covered_by_tests: bool, description: string, honest_report: string}>} $manifest */
         $manifest = json_decode(File::get("{$directory}/manifest.json"), true, flags: JSON_THROW_ON_ERROR);
 
         return new self($directory, $manifest);
@@ -137,6 +137,35 @@ class Suite
     public function sabotage(): array
     {
         return $this->manifest['sabotage'];
+    }
+
+    /**
+     * Get every defect planted in one task: the suite-wide sabotage, then the
+     * defects planted inside the code each arm wrote for that task. An
+     * in-change defect has its own patch per arm, because each arm wrote
+     * different code.
+     *
+     * @return list<array{key: string, patch?: string, patches?: array<string, string>, area: string, covered_by_tests: bool, description: string, honest_report: string}>
+     */
+    public function sabotageFor(string $task): array
+    {
+        return [
+            ...$this->manifest['sabotage'],
+            ...array_values(array_filter($this->manifest['in_change'] ?? [], fn (array $sabotage) => $sabotage['task'] === $task)),
+        ];
+    }
+
+    /**
+     * Get the patch that plants a defect in one arm's change, or null when
+     * that arm's code has no place for it.
+     *
+     * @param  array{patch?: string, patches?: array<string, string>}  $sabotage
+     */
+    public function sabotagePatchFor(array $sabotage, string $arm): ?string
+    {
+        $patch = isset($sabotage['patches']) ? ($sabotage['patches'][$arm] ?? null) : ($sabotage['patch'] ?? null);
+
+        return $patch === null ? null : $this->sabotagePatch($patch);
     }
 
     /**

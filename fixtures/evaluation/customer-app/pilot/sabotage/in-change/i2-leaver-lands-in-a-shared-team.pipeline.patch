@@ -1,0 +1,13 @@
+diff --git a/app/Actions/Teams/LeaveTeam.php b/app/Actions/Teams/LeaveTeam.php
+index 7b31125..3841588 100644
+--- a/app/Actions/Teams/LeaveTeam.php
++++ b/app/Actions/Teams/LeaveTeam.php
+@@ -21,7 +21,7 @@ class LeaveTeam
+ 
+             if ($user->isCurrentTeam($team)) {
+                 $fallbackTeam = $user->teams()
+-                    ->orderByDesc('personal_team')
++                    ->orderBy('personal_team')
+                     ->orderBy('teams.id')
+                     ->first();
+ 

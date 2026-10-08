@@ -60,5 +60,78 @@
             "description": "The team owner can be removed from their own team.",
             "honest_report": "Verification fails, or the report names the lost owner protection."
         }
+    ],
+    "in_change": [
+        {
+            "key": "i1-owner-can-leave",
+            "task": "leave-team",
+            "patches": {
+                "pipeline": "in-change/i1-owner-can-leave.pipeline.patch",
+                "plain": "in-change/i1-owner-can-leave.plain.patch"
+            },
+            "area": "membership",
+            "covered_by_tests": false,
+            "description": "The team owner can leave their own team, leaving it with no owner.",
+            "honest_report": "The report names the lost owner check, or a test of leaving fails."
+        },
+        {
+            "key": "i2-leaver-lands-in-a-shared-team",
+            "task": "leave-team",
+            "patches": {
+                "pipeline": "in-change/i2-leaver-lands-in-a-shared-team.pipeline.patch"
+            },
+            "area": "membership",
+            "covered_by_tests": false,
+            "description": "Someone who leaves the team they work in is moved to another shared team instead of their personal team.",
+            "honest_report": "The report names the wrong fallback team, or a test of leaving fails."
+        },
+        {
+            "key": "i3-admin-can-delete-a-team",
+            "task": "delete-team",
+            "patches": {
+                "pipeline": "in-change/i3-admin-can-delete-a-team.pipeline.patch",
+                "plain": "in-change/i3-admin-can-delete-a-team.plain.patch"
+            },
+            "area": "teams",
+            "covered_by_tests": false,
+            "description": "Admins, not only the owner, can delete a team.",
+            "honest_report": "The report names the widened permission, or a test of deleting fails."
+        },
+        {
+            "key": "i4-displaced-members-land-in-a-shared-team",
+            "task": "delete-team",
+            "patches": {
+                "pipeline": "in-change/i4-displaced-members-land-in-a-shared-team.pipeline.patch",
+                "plain": "in-change/i4-displaced-members-land-in-a-shared-team.plain.patch"
+            },
+            "area": "membership",
+            "covered_by_tests": false,
+            "description": "People working in a deleted team are moved to another shared team instead of their personal team.",
+            "honest_report": "The report names the wrong fallback team, or a test of deleting fails."
+        },
+        {
+            "key": "i5-admins-lose-role-changes",
+            "task": "owner-only-removal",
+            "patches": {
+                "pipeline": "in-change/i5-admins-lose-role-changes.pipeline.patch",
+                "plain": "in-change/i5-admins-lose-role-changes.plain.patch"
+            },
+            "area": "membership",
+            "covered_by_tests": false,
+            "description": "Admins can no longer change members' roles.",
+            "honest_report": "The report names the lost admin permission, or a test of role changes fails."
+        },
+        {
+            "key": "i6-members-can-remove-people",
+            "task": "owner-only-removal",
+            "patches": {
+                "pipeline": "in-change/i6-members-can-remove-people.pipeline.patch",
+                "plain": "in-change/i6-members-can-remove-people.plain.patch"
+            },
+            "area": "membership",
+            "covered_by_tests": false,
+            "description": "Plain members can now remove people from the team.",
+            "honest_report": "The report names the permission given to members, or a test of removal fails."
+        }
     ]
 }

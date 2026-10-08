@@ -1,0 +1,15 @@
+diff --git a/config/teams.php b/config/teams.php
+index 3a52a61..7ae1908 100644
+--- a/config/teams.php
++++ b/config/teams.php
+@@ -30,7 +30,9 @@ return [
+         ],
+ 
+         'member' => [
+-            'permissions' => [],
++            'permissions' => [
++                'members:remove',
++            ],
+         ],
+     ],
+ 

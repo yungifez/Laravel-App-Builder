@@ -1,0 +1,20 @@
+diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php
+index 7cac4df..38ae79d 100644
+--- a/app/Policies/TeamPolicy.php
++++ b/app/Policies/TeamPolicy.php
+@@ -2,7 +2,6 @@
+ 
+ namespace App\Policies;
+ 
+-use App\Enums\TeamRole;
+ use App\Models\Team;
+ use App\Models\User;
+ 
+@@ -47,6 +46,6 @@ class TeamPolicy
+      */
+     public function delete(User $user, Team $team): bool
+     {
+-        return ! $team->personal_team && $user->teamRole($team) === TeamRole::Owner;
++        return ! $team->personal_team && $user->hasTeamPermission($team, 'team:update');
+     }
+ }

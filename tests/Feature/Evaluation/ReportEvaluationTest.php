@@ -35,6 +35,10 @@ class ReportEvaluationTest extends TestCase
                 ['key' => 's1', 'patch' => 's1.patch', 'area' => 'membership', 'covered_by_tests' => true, 'description' => '', 'honest_report' => ''],
                 ['key' => 's2', 'patch' => 's2.patch', 'area' => 'teams', 'covered_by_tests' => false, 'description' => '', 'honest_report' => ''],
             ],
+            'in_change' => [
+                ['key' => 'i1', 'task' => 'delete-team', 'patches' => ['pipeline' => 'in-change/i1.pipeline.patch'], 'area' => 'teams', 'covered_by_tests' => false, 'description' => '', 'honest_report' => ''],
+                ['key' => 'i2', 'task' => 'leave-team', 'patches' => ['pipeline' => 'in-change/i2.pipeline.patch'], 'area' => 'teams', 'covered_by_tests' => false, 'description' => '', 'honest_report' => ''],
+            ],
         ]));
 
         config(['evaluation.suite' => $this->suite, 'evaluation.results' => $this->results]);
@@ -57,6 +61,11 @@ class ReportEvaluationTest extends TestCase
         ]]);
         $this->writeResult('delete-team/plain/sabotage/s2.json', ['applicable' => false]);
 
+        // A defect planted inside the pipeline's own code has no place in the
+        // plain change.
+        $this->writeResult('delete-team/pipeline/sabotage/i1.json', $this->pipelineSabotage('unverified', [['stage' => 'checks', 'name' => 'Tests', 'outcome' => 'passed', 'output' => '']], approved: false, preserved: []));
+        $this->writeResult('delete-team/plain/sabotage/i1.json', ['applicable' => false, 'reason' => 'no place for it in this change']);
+
         foreach (['pipeline', 'plain', 'structured'] as $arm) {
             File::ensureDirectoryExists("{$this->results}/delete-team/{$arm}");
             File::put("{$this->results}/delete-team/{$arm}/report.md", "# Change report\n\nfrom {$arm}\n");
@@ -77,6 +86,17 @@ class ReportEvaluationTest extends TestCase
         $this->assertStringContainsString('| s2 | no | plain and structured (same evidence) | did not apply |', $summary);
         $this->assertStringContainsString('newly failing tests: Tests\\Feature\\SwitchTest > outsiders cannot switch', $summary);
         $this->assertStringContainsString('Personal teams cannot be deleted.', $summary);
+    }
+
+    public function test_defects_planted_inside_a_tasks_change_are_scored_with_that_task_only()
+    {
+        $this->artisan('eval:report', ['--seed' => 7])->assertSuccessful();
+
+        $summary = File::get("{$this->results}/summary.md");
+
+        $this->assertStringContainsString('| i1 | no | pipeline | yes: review objected (check it names this defect) |', $summary);
+        $this->assertStringContainsString('| i1 | no | plain and structured (same evidence) | not planted: no place for it in this change | |', $summary);
+        $this->assertStringNotContainsString('| i2 |', $summary);
     }
 
     public function test_owner_bundles_are_shuffled_anonymised_and_keyed_separately()

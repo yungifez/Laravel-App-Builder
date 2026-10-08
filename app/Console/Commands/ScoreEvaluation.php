@@ -15,7 +15,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('eval:score {task : The task key from the suite manifest} {--arm=* : Only these arms (pipeline, plain)}')]
+#[Signature('eval:score {task : The task key from the suite manifest} {--arm=* : Only these arms (pipeline, plain)} {--sabotage=* : Only these sabotage keys, without rescoring the change as made}')]
 #[Description('Score an evaluation task: hidden tests on each arm\'s change, then each sabotage through each arm\'s own verification and report')]
 class ScoreEvaluation extends Command
 {
@@ -40,11 +40,19 @@ class ScoreEvaluation extends Command
                 continue;
             }
 
-            $this->info("Scoring [{$arm}] on [{$task}].");
-            $this->natural($suite, $results, $reports, $task, $arm, $patch);
+            /** @var list<string> $only */
+            $only = $this->option('sabotage');
 
-            foreach ($suite->sabotage() as $sabotage) {
-                $this->sabotage($harness, $suite, $results, $reports, $task, $arm, $patch, $sabotage);
+            $this->info("Scoring [{$arm}] on [{$task}].");
+
+            if ($only === []) {
+                $this->natural($suite, $results, $reports, $task, $arm, $patch);
+            }
+
+            foreach ($suite->sabotageFor($task) as $sabotage) {
+                if ($only === [] || in_array($sabotage['key'], $only, true)) {
+                    $this->sabotage($harness, $suite, $results, $reports, $task, $arm, $patch, $sabotage);
+                }
             }
         }
 
@@ -85,15 +93,23 @@ class ScoreEvaluation extends Command
      * Outcome 2: a defect added after the arm finished, put through the arm's
      * own verification and report.
      *
-     * @param  array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string}  $sabotage
+     * @param  array{key: string, patch?: string, patches?: array<string, string>, area: string, covered_by_tests: bool, description: string, honest_report: string}  $sabotage
      */
     protected function sabotage(PipelineHarness $harness, Suite $suite, Results $results, ReportWriter $reports, string $task, string $arm, string $patch, array $sabotage): void
     {
-        $workbench = Workbench::create("sabotage-{$task}-{$arm}-".substr(md5($sabotage['key']), 0, 8));
         $path = "{$task}/{$arm}/sabotage/{$sabotage['key']}";
+        $sabotagePatch = $suite->sabotagePatchFor($sabotage, $arm);
+
+        if ($sabotagePatch === null) {
+            $results->put("{$path}.json", ['applicable' => false, 'reason' => 'no place for it in this change']);
+
+            return;
+        }
+
+        $workbench = Workbench::create("sabotage-{$task}-{$arm}-".substr(md5($sabotage['key']), 0, 8));
 
         try {
-            if (($patch !== '' && ! $workbench->apply($patch)->successful()) || ! $workbench->apply($suite->sabotagePatch($sabotage['patch']), 'sabotage')->successful()) {
+            if (($patch !== '' && ! $workbench->apply($patch)->successful()) || ! $workbench->apply($sabotagePatch, 'sabotage')->successful()) {
                 $results->put("{$path}.json", ['applicable' => false]);
 
                 return;

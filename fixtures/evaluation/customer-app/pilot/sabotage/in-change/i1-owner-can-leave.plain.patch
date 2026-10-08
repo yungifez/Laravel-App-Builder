@@ -1,0 +1,25 @@
+diff --git a/app/Actions/Teams/LeaveTeam.php b/app/Actions/Teams/LeaveTeam.php
+index 634287c..1d9fc87 100644
+--- a/app/Actions/Teams/LeaveTeam.php
++++ b/app/Actions/Teams/LeaveTeam.php
+@@ -2,7 +2,6 @@
+ 
+ namespace App\Actions\Teams;
+ 
+-use App\Enums\TeamRole;
+ use App\Models\Team;
+ use App\Models\User;
+ use Illuminate\Validation\ValidationException;
+@@ -20,12 +19,6 @@ class LeaveTeam
+      */
+     public function handle(User $user, Team $team): void
+     {
+-        if ($user->teamRole($team) === TeamRole::Owner) {
+-            throw ValidationException::withMessages([
+-                'team' => __('You own this team, so you cannot leave it.'),
+-            ]);
+-        }
+-
+         $this->removeTeamMember->handle($team, $user);
+     }
+ }
