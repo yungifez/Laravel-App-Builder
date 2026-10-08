@@ -252,42 +252,71 @@ class WriteTestsFirst
     }
 
     /**
-     * Have the writer correct one written test that held the change back
-     * the same way twice while all else passed (StuckWrittenTests), or that
-     * the coder said is wrong ("by" coder). It sees the plan's item, what
-     * the test said or the coder said, and what the app now offers: its
-     * addresses, tables and columns. The same rules apply. Only that test
-     * may change: its name and the file's other tests stay. Null when no
-     * answer kept the rules; the test then stays as written.
+     * Have the writer correct, in one request, the written tests of one
+     * file that held the change back the same way twice while all else
+     * passed (StuckWrittenTests), or that the coder said are wrong ("by"
+     * coder). It sees each test's item, what the test or the coder said,
+     * and what the app now offers: its addresses, tables and columns. The
+     * same rules apply. Only those tests may change: their names and the
+     * file's other tests stay. A test the file does not hold is left out.
+     * The plan is null when no answer kept the rules; the tests then stay
+     * as written.
      *
-     * @param  array{item: int, file: string, name: string, message: string, by?: string}  $test
+     * @param  non-empty-list<array{item: int, file: string, name: string, message: string, by?: string}>  $tests  Tests of one file
+     * @return array{plan: ?Plan, tests: list<array{item: int, file: string, name: string, message: string, by?: string}>} The tests asked for
      *
      * @throws ProvidersUnavailable
      * @throws RunCancelled
      */
-    public function rewrite(Run $run, Plan $plan, Workspace $workspace, array $test): ?Plan
+    public function rewrite(Run $run, Plan $plan, Workspace $workspace, array $tests): array
     {
-        $item = $plan->verifyItems()[$test['item'] - 1] ?? null;
-        $contents = $plan->writtenFiles[$test['file']] ?? null;
+        $file = $tests[0]['file'];
+        $contents = $plan->writtenFiles[$file] ?? null;
 
-        if ($item === null || $contents === null) {
-            return null;
+        if ($contents === null) {
+            return ['plan' => null, 'tests' => []];
         }
 
-        $key = WrittenTests::name($test['name']);
-        $others = array_values(array_filter($plan->writtenTests, fn (array $written) => $written['file'] === $test['file'] && WrittenTests::name($written['name']) !== $key));
+        // Only tests the file holds, each once; a name it does not hold is
+        // left out and the others are still corrected.
+        $items = $plan->verifyItems();
+        $asked = [];
+
+        foreach ($tests as $test) {
+            $key = WrittenTests::name($test['name']);
+
+            if ($test['file'] === $file && isset($items[$test['item'] - 1]) && WrittenTests::body($contents, $key) !== '' && ! isset($asked[$key])) {
+                $asked[$key] = $test;
+            }
+        }
+
+        $asked = array_values($asked);
+
+        if ($asked === []) {
+            return ['plan' => null, 'tests' => []];
+        }
+
+        $keys = array_map(fn (array $test) => WrittenTests::name($test['name']), $asked);
+        $others = array_values(array_filter($plan->writtenTests, fn (array $written) => $written['file'] === $file && ! in_array(WrittenTests::name($written['name']), $keys, true)));
         $routes = $this->gatherPlanningContext->routes($workspace);
         $tables = $this->tables($workspace);
         $files = array_column(PatchSummary::files($run->featureRequest->patch), 'path');
-        $byCoder = ($test['by'] ?? null) === 'coder';
+        $byCoder = ($asked[0]['by'] ?? null) === 'coder';
+
+        $listed = array_map(function (int $index, array $test) use ($items) {
+            $said = (($test['by'] ?? null) === 'coder' ? 'The coder said' : 'It said when it failed').":\n\n```\n".Secrets::redact(Str::limit($test['message'], 2000))."\n```";
+
+            return ($index + 1).". \"{$test['name']}\" checks this item: {$items[$test['item'] - 1]['text']}\n\n{$said}";
+        }, array_keys($asked), $asked);
 
         $prompt = implode("\n\n", array_filter([
             "## The change\n\n{$plan->summary}",
-            $byCoder
-                ? "## The test to correct\n\nThe test \"{$test['name']}\" in {$test['file']} was written before the change was built, to check this item: {$item['text']}\n\nThe coder who built the change says it is wrong: it expects what the app does not have and the plan never asked for, such as a table, a column, a name or an address. Check what it says against the app below. Rewrite only this test, so it checks the same item through the app's real tables, columns, names and addresses. Keep its name, and keep every other test in the file exactly as it is. Return the whole file, with this test for item 1."
-                : "## The test to correct\n\nThe test \"{$test['name']}\" in {$test['file']} was written before the change was built, to check this item: {$item['text']}\n\nThe change was built and tried again. Each time, every other test and check passed, but this test failed the same way. It may expect what the plan never asked for, such as an address or a name the app does not have. Rewrite only this test, so it checks the same item through what the app now offers. Keep its name, and keep every other test in the file exactly as it is. Return the whole file, with this test for item 1.",
-            ($byCoder ? "## What the coder said\n\n```\n" : "## What it said when it failed\n\n```\n").Secrets::redact(Str::limit($test['message'], 2000))."\n```",
-            "## {$test['file']} as written\n\n```php\n{$contents}\n```",
+            "## The tests to correct\n\nThese tests in {$file} were written before the change was built.\n\n".implode("\n\n", $listed),
+            "## What to do\n\n".($byCoder
+                ? 'The coder who built the change says each test above is wrong: it expects what the app does not have and the plan never asked for, such as a table, a column, a name or an address. Check what the coder said against the app below. Rewrite only these tests, so each checks the same item through the app\'s real tables, columns, names and addresses.'
+                : 'The change was built and tried again. Each time, every other test and check passed, but each test above failed the same way. It may expect what the plan never asked for, such as an address or a name the app does not have. Rewrite only these tests, so each checks the same item through what the app now offers.')
+                .' Keep their names, and keep every other test in the file exactly as it is. Return the whole file, with test 1 for item 1, test 2 for item 2, and so on.',
+            "## {$file} as written\n\n```php\n{$contents}\n```",
             $routes === [] ? null : "## Addresses in the app now\n\n- ".implode("\n- ", $routes),
             $tables === [] ? null : "## Tables in the app now, with their columns\n\n- ".implode("\n- ", $tables),
             $files === [] ? null : "## Files the change added or changed\n\n- ".implode("\n- ", $files),
@@ -315,11 +344,12 @@ class WriteTestsFirst
                     throw new ConstructionFailed(__('Return the file and the test as structured output.'));
                 }
 
-                $written = WrittenTests::check($response->structured, [$item['kind']], fn () => false);
-                $corrected = $written['files'][$test['file']] ?? null;
+                $written = WrittenTests::check($response->structured, array_map(fn (array $test) => $items[$test['item'] - 1]['kind'], $asked), fn () => false);
+                $corrected = $written['files'][$file] ?? null;
+                $returned = collect($written['tests'])->keyBy('item');
                 $problems = array_filter([
-                    $corrected === null || count($written['files']) !== 1 ? (string) __('Return only :file.', ['file' => $test['file']]) : null,
-                    WrittenTests::name($written['tests'][0]['name']) !== $key || $written['tests'][0]['file'] !== $test['file'] ? (string) __('Keep the test\'s name: ":name".', ['name' => $test['name']]) : null,
+                    $corrected === null || count($written['files']) !== 1 ? (string) __('Return only :file.', ['file' => $file]) : null,
+                    ...array_map(fn (int $index, array $test) => WrittenTests::name($returned[$index + 1]['name'] ?? '') !== $keys[$index] || ($returned[$index + 1]['file'] ?? null) !== $file ? (string) __('Keep the test\'s name: ":name".', ['name' => $test['name']]) : null, array_keys($asked), $asked),
                     $corrected !== null && array_filter($others, fn (array $other) => WrittenTests::body($corrected, WrittenTests::name($other['name'])) !== WrittenTests::body($contents, WrittenTests::name($other['name']))) !== [] ? (string) __('Keep every other test in the file exactly as it is.') : null,
                 ]);
 
@@ -327,13 +357,13 @@ class WriteTestsFirst
                     throw new ConstructionFailed(implode("\n", $problems));
                 }
 
-                return $plan->withWrittenTests([...$plan->writtenFiles, $test['file'] => $corrected], $plan->writtenTests);
+                return ['plan' => $plan->withWrittenTests([...$plan->writtenFiles, $file => $corrected], $plan->writtenTests), 'tests' => $asked];
             } catch (ConstructionFailed $exception) {
                 if ($attempt >= $attempts) {
-                    return null;
+                    return ['plan' => null, 'tests' => $asked];
                 }
 
-                $prompt .= "\n\n## Your previous answer was refused\n\n{$exception->getMessage()}\nReturn the file and the test again, with this fixed.";
+                $prompt .= "\n\n## Your previous answer was refused\n\n{$exception->getMessage()}\nReturn the file and the tests again, with this fixed.";
             }
         }
     }

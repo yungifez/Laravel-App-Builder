@@ -1652,8 +1652,8 @@ class AgentDriverTest extends TestCase
         $this->assertStringContainsString("\$this->get('/teams/1')", $run->plan['written_files']['tests/Feature/TeamDescriptionTest.php']);
         $this->assertStringContainsString("+test('a team keeps its description', fn () => \$this->get('/teams/1')->assertSee('About'));", (string) $run->featureRequest->patch);
         $this->assertCount(2, $prompts);
-        $this->assertStringContainsString("## What it said when it failed\n\n```\nExpected response status code [200] but received 404.\n```", $prompts[1]);
-        $this->assertStringContainsString('to check this item: Teams have a nullable description. (base case:', $prompts[1]);
+        $this->assertStringContainsString("It said when it failed:\n\n```\nExpected response status code [200] but received 404.\n```", $prompts[1]);
+        $this->assertStringContainsString('checks this item: Teams have a nullable description. (base case:', $prompts[1]);
         $this->assertStringContainsString('- app/Models/Team.php', $prompts[1]);
         // It goes through RedactSecrets like any TestWriter call, and carries nothing of ours into the app's test.
         $this->assertDoesNotMatchRegularExpression('/\b(builder|platform|control plane|inspector|planner|reviewer|anthropic|openai)\b/i', $prompts[1]);
@@ -1728,7 +1728,7 @@ class AgentDriverTest extends TestCase
         $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, WriteBrief::TEST_WRONG));
         $this->assertSame(['file' => 'tests/Feature/TeamDescriptionTest.php', 'test' => 'a team keeps its description', 'reason' => 'it asks for /teams/1/description, but a team shows at /teams/1.', 'by' => 'coder'], $run->events()->where('type', 'written_test_rewritten')->sole()->data);
         $this->assertCount(2, $prompts);
-        $this->assertStringContainsString("## What the coder said\n\n```\nit asks for /teams/1/description, but a team shows at /teams/1.\n```", $prompts[1]);
+        $this->assertStringContainsString("The coder said:\n\n```\nit asks for /teams/1/description, but a team shows at /teams/1.\n```", $prompts[1]);
         $this->assertStringContainsString("\$this->get('/teams/1')", $run->plan['written_files']['tests/Feature/TeamDescriptionTest.php']);
         $this->assertStringContainsString("+test('a team keeps its description', fn () => \$this->get('/teams/1')->assertSee('About'));", (string) $run->featureRequest->patch);
 
@@ -1739,6 +1739,35 @@ class AgentDriverTest extends TestCase
             ['kind' => 'gap', 'text' => 'A test written before the work began was corrected: "a team keeps its description". The coder said it expected names the app does not have. Try this part yourself to be sure.'],
             app(DescribeProof::class)->handle($run->featureRequest),
         );
+    }
+
+    public function test_every_wrong_test_of_one_file_is_corrected_in_one_request()
+    {
+        $prompts = $this->twoWrittenTests(['tests/Feature/TeamDescriptionTest.php', 'tests/Feature/TeamDescriptionTest.php']);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertCount(2, $prompts, 'One request writes the tests and one corrects both.');
+        $this->assertMatchesRegularExpression('/1\. "a team keeps its description" checks this item: [^\n]*A team saved with a description keeps it\.[^\n]*\n\nThe coder said:\n\n```\nthe relation is members\(\), not users\(\)\.\n```/', $prompts[1]);
+        $this->assertMatchesRegularExpression('/2\. "a team keeps an empty description" checks this item: [^\n]*A team saved without a description has none\.[^\n]*\n\nThe coder said:/', $prompts[1]);
+        $this->assertStringNotContainsString('users()', $run->plan['written_files']['tests/Feature/TeamDescriptionTest.php']);
+        $this->assertSame(['a team keeps its description', 'a team keeps an empty description'], $run->events()->where('type', 'written_test_rewritten')->orderBy('sequence')->get()->pluck('data.test')->all());
+    }
+
+    public function test_wrong_tests_in_two_files_are_corrected_in_a_request_each()
+    {
+        $prompts = $this->twoWrittenTests(['tests/Feature/TeamDescriptionTest.php', 'tests/Feature/EmptyDescriptionTest.php']);
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertCount(3, $prompts);
+        $this->assertStringContainsString('These tests in tests/Feature/TeamDescriptionTest.php were', $prompts[1]);
+        $this->assertStringNotContainsString('a team keeps an empty description', $prompts[1]);
+        $this->assertStringContainsString('These tests in tests/Feature/EmptyDescriptionTest.php were', $prompts[2]);
+        $this->assertStringNotContainsString('users()', $run->plan['written_files']['tests/Feature/TeamDescriptionTest.php'].$run->plan['written_files']['tests/Feature/EmptyDescriptionTest.php']);
+        $this->assertSame(2, $run->events()->where('type', 'written_test_rewritten')->count());
     }
 
     public function test_a_wrong_written_test_that_cannot_be_corrected_stays_as_written_and_is_tried_once()
@@ -1752,7 +1781,7 @@ class AgentDriverTest extends TestCase
             $asked++;
 
             // Each correction comes back without the test.
-            return str_contains($prompt, '## The test to correct')
+            return str_contains($prompt, '## The tests to correct')
                 ? ['files' => [['path' => $file, 'contents' => "<?php\n"]], 'tests' => [['item' => 1, 'file' => $file, 'name' => 'a team keeps its description']]]
                 : ['files' => [['path' => $file, 'contents' => $written]], 'tests' => [['item' => 1, 'file' => $file, 'name' => 'a team keeps its description']]];
         });
@@ -1813,6 +1842,45 @@ class AgentDriverTest extends TestCase
     }
 
     /**
+     * Have the writer put the plan's two tests in the given files, each
+     * calling a relation the app does not have, and the coder say both
+     * are wrong. A correction fixes every test it is asked for.
+     *
+     * @param  array{0: string, 1: string}  $files  The file of each test
+     * @return ArrayObject<int, string>
+     */
+    protected function twoWrittenTests(array $files): ArrayObject
+    {
+        config(['builder.verification.written_first.enabled' => true, 'builder.verification.written_first.beside' => false]);
+        FeaturePlanner::fake([[...$this->plan(), 'cases' => [['base' => 'A team saved with a description keeps it.', 'alternate' => 'A team saved without a description has none.', 'no_alternate' => null, 'exception' => null, 'no_exception' => 'Nothing about a description is refused.']]]]);
+        $names = ['a team keeps its description', 'a team keeps an empty description'];
+        $prompts = new ArrayObject;
+        TestWriter::fake(function (string $prompt) use ($prompts, $files, $names) {
+            $prompts[] = $prompt;
+            $relation = str_contains($prompt, '## The tests to correct') ? 'members' : 'users';
+            $contents = [];
+
+            foreach ($files as $index => $file) {
+                if (! str_contains($prompt, '## The tests to correct') || str_contains($prompt, "These tests in {$file} were")) {
+                    $contents[$file] = ($contents[$file] ?? "<?php\n\n")."test('{$names[$index]}', fn () => expect(\\App\\Models\\Team::first()->{$relation}())->not->toBeNull());\n";
+                }
+            }
+
+            $tests = array_values(array_filter(array_map(fn (int $index) => isset($contents[$files[$index]]) ? ['item' => $index + 1, 'file' => $files[$index], 'name' => $names[$index]] : null, [0, 1])));
+
+            return [
+                'files' => array_map(fn (string $file) => ['path' => $file, 'contents' => $contents[$file]], array_keys($contents)),
+                // A correction numbers the tests it was asked for from 1.
+                'tests' => $relation === 'members' ? array_map(fn (int $index, array $test) => [...$test, 'item' => $index + 1], array_keys($tests), $tests) : $tests,
+            ];
+        });
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION], "Added a description.\n\nTEST WRONG {$files[0]} :: {$names[0]}: the relation is members(), not users().\nTEST WRONG {$files[1]} :: {$names[1]}: the relation is members(), not users()."));
+        ChangeReviewer::fake([['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'verify' => []]]);
+
+        return $prompts;
+    }
+
+    /**
      * Have the tests written first hold one test that asks for an address
      * the plan never makes, and its correction. Returns the writer's
      * prompts, in order.
@@ -1828,7 +1896,7 @@ class AgentDriverTest extends TestCase
         $prompts = new ArrayObject;
         TestWriter::fake(function (string $prompt) use ($prompts, $file, $name, $address, $corrected) {
             $prompts[] = $prompt;
-            $contents = "<?php\n\n".(str_contains($prompt, '## The test to correct') ? $corrected : "test('{$name}', fn () => \$this->get('{$address}')->assertOk());\n");
+            $contents = "<?php\n\n".(str_contains($prompt, '## The tests to correct') ? $corrected : "test('{$name}', fn () => \$this->get('{$address}')->assertOk());\n");
 
             return ['files' => [['path' => $file, 'contents' => $contents]], 'tests' => [['item' => 1, 'file' => $file, 'name' => $name]]];
         });

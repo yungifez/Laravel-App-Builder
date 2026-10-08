@@ -77,14 +77,36 @@ class WrongWrittenTestTest extends TestCase
             'tests' => [['item' => 1, 'file' => self::FILE, 'name' => self::NAME]],
         ]]);
 
-        $plan = app(WriteTestsFirst::class)->rewrite($run, $this->plan(), $run->workspace, [
+        ['plan' => $plan] = app(WriteTestsFirst::class)->rewrite($run, $this->plan(), $run->workspace, [[
             'item' => 1, 'file' => self::FILE, 'name' => self::NAME, 'message' => 'it expects a team_members table, but members are in team_user.', 'by' => 'coder',
-        ]);
+        ]]);
 
         $this->assertSame($corrected, $plan?->writtenFiles[self::FILE]);
-        TestWriter::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The coder who built the change says it is wrong')
-            && str_contains($prompt->prompt, "## What the coder said\n\n```\nit expects a team_members table")
+        TestWriter::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'The coder who built the change says each test above is wrong')
+            && str_contains($prompt->prompt, '1. "'.self::NAME.'" checks this item: ')
+            && str_contains($prompt->prompt, "The coder said:\n\n```\nit expects a team_members table")
             && str_contains($prompt->prompt, "## Tables in the app now, with their columns\n\n- teams: slug\n- team_user: team_id, user_id, role"));
+    }
+
+    public function test_a_reported_test_the_file_does_not_hold_is_left_out_and_the_others_are_still_corrected(): void
+    {
+        [$run] = $this->implementingRun($this->makeProjectSource());
+        $corrected = "<?php\n\ntest('".self::NAME."', fn () => expect(true)->toBeTrue());\n";
+        TestWriter::fake([[
+            'files' => [['path' => self::FILE, 'contents' => $corrected]],
+            'tests' => [['item' => 1, 'file' => self::FILE, 'name' => self::NAME]],
+        ]]);
+        $plan = $this->plan();
+        $plan = $plan->withWrittenTests($plan->writtenFiles, [...$plan->writtenTests, ['item' => 1, 'file' => self::FILE, 'name' => 'a member who leaves loses access']]);
+
+        ['plan' => $rewritten, 'tests' => $asked] = app(WriteTestsFirst::class)->rewrite($run, $plan, $run->workspace, [
+            ['item' => 1, 'file' => self::FILE, 'name' => 'a member who leaves loses access', 'message' => 'no such page.', 'by' => 'coder'],
+            ['item' => 1, 'file' => self::FILE, 'name' => self::NAME, 'message' => 'members are in team_user.', 'by' => 'coder'],
+        ]);
+
+        $this->assertSame([self::NAME], array_column($asked, 'name'));
+        $this->assertSame($corrected, $rewritten?->writtenFiles[self::FILE]);
+        TestWriter::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, '1. "'.self::NAME.'"') && ! str_contains($prompt->prompt, 'loses access'));
     }
 
     public function test_a_change_that_renames_or_drops_working_schema_or_edits_a_migration_that_ran_is_found(): void

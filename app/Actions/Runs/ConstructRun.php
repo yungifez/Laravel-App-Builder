@@ -465,7 +465,8 @@ class ConstructRun
 
     /**
      * Have each written test that held the change back the same way twice
-     * corrected once before the next try (§12), and tell the coder. The
+     * corrected once before the next try (§12), one request per file, and
+     * tell the coder. The
      * owner sees each correction in the proof; it is never silent.
      */
     protected function correctWrittenTests(Run $run, RunLease $lease, Workspace $workspace, Plan $plan): Plan
@@ -473,22 +474,18 @@ class ConstructRun
         /** @var list<string> $details */
         $details = [];
 
-        foreach ($run->feedback['tests'] ?? [] as $test) {
-            if ($run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->where('data->file', $test['file'])->where('data->test', $test['name'])->exists()) {
-                continue;
+        foreach ($this->untried($run, $run->feedback['tests'] ?? []) as $tests) {
+            ['plan' => $corrected, 'tests' => $asked] = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $tests);
+
+            foreach ($asked as $test) {
+                $this->recordEvent($run, $lease, $corrected === null ? 'written_test_not_rewritten' : 'written_test_rewritten', ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message']]);
+
+                if ($corrected !== null) {
+                    $details[] = (string) __('The test ":name" in :file, written before you started, was wrong and has been corrected. Its new version is under "Tests already written": build the change so it passes. The problems below are from before it was corrected.', ['name' => $test['name'], 'file' => $test['file']]);
+                }
             }
 
-            $corrected = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $test);
-
-            if ($corrected === null) {
-                $this->recordEvent($run, $lease, 'written_test_not_rewritten', ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message']]);
-
-                continue;
-            }
-
-            $plan = $corrected;
-            $details[] = (string) __('The test ":name" in :file, written before you started, was wrong and has been corrected. Its new version is under "Tests already written": build the change so it passes. The problems below are from before it was corrected.', ['name' => $test['name'], 'file' => $test['file']]);
-            $this->recordEvent($run, $lease, 'written_test_rewritten', ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message']]);
+            $plan = $corrected ?? $plan;
         }
 
         $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
@@ -502,7 +499,9 @@ class ConstructRun
     /**
      * Have each written test the coder says is wrong (WriteBrief::TEST_WRONG)
      * corrected at once against the app's real tables and names, once per
-     * test in a run. A test that cannot be corrected stays as written, and
+     * test in a run and in one request per file, so a correction never
+     * keeps another reported test's wrong name. A test that cannot be
+     * corrected stays as written, and
      * the checks decide as before. The owner sees each correction.
      *
      * @param  list<array{item: int, file: string, name: string, message: string, by: string}>  $reported
@@ -512,37 +511,60 @@ class ConstructRun
     {
         $rewritten = [];
 
-        foreach ($reported as $test) {
-            if ($run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->where('data->file', $test['file'])->where('data->test', $test['name'])->exists()) {
-                continue;
-            }
-
-            $event = ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message'], 'by' => 'coder'];
-            $corrected = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $test);
+        foreach ($this->untried($run, $reported) as $tests) {
+            ['plan' => $corrected, 'tests' => $asked] = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $tests);
+            $events = array_map(fn (array $test) => ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message'], 'by' => 'coder'], $asked);
 
             if ($corrected === null) {
-                $this->recordEvent($run, $lease, 'written_test_not_rewritten', $event);
+                foreach ($events as $event) {
+                    $this->recordEvent($run, $lease, 'written_test_not_rewritten', $event);
+                }
 
                 continue;
             }
 
             $plan = $corrected;
-            $rewritten[] = "{$test['file']}|{$test['name']}";
+            array_push($rewritten, ...array_map(fn (array $test) => "{$test['file']}|{$test['name']}", $asked));
 
-            DB::transaction(function () use ($run, $lease, $plan, $event) {
+            DB::transaction(function () use ($run, $lease, $plan, $events) {
                 $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
 
                 $lease->assertHeldOn($locked);
 
                 $locked->plan = $plan->toArray();
                 $locked->save();
-                $locked->recordEvent('written_test_rewritten', $event);
+
+                foreach ($events as $event) {
+                    $locked->recordEvent('written_test_rewritten', $event);
+                }
 
                 $run->setRawAttributes($locked->getAttributes(), sync: true);
             });
         }
 
         return [$plan, $rewritten];
+    }
+
+    /**
+     * Get the tests not yet sent for correction in this run, grouped by
+     * file, so each file is corrected in one request.
+     *
+     * @template T of array{file: string, name: string}
+     *
+     * @param  list<T>  $tests
+     * @return list<non-empty-list<T>>
+     */
+    protected function untried(Run $run, array $tests): array
+    {
+        $groups = [];
+
+        foreach ($tests as $test) {
+            if (! $run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->where('data->file', $test['file'])->where('data->test', $test['name'])->exists()) {
+                $groups[$test['file']][] = $test;
+            }
+        }
+
+        return array_values($groups);
     }
 
     /**
