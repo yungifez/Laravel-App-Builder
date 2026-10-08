@@ -27,6 +27,7 @@ class AuthenticateModelGateway
         $grant = $token === '' ? null : $this->gateway->grant($token);
 
         abort_if($grant === null || $grant['provider'] !== $request->route('provider'), 401);
+        abort_unless($this->gateway->allowsRequest((string) $request->route('provider'), $request->method(), (string) $request->route('path')), 403);
 
         $request->attributes->set('gateway_token', $token);
 

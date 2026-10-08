@@ -29,7 +29,7 @@ class GatewayInstructions
             $system = $call->system ?? [];
             $blocks = is_string($system) ? ($system === '' ? [] : [(object) ['type' => 'text', 'text' => $system]]) : (array) $system;
             $call->system = [...$blocks, (object) ['type' => 'text', 'text' => $instructions]];
-        } elseif ($provider === 'openai' && preg_match('#(^|/)responses$#', $path) === 1) {
+        } elseif ($provider === 'openai' && preg_match('#(^|/)responses(/compact)?$#', $path) === 1) {
             $own = is_string($call->instructions ?? null) ? $call->instructions : '';
             $call->instructions = ltrim("{$own}\n\n{$instructions}");
         } elseif ($provider === 'openai' && preg_match('#(^|/)chat/completions$#', $path) === 1 && is_array($call->messages ?? null)) {

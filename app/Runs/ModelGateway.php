@@ -48,6 +48,18 @@ class ModelGateway
     }
 
     /**
+     * Run tokens open only the model calls the coding SDKs need.
+     */
+    public function allowsRequest(string $provider, string $method, string $path): bool
+    {
+        return $method === 'POST' && in_array($path, match ($provider) {
+            'anthropic' => ['v1/messages', 'v1/messages/count_tokens'],
+            'openai' => ['v1/responses', 'v1/responses/compact', 'v1/chat/completions'],
+            default => [],
+        }, true);
+    }
+
+    /**
      * Get the variable that holds the provider's key for its SDK.
      */
     public function keyVariable(string $provider): ?string

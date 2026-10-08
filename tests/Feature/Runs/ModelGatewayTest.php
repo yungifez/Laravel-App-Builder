@@ -86,6 +86,60 @@ class ModelGatewayTest extends TestCase
         $this->assertNull($gateway->grant($opened['token']));
     }
 
+    public function test_run_tokens_cannot_use_other_provider_endpoints_or_methods()
+    {
+        Http::fake();
+        $gateway = app(ModelGateway::class);
+
+        foreach (['anthropic', 'openai'] as $provider) {
+            $opened = $gateway->open($provider, 600);
+            $headers = $provider === 'anthropic' ? ['x-api-key' => $opened['token']] : ['Authorization' => "Bearer {$opened['token']}"];
+
+            foreach ([['GET', 'v1/files'], ['DELETE', 'v1/files/another-run'], ['POST', 'v1/files'], ['POST', 'v1/messages/batches'], ['POST', 'v1/responses/another-run/cancel'], ['POST', 'v1/../files']] as [$method, $path]) {
+                $this->json($method, "/api/gateway/{$provider}/{$path}", [], $headers)->assertForbidden();
+            }
+
+            $path = $provider === 'anthropic' ? 'v1/messages' : 'v1/responses';
+            $this->json('GET', "/api/gateway/{$provider}/{$path}", [], $headers)->assertForbidden();
+            $this->assertSame(0, $gateway->grant($opened['token'])['requests']);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_the_anthropic_token_count_endpoint_remains_available()
+    {
+        Http::fake(['api.anthropic.com/*' => Http::response(['input_tokens' => 12])]);
+        $opened = app(ModelGateway::class)->open('anthropic', 600, 'Our coding rules.');
+
+        $this->postJson('/api/gateway/anthropic/v1/messages/count_tokens', ['model' => 'claude', 'messages' => []], ['x-api-key' => $opened['token']])->assertOk()->streamedContent();
+
+        Http::assertSent(fn (Request $request) => $request->method() === 'POST'
+            && $request->url() === 'https://api.anthropic.com/v1/messages/count_tokens'
+            && $request->header('x-api-key') === ['real-anthropic-key']
+            && str_contains($request->body(), 'Our coding rules.'));
+    }
+
+    public function test_openai_compaction_keeps_the_working_rules_and_usage_limits()
+    {
+        Http::fake(['api.openai.com/*' => Http::response(['object' => 'response.compaction', 'output' => [], 'usage' => ['input_tokens' => 12, 'output_tokens' => 3]])]);
+        $gateway = app(ModelGateway::class);
+        $opened = $gateway->open('openai', 600, 'Our coding rules.');
+
+        $this->withToken($opened['token'])->postJson('/api/gateway/openai/v1/responses/compact', ['model' => 'gpt', 'instructions' => 'Keep the context.', 'input' => []])
+            ->assertOk()->streamedContent();
+
+        Http::assertSent(fn (Request $request) => $request->method() === 'POST'
+            && $request->url() === 'https://api.openai.com/v1/responses/compact'
+            && $request->header('Authorization') === ['Bearer real-openai-key']
+            && $request['instructions'] === "Keep the context.\n\nOur coding rules.");
+        $grant = $gateway->grant($opened['token']);
+        $this->assertSame([1, 12, 3], [$grant['requests'], $grant['input_tokens'], $grant['output_tokens']]);
+
+        $this->withToken($opened['token'])->getJson('/api/gateway/openai/v1/responses/compact')->assertForbidden();
+        Http::assertSentCount(1);
+    }
+
     public function test_input_is_read_from_either_providers_answer_with_what_came_from_the_prompt_cache()
     {
         $anthropic = new ModelUsage;
