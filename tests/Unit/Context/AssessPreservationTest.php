@@ -105,7 +105,34 @@ class AssessPreservationTest extends TestCase
      */
     protected function suite(string $outcome, string $output = ''): array
     {
-        return [['name' => 'Tests', 'stage' => 'checks', 'outcome' => $outcome, 'output' => $output]];
+        // Every area's tests ran, and each passed unless the output says it
+        // failed.
+        $tests = array_map(fn (string $file) => [
+            'file' => "/workspace/{$file}",
+            'name' => 'it works',
+            'outcome' => in_array($file, TestResults::failingFiles($output), true) ? 'failed' : 'passed',
+        ], ['tests/Feature/Teams/UpdateTeamTest.php', 'tests/Feature/Teams/SwitchCurrentTeamTest.php']);
+
+        return [['name' => 'Tests', 'stage' => 'checks', 'outcome' => $outcome, 'output' => $output, 'tests' => $tests]];
+    }
+
+    public function test_failing_tests_are_read_from_the_output_when_there_is_no_report()
+    {
+        $output = "   FAILED  Tests\\Feature\\Teams\\SwitchCurrentTeamTest > users cannot switch t…\n";
+        $results = [['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'failed', 'output' => $output]];
+
+        $preserved = $this->assess(new ChangeClassification, $results, $this->approved());
+
+        $this->assertSame(['not_edited', 'tests_failed', 'not_edited'], array_column($preserved, 'evidence'));
+    }
+
+    public function test_without_a_report_passing_tests_are_not_claimed()
+    {
+        $results = [['name' => 'Tests', 'stage' => 'checks', 'outcome' => 'passed', 'output' => '']];
+
+        $preserved = $this->assess(new ChangeClassification(requested: ['teams' => ['app/Http/Requests/Settings/TeamUpdateRequest.php']]), $results, $this->approved());
+
+        $this->assertSame(['not_checked', 'not_edited', 'not_edited'], array_column($preserved, 'evidence'));
     }
 
     protected function approved(): Review

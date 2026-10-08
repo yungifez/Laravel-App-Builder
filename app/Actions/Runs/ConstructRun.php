@@ -766,7 +766,7 @@ class ConstructRun
 
         $stored = ['review' => [
             ...$this->storedReview($review, $classification),
-            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? []),
+            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? [], $review),
             'verified' => $verified,
             'coverage' => $this->assessCoverage->handle($plan, $classification, $projectContext, $verified, $verification->results ?? []),
         ]];

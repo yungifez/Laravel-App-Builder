@@ -5,9 +5,9 @@ namespace App\Models;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
 use App\Models\Concerns\HasPublicId;
-use App\Scaffolding\Scaffold;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\RunLease;
+use App\Scaffolding\Scaffold;
 use Carbon\CarbonImmutable;
 use Database\Factories\RunFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,8 +15,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * One attempt to build a feature request's change in a workspace.
@@ -42,7 +42,7 @@ use Illuminate\Support\Facades\DB;
  * @property array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}>, problems: list<string>}|null $context The project context compiled for the run's agents
  * @property int $repairs Repair attempts made after failed verification or review
  * @property array{reason: string, details: list<string>, gate?: list<array{key: string|null, kind: string, identity: string, text: string}>, tests?: list<array{item: int, file: string, name: string, message: string}>}|null $feedback What the next implementing pass must address; "gate" holds what the gate found, keyed so the agent can ask the owner to keep one; "tests" the written tests to correct first
- * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, evidence: 'tested'|'in_change'|'not_in_change', behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation: list<string>, by_line: list<string>}|null, notes_behind: list<string>}, preserved: list<array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int}>, verified: list<array{criterion: string, kind: string, case: string, test_file: string|null, test_name: string|null, evidence: string, named_in_diff: bool}>, coverage: list<array{area: string, tests_passed: int, cases: array{base: string, alternate: string, exception: string}}>}|null $review The latest review of the run's change
+ * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, evidence: 'tested'|'in_change'|'not_in_change', behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation: list<string>, by_line: list<string>}|null, notes_behind: list<string>}, preserved: list<array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int, review_objected: bool}>, verified: list<array{criterion: string, kind: string, case: string, test_file: string|null, test_name: string|null, evidence: string, named_in_diff: bool}>, coverage: list<array{area: string, tests_passed: int, cases: array{base: string, alternate: string, exception: string}}>}|null $review The latest review of the run's change
  * @property array{image: string|null, image_digest: string|null, tools: array{php: string|null, composer: string|null, node: string|null, npm: string|null, postgres: string|null}, lockfiles: array<string, string>}|null $environment What the run's workspace built with: its box image, tool versions and lockfile hashes
  * @property string|null $error
  * @property StopReason|null $stop_reason Why the run failed, waits on its owner or was cancelled

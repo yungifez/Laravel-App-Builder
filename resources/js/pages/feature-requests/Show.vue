@@ -197,14 +197,24 @@ const changeEvidence: Record<RunReview['changes'][number]['evidence'], string> =
     };
 
 function evidenceLabel(item: RunReview['preserved'][number]): string {
-    switch (item.evidence) {
-        case 'verified':
-            return 'checked by a test';
-        case 'untouched':
-            return 'not touched by this change';
-        default:
-            return 'not checked yet';
-    }
+    const label = ((): string => {
+        switch (item.evidence) {
+            case 'regression_suspected':
+                return 'this may have changed';
+            case 'tests_failed':
+                return 'its tests failed';
+            case 'related_tests_passed':
+                return 'its tests still pass';
+            case 'not_edited':
+                return 'not touched by this change';
+            default:
+                return 'not checked yet';
+        }
+    })();
+
+    return item.review_objected
+        ? `${label}, but I have doubts about this change`
+        : label;
 }
 
 function verifyLabel(item: RunReview['verified'][number]): string {
@@ -307,10 +317,19 @@ const keptSame = computed(() => {
     if (review && review.preserved.length > 0) {
         return review.preserved.map((item) => ({
             statement: item.statement,
-            checked: item.evidence !== 'not_checked',
-            // Only a test earns the green mark; code left alone is a
-            // weaker kind of evidence and must not look the same.
-            tested: item.evidence === 'verified',
+            checked: ['related_tests_passed', 'not_edited'].includes(
+                item.evidence,
+            ),
+            // Only passing tests earn the green mark, and never while the
+            // review doubts the change; code left alone is weaker evidence
+            // and must not look the same.
+            tested:
+                item.evidence === 'related_tests_passed' &&
+                !item.review_objected,
+            // A part that may have changed is said whatever else is known.
+            warned: ['regression_suspected', 'tests_failed'].includes(
+                item.evidence,
+            ),
             label: evidenceLabel(item),
         }));
     }
@@ -319,6 +338,7 @@ const keptSame = computed(() => {
         statement,
         checked: false,
         tested: false,
+        warned: false,
         label: null,
     }));
 });
@@ -1332,7 +1352,13 @@ function lineClass(line: string): string {
                     <h2 class="font-display text-2xl tracking-tight">
                         Stays the same
                     </h2>
-                    <p v-if="!keptSameChecked" class="text-muted-foreground">
+                    <p
+                        v-if="
+                            !keptSameChecked &&
+                            !keptSame.some((item) => item.warned)
+                        "
+                        class="text-muted-foreground"
+                    >
                         No test checks these yet.
                     </p>
                     <ul class="space-y-3" data-test="brief-preserve">
@@ -1344,12 +1370,12 @@ function lineClass(line: string): string {
                             <Check
                                 v-if="item.tested"
                                 class="mt-1 size-4 text-green-700 dark:text-green-400"
-                                aria-label="Checked by a test"
+                                aria-label="Its tests still pass"
                             />
                             <Minus
                                 v-else-if="item.checked"
                                 class="mt-1 size-4 text-muted-foreground"
-                                aria-label="Not touched by this change"
+                                :aria-label="item.label ?? undefined"
                             />
                             <CircleDashed
                                 v-else
@@ -1359,8 +1385,16 @@ function lineClass(line: string): string {
                             <span>
                                 {{ item.statement }}
                                 <span
-                                    v-if="item.label && keptSameChecked"
-                                    class="text-sm text-muted-foreground"
+                                    v-if="
+                                        item.label &&
+                                        (keptSameChecked || item.warned)
+                                    "
+                                    :class="[
+                                        'text-sm',
+                                        item.warned
+                                            ? 'text-amber-700 dark:text-amber-400'
+                                            : 'text-muted-foreground',
+                                    ]"
                                     >· {{ item.label }}</span
                                 >
                             </span>

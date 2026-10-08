@@ -71,6 +71,7 @@ import type {
     ChangeDetail,
     ChangedArea,
     Run,
+    RunReview,
     VerificationResult,
 } from '@/types';
 
@@ -240,6 +241,27 @@ const evidence = {
         tone: 'text-green-600',
         label: 'Checked by a test',
     },
+    // Tests of that part passed; none checks this one thing on its own.
+    passed: {
+        icon: CircleCheck,
+        tone: 'text-green-600',
+        label: 'Its tests still pass',
+    },
+    doubted: {
+        icon: CircleCheck,
+        tone: 'text-muted-foreground',
+        label: 'Its tests still pass, but I have doubts about this change',
+    },
+    suspected: {
+        icon: CircleAlert,
+        tone: 'text-amber-600',
+        label: 'This may have changed',
+    },
+    failed: {
+        icon: CircleAlert,
+        tone: 'text-red-600',
+        label: 'Its tests failed',
+    },
     untouched: {
         icon: CircleMinus,
         tone: 'text-muted-foreground',
@@ -252,17 +274,31 @@ const evidence = {
     },
 };
 
+// Say no more than the evidence shows, and never contradict the review.
+function keptEvidence(
+    item: RunReview['preserved'][number],
+): (typeof evidence)[keyof typeof evidence] {
+    switch (item.evidence) {
+        case 'regression_suspected':
+            return evidence.suspected;
+        case 'tests_failed':
+            return evidence.failed;
+        case 'related_tests_passed':
+            return item.review_objected ? evidence.doubted : evidence.passed;
+        case 'not_edited':
+            return evidence.untouched;
+        default:
+            return evidence.open;
+    }
+}
+
 const keptSame = computed(() => {
     const review = run.value?.review;
 
     if (review && review.preserved.length > 0) {
         return review.preserved.map((item) => ({
             text: item.statement,
-            ...(item.evidence === 'verified'
-                ? evidence.checked
-                : item.evidence === 'untouched'
-                  ? evidence.untouched
-                  : evidence.open),
+            ...keptEvidence(item),
         }));
     }
 

@@ -424,13 +424,10 @@ export type RunReview = {
             | 'tests_failed'
             | 'related_tests_passed'
             | 'not_edited'
-            | 'not_checked'
-            // Stored before the evidence was made stricter.
-            | 'verified'
-            | 'untouched';
+            | 'not_checked';
         unchanged: boolean;
         tests: number;
-        review_objected?: boolean;
+        review_objected: boolean;
     }[];
     // How well each touched part's tests cover it.
     coverage: {

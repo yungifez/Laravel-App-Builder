@@ -39,7 +39,7 @@ class AssessPreservationTest extends TestCase
             new ChangeClassification(requested: ['teams' => ['app/Models/Team.php', 'tests/Feature/TeamTest.php']]),
         );
 
-        $this->assertSame('verified', $preserved['evidence']);
+        $this->assertSame('related_tests_passed', $preserved['evidence']);
         $this->assertSame(1, $preserved['tests']);
     }
 
@@ -80,7 +80,7 @@ class AssessPreservationTest extends TestCase
             new ChangeClassification(requested: ['billing' => ['config/billing.php']], unclaimed: ['tests/Feature/TeamTest.php']),
         );
 
-        $this->assertSame('untouched', $preserved['evidence']);
+        $this->assertSame('not_edited', $preserved['evidence']);
     }
 
     /**
@@ -88,7 +88,7 @@ class AssessPreservationTest extends TestCase
      *
      * @param  array<string, list<string>>  $testFiles
      * @param  list<array{name: string, stage: string, outcome: string, tests?: list<array{file: string, name: string, outcome: string}>}>  $results
-     * @return array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int}
+     * @return array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int, review_objected: bool}
      */
     private function assess(array $testFiles, ChangeClassification $classification, array $results = self::PASSED): array
     {
