@@ -80,7 +80,7 @@ class TryWorkerChange
             // Made here, the change keeps what the command wrote, as a
             // folder would.
             if ($patch === null) {
-                $this->draft->keep($run, $this->extractCandidateChange->handle($workspace));
+                $this->keep($run, $workspace, __('What the command wrote was not kept'));
             }
 
             return [
@@ -95,6 +95,28 @@ class TryWorkerChange
             }
 
             $lock->release();
+        }
+    }
+
+    /**
+     * Keep the change made here as the workspace now holds it. When it grew
+     * too large to hand back, put the workspace back as the change was, so
+     * what the worker reads next is what it would hand in. Hold the lock
+     * while calling this.
+     *
+     * @throws ValidationException when the change is too large, saying what was not kept.
+     */
+    public function keep(Run $run, Workspace $workspace, string $lost): void
+    {
+        try {
+            $this->draft->keep($run, $this->extractCandidateChange->handle($workspace));
+        } catch (ValidationException) {
+            $this->lay($run, $workspace);
+
+            throw ValidationException::withMessages(['patch' => __(':lost: with it, your change would be larger than :kb KB, too large to hand back in one patch. Your change is as it was before. Make it smaller, such as by leaving out files the app can build itself.', [
+                'lost' => $lost,
+                'kb' => (int) config('builder.agents.workers.max_patch_kb'),
+            ])]);
         }
     }
 

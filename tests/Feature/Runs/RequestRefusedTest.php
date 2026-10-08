@@ -146,7 +146,8 @@ class RequestRefusedTest extends TestCase
 
     public function test_the_model_writing_tests_first_is_refused_the_same_way(): void
     {
-        config(['builder.verification.written_first.enabled' => true]);
+        // Before the coder, as every change after a project's first.
+        config(['builder.verification.written_first.enabled' => true, 'builder.verification.written_first.beside' => false]);
         $plan = [
             'summary' => 'Teams get an optional description.',
             'acceptance_criteria' => ['Teams have a description.'],

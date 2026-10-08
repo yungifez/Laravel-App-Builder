@@ -153,9 +153,21 @@ final readonly class Plan
         /** @var array{summary: string, acceptance_criteria: array<int, string>, assumptions: array<int, string>, tasks: array<int, string>, steps: array<int, array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, capabilities?: array<int, string>, understood_as?: string|null, current_behavior?: string|null, preserve?: array<int, array{area?: string|null, statement: string}>, question?: array{text: string, why?: string|null, options: array<int, string>, recommended?: string|null, touches?: array<int, string>, reversible?: bool, easier_after_seeing?: bool}|null, commit_subject?: string|null, answer?: string|null, next?: array<int, string>, goal?: string|null} $valid */
         $valid = $validator->validated();
 
+        // A criterion that only repeats what must stay as it is asks for a
+        // test that cannot fail without the change, so it sends a first
+        // attempt back. The preserve item already holds it.
+        $criteria = array_values($valid['acceptance_criteria']);
+        $kept = self::withoutPreserved($criteria, $valid['preserve'] ?? []);
+        $cases = $data['cases'] ?? null;
+
+        if (count($kept) < count($criteria) && is_array($cases) && array_is_list($cases) && count($cases) === count($criteria)) {
+            $cases = array_values(array_intersect_key($cases, $kept));
+            $criteria = array_values($kept);
+        }
+
         return new self(
             summary: $valid['summary'],
-            acceptanceCriteria: array_values($valid['acceptance_criteria']),
+            acceptanceCriteria: $criteria,
             // The planner says nothing about what a guess touches, so each
             // is worth a glance until code can tell.
             assumptions: array_values(array_map(fn (string $text) => new Assumption(trim($text), reversible: false), $valid['assumptions'])),
@@ -179,9 +191,26 @@ final readonly class Plan
             answer: filled($valid['answer'] ?? null) ? trim($valid['answer']) : null,
             next: self::next($valid['next'] ?? []),
             goal: filled($valid['goal'] ?? null) ? trim($valid['goal']) : null,
-            cases: self::cases($data['cases'] ?? null, count($valid['acceptance_criteria'])),
+            cases: self::cases($cases, count($criteria)),
             newRecords: ($data['new_records'] ?? false) === true,
         );
+    }
+
+    /**
+     * The criteria that do not repeat a preserve item, keyed by position.
+     * Case, spacing and a closing full stop do not count. A plan keeps at
+     * least one criterion, so when every one repeats, all stay.
+     *
+     * @param  list<string>  $criteria
+     * @param  array<int, array{area?: string|null, statement: string}>  $preserve
+     * @return array<int, string>
+     */
+    protected static function withoutPreserved(array $criteria, array $preserve): array
+    {
+        $normal = fn (string $text) => rtrim(Str::lower(Str::squish($text)), '.');
+        $kept = array_diff_key($criteria, array_intersect(array_map($normal, $criteria), array_map(fn (array $item) => $normal($item['statement']), $preserve)));
+
+        return $kept === [] ? $criteria : $kept;
     }
 
     /**

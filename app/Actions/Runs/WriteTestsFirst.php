@@ -44,12 +44,25 @@ class WriteTestsFirst
      */
     public function handle(Run $run, Plan $plan, Workspace $workspace, PlanningContext $context): Plan
     {
+        $asked = $this->prepare($run, $plan, $workspace, $context);
+
+        return $asked === null ? $plan : $this->write($run, $plan, $asked);
+    }
+
+    /**
+     * Get what the writer is asked: the prompt and the tests the app already
+     * has. Null when no tests are written first for this run.
+     *
+     * @return array{prompt: string, existing: list<string>}|null
+     */
+    public function prepare(Run $run, Plan $plan, Workspace $workspace, PlanningContext $context): ?array
+    {
         $items = $plan->verifyItems();
 
         // A worker outside our boxes gets the written tests with its task;
         // a driver that does not build gets none.
         if (! config('builder.verification.written_first.enabled') || ! in_array($run->driver, ['sdk', 'worker'], true) || $items === []) {
-            return $plan;
+            return null;
         }
 
         $existing = array_values(array_filter(explode("\0", $this->runWorkspaceCommand->handle(
@@ -58,7 +71,19 @@ class WriteTestsFirst
             120,
         )->output)));
 
-        $prompt = $this->prompt($plan, $items, $context, $workspace, $existing);
+        return ['prompt' => $this->prompt($plan, $items, $context, $workspace, $existing), 'existing' => $existing];
+    }
+
+    /**
+     * Ask the writer, once more for what it got wrong, and keep the tests
+     * that hold to the rules.
+     *
+     * @param  array{prompt: string, existing: list<string>}  $asked
+     */
+    public function write(Run $run, Plan $plan, array $asked): Plan
+    {
+        $items = $plan->verifyItems();
+        ['prompt' => $prompt, 'existing' => $existing] = $asked;
         $ask = $prompt;
         $attempts = max(1, (int) config('builder.verification.written_first.attempts'));
         $kinds = array_column($items, 'kind');
@@ -113,6 +138,24 @@ class WriteTestsFirst
 
             return $plan->withWrittenTests($kept['files'], $kept['tests']);
         }
+    }
+
+    /**
+     * Add tests written beside the coder to its built plan. A file the
+     * coder made itself at the same path stays the coder's: the tests
+     * written into it are left out, and the coder's own cover their items.
+     *
+     * @return array{0: Plan, 1: list<string>} The plan, and the paths left out
+     */
+    public function besideTheCoder(Workspace $workspace, Plan $plan, Plan $written): array
+    {
+        $driver = $this->workspaces->driver($workspace->driver);
+        $clashed = array_values(array_filter(array_keys($written->writtenFiles), fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false) !== null));
+
+        return [$plan->withWrittenTests(
+            array_diff_key($written->writtenFiles, array_flip($clashed)),
+            array_values(array_filter($written->writtenTests, fn (array $test) => ! in_array($test['file'], $clashed, true))),
+        ), $clashed];
     }
 
     /**
@@ -323,11 +366,28 @@ class WriteTestsFirst
         $framework = str_contains($read('composer.json'), '"pestphp/pest"') ? 'Pest' : 'PHPUnit';
         $sections[] = "## How the app's tests are written\n\nThe app's tests use {$framework}. Only tests under ".Capability::suiteLocation().' are run.';
 
-        // A few of the app's own feature tests, in a fixed order, to copy their style.
-        $samples = array_slice(array_values(array_filter($existing, fn (string $path) => str_starts_with($path, 'tests/Feature/') && Capability::runBySuite($path))), 0, 2);
+        $bytes = (int) config('builder.verification.written_first.sample_bytes');
+
+        // The code the steps change, as it is now: without it the writer
+        // guesses table, column and route names that do not exist.
+        foreach (array_slice(array_values(array_unique(array_column($plan->steps, 'file'))), 0, 4) as $path) {
+            $contents = $read($path);
+
+            if ($contents !== '') {
+                $sections[] = "## {$path} (as it is now)\n\n```\n".Str::limit($contents, $bytes, "\n// …")."\n```";
+            }
+        }
+
+        // Two of the app's own feature tests to copy: those of the areas the
+        // change is about first, as they show how their records are made,
+        // then the others in a fixed order.
+        $areas = array_unique([...$plan->capabilities, ...array_merge([], ...array_map(fn (array $step) => $context->projectContext->claiming($step['file']), $plan->steps))]);
+        $areaTests = array_merge([], ...array_map(fn (string $key) => $context->projectContext->capabilities[$key]->testFiles ?? [], $areas));
+        $feature = array_values(array_filter($existing, fn (string $path) => str_starts_with($path, 'tests/Feature/') && Capability::runBySuite($path)));
+        $samples = array_slice(array_values(array_unique([...array_intersect($areaTests, $feature), ...$feature])), 0, 2);
 
         foreach ($samples as $path) {
-            $sections[] = "## {$path}\n\n```php\n".Str::limit($read($path), (int) config('builder.verification.written_first.sample_bytes'), "\n// …")."\n```";
+            $sections[] = "## {$path}\n\n```php\n".Str::limit($read($path), $bytes, "\n// …")."\n```";
         }
 
         return implode("\n\n", $sections);
