@@ -82,6 +82,9 @@ return [
             // them never pick up the control plane's git or ignore files.
             'root' => env('WORKSPACE_LOCAL_ROOT', sys_get_temp_dir().DIRECTORY_SEPARATOR.'builder-workspaces'),
             'image' => 'host',
+            // Customer code runs unisolated on this host, so the driver is
+            // refused in production unless explicitly allowed.
+            'allow_in_production' => (bool) env('WORKSPACE_LOCAL_IN_PRODUCTION', false),
             // Only these variables reach commands; everything else is scrubbed.
             'env_passthrough' => [
                 'PATH', 'HOME', 'LANG', 'COMPOSER_HOME', 'COMPOSER_ALLOW_SUPERUSER',

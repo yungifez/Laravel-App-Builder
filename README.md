@@ -78,6 +78,11 @@ Projects → request a feature → preview the generated change → select a ste
 → request a change to that step (for example "Only the team owner may invite
 people").
 
+A project's source must be a directory inside one of the roots listed in
+`BUILDER_PROJECT_ROOTS` (comma-separated; relative entries resolve from the
+app). It is stored as an absolute path, and a directory that contains the
+builder itself is refused. With no roots set, no project can be added.
+
 Each request starts a **build run** (`config/builder.php`, `construction`). The
 run moves through queued → planning → implementing → verifying → reviewing →
 completed, or stops at "needs your decision", cancelled or failed; the page
@@ -143,7 +148,8 @@ Runs and verification run on the queue, so keep a worker running
 `REDIS_QUEUE_RETRY_AFTER` above the jobs' one-hour timeout (see
 `.env.example`). The default `local` workspace driver runs in a temporary
 directory on this machine with a scrubbed environment. It is for trusted
-fixtures only (see `config/workspaces.php`).
+fixtures only (see `config/workspaces.php`), and it is refused when
+`APP_ENV=production` unless `WORKSPACE_LOCAL_IN_PRODUCTION=true`.
 
 ### Previews
 

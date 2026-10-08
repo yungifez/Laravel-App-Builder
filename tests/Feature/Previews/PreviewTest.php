@@ -7,10 +7,12 @@ use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
 use App\Models\User;
+use App\Previews\PreviewGateway;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
@@ -134,6 +136,23 @@ class PreviewTest extends TestCase
 
         // The grant cannot be used twice.
         $this->get((string) $location)->assertForbidden();
+    }
+
+    public function test_a_grant_spent_by_a_concurrent_request_is_refused()
+    {
+        $preview = Preview::factory()->ready()->create();
+        $location = (string) $this->actingAs($preview->featureRequest->project->owner)->get(route('previews.show', $preview))->headers->get('Location');
+        parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+
+        // This request read the preview before a concurrent one spent the grant.
+        $stale = $preview->fresh();
+        Preview::query()->whereKey($preview->id)->update(['grant_hash' => null, 'session_hash' => 'theirs']);
+
+        $request = Request::create("http://{$preview->host}.preview.test/__builder/session", 'GET', ['grant' => $query['grant']]);
+        $response = app(PreviewGateway::class)->handle($request, $stale);
+
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertSame('theirs', $preview->fresh()->session_hash);
     }
 
     public function test_an_expired_grant_is_refused()

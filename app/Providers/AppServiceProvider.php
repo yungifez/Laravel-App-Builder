@@ -6,6 +6,7 @@ use App\Features\FeatureGeneratorManager;
 use App\Runs\Agents\CodingAgentManager;
 use App\Runs\ConstructionDriverManager;
 use App\Workspaces\WorkspaceManager;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,6 +31,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Inertia pages receive resources as plain props, not under "data".
+        JsonResource::withoutWrapping();
     }
 }

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Workspaces\DestroyWorkspace;
+use App\Actions\Workspaces\LoadProjectIntoWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\VerificationStatus;
@@ -72,6 +73,7 @@ class VerifyFeatureRequest implements ShouldQueue
         ProvisionWorkspace $provisionWorkspace,
         RunWorkspaceCommand $runWorkspaceCommand,
         DestroyWorkspace $destroyWorkspace,
+        LoadProjectIntoWorkspace $loadProjectIntoWorkspace,
     ): void {
         $featureRequest = $this->verification->featureRequest;
         $project = $featureRequest->project;
@@ -84,23 +86,20 @@ class VerifyFeatureRequest implements ShouldQueue
             $this->verification->update(['workspace_id' => $workspace->id]);
 
             $driver = $workspaces->driver($workspace->driver);
-            $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
 
-            foreach ($featureRequest->lineage() as $position => $request) {
-                $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
-                $driver->writeFile((string) $workspace->driver_id, $patch, (string) $request->patch);
+            $failed = $loadProjectIntoWorkspace->handle(
+                $workspace,
+                $project,
+                $featureRequest->lineage(),
+                fn (FeatureRequest $change, WorkspaceCommand $command) => $this->record("Apply change #{$change->id}", 'apply', $command),
+            );
 
-                $command = $runWorkspaceCommand->handle($workspace, ['git', 'apply', '--whitespace=nowarn', $patch], 120);
+            if ($failed !== null) {
+                $this->skipRemaining(['setup', 'checks'], $featureRequest);
+                $this->finish(VerificationStatus::Errored, __('The change does not apply to the project.'));
 
-                if (! $this->record("Apply change #{$request->id}", 'apply', $command)) {
-                    $this->skipRemaining(['setup', 'checks'], $featureRequest);
-                    $this->finish(VerificationStatus::Errored, __('The change does not apply to the project.'));
-
-                    return;
-                }
+                return;
             }
-
-            $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
 
             if (! $this->runSteps($runWorkspaceCommand, $workspace, 'setup')) {
                 $this->skipRemaining(['checks'], $featureRequest);

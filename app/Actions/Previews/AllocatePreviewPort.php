@@ -4,17 +4,37 @@ namespace App\Actions\Previews;
 
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 class AllocatePreviewPort
 {
     /**
-     * Pick a port in the configured range that no running preview holds and
-     * nothing on this host is listening on.
+     * Reserve a port for the preview: one in the configured range that no
+     * running preview holds and nothing on this host is listening on.
+     *
+     * Picking and recording happen under one lock, so previews starting at
+     * the same time on different workers never get the same port.
      *
      * @throws RuntimeException when every port is taken.
      */
-    public function handle(): int
+    public function handle(Preview $preview): int
+    {
+        return Cache::lock('previews:ports', 30)->block(15, function () use ($preview) {
+            $port = $this->pick();
+
+            $preview->update(['port' => $port]);
+
+            return $port;
+        });
+    }
+
+    /**
+     * Pick a free port in the configured range.
+     *
+     * @throws RuntimeException when every port is taken.
+     */
+    protected function pick(): int
     {
         /** @var array{0: int, 1: int} $range */
         $range = config('builder.preview.ports');

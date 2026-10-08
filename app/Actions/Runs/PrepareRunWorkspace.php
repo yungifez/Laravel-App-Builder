@@ -3,15 +3,17 @@
 namespace App\Actions\Runs;
 
 use App\Actions\Workspaces\DestroyWorkspace;
+use App\Actions\Workspaces\LoadProjectIntoWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\WorkspaceStatus;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Workspace;
+use App\Models\WorkspaceCommand;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\RunLease;
-use App\Workspaces\WorkspaceManager;
+use App\Runs\ToolContext;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -25,8 +27,8 @@ class PrepareRunWorkspace
     protected const GIT_IDENTITY = ['-c', 'user.name=Builder', '-c', 'user.email=builder@localhost', '-c', 'commit.gpgsign=false'];
 
     public function __construct(
-        private WorkspaceManager $workspaces,
         private ProvisionWorkspace $provisionWorkspace,
+        private LoadProjectIntoWorkspace $loadProjectIntoWorkspace,
         private RunWorkspaceCommand $runWorkspaceCommand,
         private DestroyWorkspace $destroyWorkspace,
     ) {}
@@ -51,17 +53,20 @@ class PrepareRunWorkspace
         $workspace = $this->provisionWorkspace->handle($project->owner, (string) config('builder.construction.workspace_driver'));
 
         try {
-            $driver = $this->workspaces->driver($workspace->driver);
-            $driver->copyDirectory((string) $workspace->driver_id, $project->source_path);
+            $error = '';
+            $failed = $this->loadProjectIntoWorkspace->handle(
+                $workspace,
+                $project,
+                array_slice($featureRequest->lineage(), 0, -1),
+                function (FeatureRequest $ancestor, WorkspaceCommand $command) use (&$error) {
+                    $error = $command->error_output;
+                },
+            );
 
-            foreach (array_slice($featureRequest->lineage(), 0, -1) as $position => $ancestor) {
-                $patch = sprintf('%s/%02d.patch', FeatureRequest::LINEAGE_DIRECTORY, $position + 1);
-                $driver->writeFile((string) $workspace->driver_id, $patch, (string) $ancestor->patch);
-
-                $this->run($workspace, ['git', 'apply', '--whitespace=nowarn', $patch], __('Change #:id no longer applies to the project.', ['id' => $ancestor->id]));
+            if ($failed !== null) {
+                throw new ConstructionFailed(trim(__('Change #:id no longer applies to the project.', ['id' => $failed->id]).' '.trim((string) $error)));
             }
 
-            $this->run($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', 'init', '--quiet'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', 'add', '--all'], __('The workspace could not be prepared.'));
             $this->run($workspace, ['git', ...self::GIT_IDENTITY, 'commit', '--quiet', '--allow-empty', '--no-verify', '-m', 'Baseline'], __('The workspace could not be prepared.'));
@@ -70,6 +75,8 @@ class PrepareRunWorkspace
             $setup = config('builder.construction.setup', []);
 
             foreach ($setup as $step) {
+                Run::holdLease($lease, $step['timeout'] + ToolContext::LEASE_MARGIN_SECONDS);
+
                 $this->run($workspace, $step['command'], __('The setup step ":name" failed.', ['name' => $step['name']]), $step['timeout']);
             }
 

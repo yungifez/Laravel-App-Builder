@@ -9,11 +9,13 @@ use App\Models\Run;
 use App\Runs\Exceptions\BudgetExhausted;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\RunCancelled;
+use App\Runs\Exceptions\RunLeaseHeld;
 use App\Runs\ToolExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Tests\Concerns\PreparesRuns;
+use Tests\Fakes\BusyWorkspaceTool;
 use Tests\TestCase;
 
 class ToolExecutorTest extends TestCase
@@ -62,6 +64,26 @@ PATCH;
         $this->assertSame(1, $write->revision);
         $this->assertSame(1, $run->refresh()->workspace_revision);
         $this->assertSame("<?php\n\nclass Team {}\n", File::get($this->workspaceFile($run, 'app/Models/Team.php')));
+    }
+
+    public function test_a_tool_that_fails_unexpectedly_is_settled_and_does_not_block_later_changes()
+    {
+        config(['builder.construction.tools.busy' => BusyWorkspaceTool::class]);
+        $this->tools = app(ToolExecutor::class);
+        [$run, $lease] = $this->implementingRun();
+
+        $busy = $this->tools->execute($lease, 'busy-1', 'busy', [], expectedRevision: 0);
+        $read = $this->tools->execute($lease, 'read-1', 'read_file', ['path' => 'app/Models/Team.php']);
+        $write = $this->tools->execute($lease, 'write-1', 'write_file', [
+            'path' => 'app/Models/Team.php',
+            'contents' => "<?php\n\nclass Team {}\n",
+            'expected_sha256' => $read->result['sha256'],
+        ], expectedRevision: 0);
+
+        $this->assertSame(OperationStatus::Failed, $busy->status);
+        $this->assertStringContainsString('The tool failed', (string) $busy->error);
+        $this->assertTrue($write->succeeded(), (string) $write->error);
+        $this->assertSame(1, $run->refresh()->workspace_revision);
     }
 
     public function test_an_edit_based_on_stale_contents_is_rejected_and_changes_nothing()
@@ -205,6 +227,49 @@ PATCH], expectedRevision: 0);
         $this->assertFileDoesNotExist($this->workspaceFile($run, 'leak'));
     }
 
+    public function test_patches_that_retarget_an_existing_symbolic_link_are_refused()
+    {
+        $source = $this->makeProjectSource(['f' => 'inside']);
+        symlink('f', "{$source}/lnk");
+        [$run, $lease] = $this->implementingRun($source);
+
+        $result = $this->tools->execute($lease, 'patch-1', 'apply_patch', ['patch' => <<<'PATCH'
+diff --git a/lnk b/lnk
+index 0000000..1111111 120000
+--- a/lnk
++++ b/lnk
+@@ -1 +1 @@
+-f
+\ No newline at end of file
++/etc/passwd
+\ No newline at end of file
+
+PATCH], expectedRevision: 0);
+
+        $this->assertSame(OperationStatus::Rejected, $result->status);
+        $this->assertStringContainsString('symbolic links', (string) $result->error);
+        $this->assertSame('f', readlink($this->workspaceFile($run, 'lnk')));
+    }
+
+    public function test_patches_too_large_to_check_every_path_are_refused()
+    {
+        // A short output limit stands in for a patch touching thousands of files.
+        config(['workspaces.commands.output_limit' => 200]);
+        [$run, $lease] = $this->implementingRun();
+
+        $patch = "diff --git a/tests/Acceptance/Evil.php b/tests/Acceptance/Evil.php\nnew file mode 100644\n--- /dev/null\n+++ b/tests/Acceptance/Evil.php\n@@ -0,0 +1 @@\n+<?php // always passes\n";
+
+        foreach (range(1, 40) as $number) {
+            $patch .= "diff --git a/notes/note-{$number}.md b/notes/note-{$number}.md\nnew file mode 100644\n--- /dev/null\n+++ b/notes/note-{$number}.md\n@@ -0,0 +1 @@\n+Note {$number}\n";
+        }
+
+        $result = $this->tools->execute($lease, 'patch-1', 'apply_patch', ['patch' => $patch], expectedRevision: 0);
+
+        $this->assertSame(OperationStatus::Rejected, $result->status);
+        $this->assertStringContainsString('too many files', (string) $result->error);
+        $this->assertFileDoesNotExist($this->workspaceFile($run, 'tests/Acceptance/Evil.php'));
+    }
+
     public function test_reads_through_a_symbolic_link_that_leaves_the_project_are_refused()
     {
         $source = $this->makeProjectSource();
@@ -304,6 +369,35 @@ PATCH], expectedRevision: 0);
         $this->expectException(LeaseLost::class);
 
         $this->tools->execute($lease, 'op-2', 'apply_patch', ['patch' => self::TEAM_PATCH], expectedRevision: 0);
+    }
+
+    public function test_a_command_longer_than_the_lease_keeps_the_run_from_being_taken_over()
+    {
+        [$run, $lease] = $this->implementingRun();
+        $leaseSeconds = (int) config('builder.construction.lease_seconds');
+
+        Run::holdLease($lease, $leaseSeconds * 3);
+
+        // Past an ordinary lease, but within the command's time.
+        $this->travel($leaseSeconds * 2)->seconds();
+
+        $this->assertTrue($run->refresh()->hasActiveLease());
+
+        try {
+            app(AcquireRunLease::class)->handle($run, 'worker-b');
+            $this->fail('The run was taken over while its command still ran.');
+        } catch (RunLeaseHeld) {
+            //
+        }
+
+        // Holding never shortens a longer lease.
+        Run::holdLease($lease, 1);
+        $this->assertTrue($run->refresh()->lease_expires_at->isAfter(now()->addSeconds($leaseSeconds - 5)));
+
+        $this->travel($leaseSeconds * 2)->seconds();
+        $this->expectException(LeaseLost::class);
+
+        Run::holdLease($lease, 60);
     }
 
     public function test_a_change_whose_outcome_was_lost_is_reconciled_instead_of_applied_twice()
