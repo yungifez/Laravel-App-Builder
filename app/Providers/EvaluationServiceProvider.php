@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Ai\Agents\ChangeReviewer;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\GenericReviewer;
 use App\Evaluation\Handoff;
 use App\Evaluation\HandoffCodingAgent;
 use App\Runs\Agents\CodingAgentManager;
@@ -34,7 +35,7 @@ class EvaluationServiceProvider extends ServiceProvider
             throw new RuntimeException('The evaluation hand-off (BUILDER_EVAL_HANDOFF) must not be enabled in production.');
         }
 
-        foreach (['planner' => FeaturePlanner::class, 'reviewer' => ChangeReviewer::class] as $role => $agent) {
+        foreach (['planner' => FeaturePlanner::class, 'reviewer' => ChangeReviewer::class, 'generic-reviewer' => GenericReviewer::class] as $role => $agent) {
             $instance = new $agent;
 
             $agent::fake(fn (string $prompt) => $handoff->ask($role, [

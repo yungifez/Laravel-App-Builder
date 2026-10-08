@@ -44,6 +44,15 @@ class HandoffTest extends TestCase
         $this->assertStringEndsWith('.response.json', $request['response']);
     }
 
+    public function test_requests_carry_the_labels_they_were_made_within()
+    {
+        $this->answerWith(['approved' => true]);
+
+        Handoff::within(['task' => 'export', 'condition' => 'v2'], fn () => (new Handoff($this->directory, 30))->ask('generic-reviewer', ['prompt' => 'Review']));
+
+        $this->assertSame(['task' => 'export', 'condition' => 'v2'], $this->onlyRequest()['context']);
+    }
+
     public function test_no_response_in_time_is_an_error()
     {
         Sleep::fake(syncWithCarbon: true);

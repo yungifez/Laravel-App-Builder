@@ -34,16 +34,28 @@ class Evidence
     }
 
     /**
-     * Copy in the task's hidden tests with their own runner configuration,
-     * run them, and remove them again.
+     * Copy in the task's hidden tests (and its guards) with their own runner
+     * configuration, run them, and remove them again.
      *
      * @return array{name: string, outcome: string, exit_code: int, output: string, failed_tests: list<string>, tests: int|null, failures: int|null}
      */
     public static function hidden(Workbench $workbench, Suite $suite, string $task): array
     {
+        return self::tests($workbench, $suite->hiddenFiles($task));
+    }
+
+    /**
+     * Copy in the given test files (keyed by their path inside tests/Hidden,
+     * with their phpunit.xml), run them, and remove them again.
+     *
+     * @param  array<string, string>  $files
+     * @return array{name: string, outcome: string, exit_code: int, output: string, failed_tests: list<string>, tests: int|null, failures: int|null}
+     */
+    public static function tests(Workbench $workbench, array $files): array
+    {
         $workbench->run(['rm', '-rf', 'tests/Hidden'], 30);
 
-        foreach ($suite->hiddenFiles($task) as $path => $contents) {
+        foreach ($files as $path => $contents) {
             $workbench->write("tests/Hidden/{$path}", $contents);
         }
 
@@ -51,6 +63,26 @@ class Evidence
         $workbench->run(['rm', '-rf', 'tests/Hidden'], 30);
 
         return [...self::result('Hidden tests', $result), ...self::counts($result->output)];
+    }
+
+    /**
+     * Present check results the way platform verification records them, so
+     * every verification condition reviews the same evidence.
+     *
+     * @param  list<array{name: string, outcome: string, exit_code: int, output: string, failed_tests: list<string>}>  $checks
+     * @return list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>
+     */
+    public static function asVerificationResults(array $checks): array
+    {
+        return array_map(fn (array $check) => [
+            'name' => $check['name'],
+            'stage' => 'checks',
+            'outcome' => $check['outcome'],
+            'exit_code' => $check['exit_code'],
+            'timed_out' => $check['outcome'] === 'errored',
+            'duration_ms' => 0,
+            'output' => $check['output'],
+        ], $checks);
     }
 
     /**

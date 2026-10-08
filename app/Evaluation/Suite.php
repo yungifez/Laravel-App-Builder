@@ -13,7 +13,7 @@ use InvalidArgumentException;
 class Suite
 {
     /**
-     * @param  array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string}>}  $manifest
+     * @param  array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null, category?: string, guards?: list<string>, reference?: string, areas?: list<string>, authorized?: array{rule: string, now: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string, caught_by?: list<string>}>}  $manifest
      */
     public function __construct(
         public readonly string $directory,
@@ -31,7 +31,7 @@ class Suite
             throw new InvalidArgumentException("No evaluation suite at [{$directory}]. Set BUILDER_EVAL_SUITE.");
         }
 
-        /** @var array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string}>} $manifest */
+        /** @var array{name: string, tasks: list<array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null, category?: string, guards?: list<string>, reference?: string, areas?: list<string>, authorized?: array{rule: string, now: string}|null}>, sabotage: list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string, caught_by?: list<string>}>} $manifest */
         $manifest = json_decode(File::get("{$directory}/manifest.json"), true, flags: JSON_THROW_ON_ERROR);
 
         return new self($directory, $manifest);
@@ -54,7 +54,7 @@ class Suite
     }
 
     /**
-     * @return array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null}
+     * @return array{key: string, request: string, contract: string|null, hidden: list<string>, ambiguity: array{question: string, why: string}|null, category?: string, guards?: list<string>, reference?: string, areas?: list<string>, authorized?: array{rule: string, now: string}|null}
      */
     public function task(string $key): array
     {
@@ -94,7 +94,9 @@ class Suite
             $files['Support/'.$file->getRelativePathname()] = $file->getContents();
         }
 
-        foreach ($this->task($key)['hidden'] as $path) {
+        $task = $this->task($key);
+
+        foreach ([...$task['hidden'], ...($task['guards'] ?? [])] as $path) {
             $files[$path] = File::get("{$this->directory}/hidden/{$path}");
         }
 
@@ -102,7 +104,35 @@ class Suite
     }
 
     /**
-     * @return list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string}>
+     * Get a task's reference solution, or null when the suite has none.
+     */
+    public function reference(string $key): ?string
+    {
+        $reference = $this->task($key)['reference'] ?? null;
+
+        return $reference === null ? null : File::get("{$this->directory}/reference/{$reference}");
+    }
+
+    /**
+     * Get the project's requirements as written: every file in its `.builder/`
+     * notes, with its path. The generic reviewer gets these in place of the
+     * plan and preservation clauses the pipeline derives from them.
+     */
+    public static function requirements(string $project): string
+    {
+        $sections = [];
+
+        foreach (File::allFiles("{$project}/.builder") as $file) {
+            $sections[$file->getRelativePathname()] = "### .builder/{$file->getRelativePathname()}\n\n".trim($file->getContents());
+        }
+
+        ksort($sections);
+
+        return implode("\n\n", $sections);
+    }
+
+    /**
+     * @return list<array{key: string, patch: string, area: string, covered_by_tests: bool, description: string, honest_report: string, caught_by?: list<string>}>
      */
     public function sabotage(): array
     {

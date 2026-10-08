@@ -2,6 +2,7 @@
 
 namespace App\Evaluation;
 
+use Closure;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
@@ -18,6 +19,14 @@ use RuntimeException;
  */
 class Handoff
 {
+    /**
+     * Labels added to every request while set, so a responder's usage can be
+     * attributed to the task, snapshot and condition it served.
+     *
+     * @var array<string, string>
+     */
+    protected static array $context = [];
+
     public function __construct(
         protected string $directory,
         protected int $timeoutSeconds = 3600,
@@ -39,6 +48,27 @@ class Handoff
     }
 
     /**
+     * Label every request made while the callback runs.
+     *
+     * @template TResult
+     *
+     * @param  array<string, string>  $context
+     * @param  Closure(): TResult  $callback
+     * @return TResult
+     */
+    public static function within(array $context, Closure $callback): mixed
+    {
+        $previous = self::$context;
+        self::$context = [...$previous, ...$context];
+
+        try {
+            return $callback();
+        } finally {
+            self::$context = $previous;
+        }
+    }
+
+    /**
      * Write the request and wait for its response.
      *
      * @param  array<string, mixed>  $request
@@ -54,7 +84,7 @@ class Handoff
         $requestPath = $this->path("{$id}.request.json");
         $responsePath = $this->path("{$id}.response.json");
 
-        File::put("{$requestPath}.tmp", (string) json_encode(['id' => $id, 'role' => $role, 'response' => $responsePath, ...$request], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        File::put("{$requestPath}.tmp", (string) json_encode(['id' => $id, 'role' => $role, 'response' => $responsePath, 'context' => self::$context, ...$request], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         File::move("{$requestPath}.tmp", $requestPath);
 
         $deadline = now()->addSeconds($this->timeoutSeconds);

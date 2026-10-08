@@ -108,9 +108,10 @@ class PipelineHarness
      * Review a verified patch the way the run's review stage does: classify
      * it by area, ask the reviewer, and assess what should be preserved.
      *
+     * @param  list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>  $verificationResults
      * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>}
      */
-    public function review(Run $run, Verification $verification, string $patch): array
+    public function review(Run $run, string $verificationStatus, array $verificationResults, string $patch): array
     {
         $plan = $run->plan !== null ? Plan::fromArray($run->plan) : throw new RuntimeException('The run has no plan.');
         $pack = $run->context !== null ? ContextPack::fromArray($run->context) : null;
@@ -123,8 +124,8 @@ class PipelineHarness
             plan: $plan,
             patch: $patch,
             weakenedTests: TestChanges::weakened($patch),
-            verificationStatus: $verification->status->value,
-            verificationResults: $verification->results ?? [],
+            verificationStatus: $verificationStatus,
+            verificationResults: $verificationResults,
             projectContext: $pack->text ?? '',
             classification: $classification,
             areaNames: $names,
@@ -140,7 +141,7 @@ class PipelineHarness
                 'section' => $classification->sectionFor($change['area']),
             ], $review->changes),
             'classification' => $classification->toArray(),
-            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? [], $review),
+            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verificationResults, $review),
         ];
     }
 
