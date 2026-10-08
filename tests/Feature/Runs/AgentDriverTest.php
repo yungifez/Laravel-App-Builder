@@ -33,7 +33,10 @@ use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
 use ArrayObject;
 use Closure;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
@@ -1512,7 +1515,8 @@ class AgentDriverTest extends TestCase
 
     public function test_tests_another_model_writes_from_the_plan_are_there_before_the_coder_and_put_back_after_it()
     {
-        config(['builder.verification.written_first.enabled' => true]);
+        // Before the coder, as every change after a project's first.
+        config(['builder.verification.written_first.enabled' => true, 'builder.verification.written_first.beside' => false]);
         FeaturePlanner::fake([$this->plan()]);
         $written = "<?php\n\ntest('a team keeps its description', fn () => expect(true)->toBeTrue());\n";
         TestWriter::fake([[
@@ -1541,6 +1545,91 @@ class AgentDriverTest extends TestCase
             && str_contains($prompt, '1. tests/Feature/TeamDescriptionTest.php: a team keeps its description'));
         TestWriter::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, "## What the tests must check\n\n1. Teams have a nullable description. (base case:")
             && $prompt->provider->name() === 'openai');
+    }
+
+    public function test_a_first_version_has_its_tests_written_beside_the_coder_and_placed_before_the_checks()
+    {
+        config(['builder.verification.written_first.enabled' => true, 'builder.verification.written_first.beside' => true]);
+        FeaturePlanner::fake([$this->plan()]);
+        $written = "<?php\n\ntest('a team keeps its description', fn () => expect(true)->toBeTrue());\n";
+        TestWriter::fake([[
+            'files' => [['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => $written]],
+            'tests' => [['item' => 1, 'file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']],
+        ]]);
+        $seen = null;
+        $this->coder(function (Workspace $workspace) use (&$seen) {
+            $root = config('workspaces.drivers.local.root').DIRECTORY_SEPARATOR.$workspace->driver_id;
+            $seen = File::exists("{$root}/tests/Feature/TeamDescriptionTest.php");
+            File::put("{$root}/app/Models/Team.php", self::TEAM_WITH_DESCRIPTION);
+
+            return 'Done.';
+        });
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        $this->assertFalse($seen, 'The coder starts before the tests are in.');
+        $this->assertCoderPrompted(fn (string $prompt) => ! str_contains($prompt, '## Tests already written'));
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame([['item' => 1, 'file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']], $run->plan['written_tests']);
+        $this->assertSame('written', $run->events()->where('type', 'tests_beside')->sole()->data['outcome']);
+        $placed = $run->events()->where('type', 'tests_beside_placed')->sole();
+        $this->assertSame(['paths' => ['tests/Feature/TeamDescriptionTest.php'], 'coder_made' => []], $placed->data);
+        $this->assertGreaterThan($run->events()->where('type', 'coder_started')->sole()->sequence, $placed->sequence);
+        $this->assertLessThan($run->events()->where('type', 'build_finished')->sole()->sequence, $placed->sequence, 'The tests are in as the build ends.');
+        $verifying = $run->events()->where('type', 'status')->get()->first(fn ($event) => $event->data['to'] === RunStatus::Verifying->value);
+        $this->assertLessThan($verifying->sequence, $placed->sequence, 'The tests are in before the checks.');
+        $this->assertStringContainsString("+test('a team keeps its description', fn () => expect(true)->toBeTrue());", (string) $run->featureRequest->patch);
+    }
+
+    public function test_a_later_change_still_has_its_tests_written_before_the_coder()
+    {
+        config(['builder.verification.written_first.enabled' => true, 'builder.verification.written_first.beside' => true]);
+        FeaturePlanner::fake([$this->plan()]);
+        $written = "<?php\n\ntest('a team keeps its description', fn () => expect(true)->toBeTrue());\n";
+        TestWriter::fake([[
+            'files' => [['path' => 'tests/Feature/TeamDescriptionTest.php', 'contents' => $written]],
+            'tests' => [['item' => 1, 'file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']],
+        ]]);
+        $seen = null;
+        $this->coder(function (Workspace $workspace) use (&$seen) {
+            $root = config('workspaces.drivers.local.root').DIRECTORY_SEPARATOR.$workspace->driver_id;
+            $seen = File::get("{$root}/tests/Feature/TeamDescriptionTest.php");
+            File::put("{$root}/app/Models/Team.php", self::TEAM_WITH_DESCRIPTION);
+
+            return 'Done.';
+        });
+        $first = $this->request();
+        $later = FeatureRequest::factory()->for($first->project)->create(['prompt' => 'Give teams a description.']);
+
+        $run = app(StartRun::class)->handle($later)->refresh();
+
+        $this->assertSame($written, $seen, 'The test is there before the coder starts.');
+        $this->assertFalse($run->events()->whereIn('type', ['tests_beside_asked', 'tests_beside', 'tests_beside_placed'])->exists());
+        $this->assertSame([['item' => 1, 'file' => 'tests/Feature/TeamDescriptionTest.php', 'name' => 'a team keeps its description']], $run->plan['written_tests']);
+        $this->assertCoderPrompted(fn (string $prompt) => str_contains($prompt, '## Tests already written'));
+    }
+
+    public function test_a_test_writer_refused_beside_a_first_version_stops_the_run_as_it_would_before_the_coder()
+    {
+        config(['builder.verification.written_first.enabled' => true, 'builder.verification.written_first.beside' => true]);
+        FeaturePlanner::fake([$this->plan()]);
+        $asked = 0;
+        TestWriter::fake(function () use (&$asked) {
+            $asked++;
+
+            throw new RequestException(new Response(new Psr7Response(400, ['Content-Type' => 'application/json'], (string) json_encode(['error' => ['type' => 'invalid_request_error']]))));
+        });
+        $this->coder($this->writes(['app/Models/Team.php' => self::TEAM_WITH_DESCRIPTION]));
+
+        $run = app(StartRun::class)->handle($this->request())->refresh();
+
+        // The run asks once more itself, and is refused as it would be first.
+        $this->assertSame(2, $asked);
+        $this->assertSame('failed', $run->events()->where('type', 'tests_beside')->sole()->data['outcome']);
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertSame(StopReason::RequestRefused, $run->stop_reason);
+        $this->assertFalse($run->events()->where('type', 'tests_beside_placed')->exists());
+        $this->assertFalse($run->events()->where('type', 'status')->get()->contains(fn ($event) => $event->data['to'] === RunStatus::Verifying->value));
     }
 
     public function test_a_written_test_that_fails_the_same_way_twice_while_all_else_passes_is_corrected_once_and_the_owner_hears_of_it()

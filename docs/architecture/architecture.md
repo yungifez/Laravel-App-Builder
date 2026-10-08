@@ -2004,6 +2004,23 @@ owner, naming the test (`written_test_still_fails`). JUnit failures keep their
 message, without the test's name or where it stopped, so the same failure on
 two tries reads the same.
 
+**Exception: a first version writes its tests beside the coder.** For a
+project's first change, built by our own coder (`sdk`), the tests are written
+while the coder works, not before it. The first version shows sooner. Later
+changes keep tests first, because there the tests guide the coder most. The run
+records `tests_beside_asked` and queues `WriteTestsBeside` on the checks queue,
+which is idle while a first version is built. When the coder ends, the run takes
+the job's tests (`tests_beside`) and puts them in where written tests are put
+back today, before `build_finished` and the checks (`tests_beside_placed`). The
+plan is saved with them, so repairs see them. A written file at a path the coder
+already made is dropped with its tests, and the coder's tests count instead.
+The coder's brief has no written tests, so it writes its own as for any change.
+The job and the run claim the write with one cache key. When the job has not
+started, the run writes the tests itself; it also stops waiting after
+`beside_wait_seconds`. When the job fails or is refused, the run asks again
+itself, so it stops with the same next step as before.
+`BUILDER_TESTS_WRITTEN_BESIDE=false` turns it off.
+
 **The change is judged, not the app it started from.** Format and lint
 checks run only on the files the change added or modified
 (`files` on the check). When a whole-app check fails, it runs again on the

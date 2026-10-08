@@ -838,6 +838,13 @@ return [
         'written_first' => [
             'enabled' => (bool) env('BUILDER_TESTS_WRITTEN_FIRST', true),
             'attempts' => 2,
+            // A project's first change has its tests written while the coder
+            // builds it, and placed before the checks, so it shows sooner.
+            // Later changes have them first, where they guide the coder most.
+            // The run waits up to "beside_wait_seconds" after its coder for
+            // them before it writes them itself.
+            'beside' => (bool) env('BUILDER_TESTS_WRITTEN_BESIDE', true),
+            'beside_wait_seconds' => (int) env('BUILDER_TESTS_WRITTEN_BESIDE_WAIT_SECONDS', 600),
             'max_files' => 3,
             'max_bytes' => 60000,
             'sample_bytes' => 6000,

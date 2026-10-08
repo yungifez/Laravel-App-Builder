@@ -47,6 +47,7 @@ use App\Features\ScreenCheck;
 use App\Features\TestChanges;
 use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
+use App\Jobs\WriteTestsBeside;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
@@ -73,7 +74,9 @@ use App\Runs\ShapeQuestion;
 use App\Runs\ToolExecutor;
 use App\Runs\ToolSession;
 use Closure;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 
 class ConstructRun
@@ -394,7 +397,15 @@ class ConstructRun
         }
 
         RunCancelled::throwIfCancelling($run);
-        $plan = $this->writeTestsFirst->handle($run, $plan, $workspace, $planningContext);
+
+        // A first version's tests are written while its coder works, so it
+        // shows sooner; later changes have them first, where they guide the
+        // coder most (§12).
+        if ($this->testsBesideTheCoder($run)) {
+            $this->askForTestsBeside($run, $lease, $plan, $workspace, $planningContext);
+        } else {
+            $plan = $this->writeTestsFirst->handle($run, $plan, $workspace, $planningContext);
+        }
 
         $this->recordEvent($run, $lease, 'planned', ['key' => $this->planningKey($run), 'plan' => $plan->toArray()]);
 
@@ -512,7 +523,13 @@ class ConstructRun
             rescue(fn () => $this->warmChangePreview->start($run->featureRequest));
         }
 
+        $asked = $run->repairs === 0 && $plan->writtenTests === [] ? $run->events()->where('type', 'tests_beside_asked')->reorder('sequence', 'desc')->first() : null;
         $account = $driver->build($run, $plan, new ToolSession($this->toolExecutor, $run, $lease));
+
+        if ($asked !== null) {
+            $plan = $this->takeTestsBeside($run, $lease, $workspace, $plan, $asked);
+        }
+
         // A worker made its code pass the tests in its own copy, so a written
         // test it changed cannot just be put back: the change goes back.
         $changed = $run->driver === 'worker' ? $this->writeTestsFirst->changed($workspace, $plan) : [];
@@ -978,6 +995,104 @@ class ConstructRun
             'changes' => array_map(fn (array $change) => [...$change, 'section' => $classification->sectionFor($change['area']), 'evidence' => $classification->evidenceFor($change['area'])], $review->changes),
             'classification' => $classification->toArray(),
         ];
+    }
+
+    /**
+     * Whether a run writes its tests beside the coder: our agents building
+     * a project's first change, the first time.
+     */
+    protected function testsBesideTheCoder(Run $run): bool
+    {
+        return config('builder.verification.written_first.beside') === true
+            && $run->driver === 'sdk'
+            && $run->repairs === 0
+            && $run->featureRequest->project->featureRequests()->where('id', '<', $run->feature_request_id)->doesntExist();
+    }
+
+    /**
+     * Record what the test writer is asked, and have a job ask it while
+     * the coder works.
+     */
+    protected function askForTestsBeside(Run $run, RunLease $lease, Plan $plan, Workspace $workspace, PlanningContext $planningContext): void
+    {
+        $asked = $this->writeTestsFirst->prepare($run, $plan, $workspace, $planningContext);
+
+        if ($asked === null) {
+            return;
+        }
+
+        $this->recordEvent($run, $lease, 'tests_beside_asked', ['plan' => $plan->toArray(), ...$asked]);
+
+        WriteTestsBeside::dispatch($run, (int) $run->events()->where('type', 'tests_beside_asked')->max('sequence'));
+    }
+
+    /**
+     * Take the tests written beside the coder once it is done, and place
+     * them before the checks. When the job never started, the run writes
+     * them itself, as before the coder; when the job failed or never came
+     * back, the run asks again, so a refusal stops it as it would have.
+     */
+    protected function takeTestsBeside(Run $run, RunLease $lease, Workspace $workspace, Plan $plan, RunEvent $asked): Plan
+    {
+        $deadline = now()->addSeconds((int) config('builder.verification.written_first.beside_wait_seconds'));
+        $again = fn () => $this->writeTestsFirst->write($run, Plan::fromArray($asked->data['plan']), ['prompt' => $asked->data['prompt'], 'existing' => $asked->data['existing']]);
+
+        while (true) {
+            $result = $run->events()->where('type', 'tests_beside')->where('sequence', '>', $asked->sequence)->get()
+                ->first(fn (RunEvent $event) => ($event->data['asked'] ?? null) === $asked->sequence);
+
+            if ($result !== null) {
+                $written = $result->data['outcome'] === 'written' ? Plan::fromArray($result->data['plan']) : $again();
+
+                break;
+            }
+
+            if (Cache::add(WriteTestsBeside::claim($run, $asked->sequence), 'run', now()->addDay()) || now()->isAfter($deadline)) {
+                $written = $again();
+
+                break;
+            }
+
+            $this->keepWaiting($run, $lease);
+            Sleep::for(2)->seconds();
+        }
+
+        [$plan, $clashed] = $this->writeTestsFirst->besideTheCoder($workspace, $plan, $written);
+
+        DB::transaction(function () use ($run, $lease, $plan, $clashed) {
+            $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+            $lease->assertHeldOn($locked);
+
+            $locked->plan = $plan->toArray();
+            $locked->save();
+            $locked->recordEvent('tests_beside_placed', ['paths' => array_keys($plan->writtenFiles), 'coder_made' => $clashed]);
+
+            $run->setRawAttributes($locked->getAttributes(), sync: true);
+        });
+
+        $this->writeTestsFirst->place($workspace, $plan);
+
+        return $plan;
+    }
+
+    /**
+     * Hold the run while its tests are still being written: keep the lease,
+     * and stop when the owner cancels.
+     */
+    protected function keepWaiting(Run $run, RunLease $lease): void
+    {
+        DB::transaction(function () use ($run, $lease) {
+            $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+            $lease->assertHeldOn($locked);
+
+            if ($locked->status === RunStatus::Cancelling) {
+                throw RunCancelled::forRun($locked->id);
+            }
+
+            $locked->extendLease();
+        });
     }
 
     /**

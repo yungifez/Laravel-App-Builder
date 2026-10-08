@@ -55,6 +55,8 @@ class PartlyWrittenTestsTest extends TestCase
             'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'planner-model'],
             'builder.models.reviewer' => ['provider' => 'openai', 'model' => 'reviewer-model'],
             'builder.verification.written_first.enabled' => true,
+            // Before the coder, as every change after a project's first.
+            'builder.verification.written_first.beside' => false,
             'builder.verification.written_first.attempts' => 2,
         ]);
 

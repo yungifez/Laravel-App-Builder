@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 /**
@@ -187,19 +188,24 @@ class Run extends Model
     /**
      * Append an event to the run's log.
      *
-     * Call this inside a transaction that holds the run's row lock, so the
-     * sequence numbers stay gapless and ordered.
+     * The run's row lock is held while the next sequence number is taken,
+     * so they stay gapless and ordered when two processes write at once
+     * (the tests written beside the coder). A caller that holds the lock
+     * already keeps it.
      *
      * @param  array<string, mixed>  $data
      */
     public function recordEvent(string $type, array $data = []): RunEvent
     {
-        $sequence = (int) RunEvent::query()->where('run_id', $this->id)->max('sequence') + 1;
+        return DB::transaction(function () use ($type, $data) {
+            self::query()->whereKey($this->id)->lockForUpdate()->value('id');
+            $sequence = (int) RunEvent::query()->where('run_id', $this->id)->max('sequence') + 1;
 
-        return $this->events()->create([
-            'sequence' => $sequence,
-            'type' => $type,
-            'data' => $data,
-        ]);
+            return $this->events()->create([
+                'sequence' => $sequence,
+                'type' => $type,
+                'data' => $data,
+            ]);
+        });
     }
 }

@@ -56,6 +56,8 @@ class PlanOnceTest extends TestCase
             'builder.models.reviewer' => ['provider' => 'openai', 'model' => 'reviewer-model'],
             'builder.construction.questions.ask_about' => [],
             'builder.verification.written_first.enabled' => true,
+            // Before the coder, as every change after a project's first.
+            'builder.verification.written_first.beside' => false,
         ]);
 
         $coder = new FakeCodingAgent('anthropic', function (Workspace $workspace) {

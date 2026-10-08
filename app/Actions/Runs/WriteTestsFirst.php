@@ -44,12 +44,25 @@ class WriteTestsFirst
      */
     public function handle(Run $run, Plan $plan, Workspace $workspace, PlanningContext $context): Plan
     {
+        $asked = $this->prepare($run, $plan, $workspace, $context);
+
+        return $asked === null ? $plan : $this->write($run, $plan, $asked);
+    }
+
+    /**
+     * Get what the writer is asked: the prompt and the tests the app already
+     * has. Null when no tests are written first for this run.
+     *
+     * @return array{prompt: string, existing: list<string>}|null
+     */
+    public function prepare(Run $run, Plan $plan, Workspace $workspace, PlanningContext $context): ?array
+    {
         $items = $plan->verifyItems();
 
         // A worker outside our boxes gets the written tests with its task;
         // a driver that does not build gets none.
         if (! config('builder.verification.written_first.enabled') || ! in_array($run->driver, ['sdk', 'worker'], true) || $items === []) {
-            return $plan;
+            return null;
         }
 
         $existing = array_values(array_filter(explode("\0", $this->runWorkspaceCommand->handle(
@@ -58,7 +71,19 @@ class WriteTestsFirst
             120,
         )->output)));
 
-        $prompt = $this->prompt($plan, $items, $context, $workspace, $existing);
+        return ['prompt' => $this->prompt($plan, $items, $context, $workspace, $existing), 'existing' => $existing];
+    }
+
+    /**
+     * Ask the writer, once more for what it got wrong, and keep the tests
+     * that hold to the rules.
+     *
+     * @param  array{prompt: string, existing: list<string>}  $asked
+     */
+    public function write(Run $run, Plan $plan, array $asked): Plan
+    {
+        $items = $plan->verifyItems();
+        ['prompt' => $prompt, 'existing' => $existing] = $asked;
         $ask = $prompt;
         $attempts = max(1, (int) config('builder.verification.written_first.attempts'));
         $kinds = array_column($items, 'kind');
@@ -113,6 +138,24 @@ class WriteTestsFirst
 
             return $plan->withWrittenTests($kept['files'], $kept['tests']);
         }
+    }
+
+    /**
+     * Add tests written beside the coder to its built plan. A file the
+     * coder made itself at the same path stays the coder's: the tests
+     * written into it are left out, and the coder's own cover their items.
+     *
+     * @return array{0: Plan, 1: list<string>} The plan, and the paths left out
+     */
+    public function besideTheCoder(Workspace $workspace, Plan $plan, Plan $written): array
+    {
+        $driver = $this->workspaces->driver($workspace->driver);
+        $clashed = array_values(array_filter(array_keys($written->writtenFiles), fn (string $path) => rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), null, report: false) !== null));
+
+        return [$plan->withWrittenTests(
+            array_diff_key($written->writtenFiles, array_flip($clashed)),
+            array_values(array_filter($written->writtenTests, fn (array $test) => ! in_array($test['file'], $clashed, true))),
+        ), $clashed];
     }
 
     /**
