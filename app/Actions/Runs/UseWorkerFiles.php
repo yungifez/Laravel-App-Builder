@@ -7,7 +7,6 @@ use App\Models\Run;
 use App\Runs\Contracts\MutatingTool;
 use App\Runs\Contracts\Tool;
 use App\Runs\ToolContext;
-use App\Runs\WorkerDraft;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Validation\ValidationException;
 
@@ -21,8 +20,6 @@ class UseWorkerFiles
 {
     public function __construct(
         private TryWorkerChange $tryWorkerChange,
-        private ExtractCandidateChange $extractCandidateChange,
-        private WorkerDraft $draft,
         private WorkspaceManager $workspaces,
         private RunWorkspaceCommand $runWorkspaceCommand,
     ) {}
@@ -51,7 +48,7 @@ class UseWorkerFiles
             $result = $tool->handle(new ToolContext($run, $workspace, $this->workspaces->driver($workspace->driver), $this->runWorkspaceCommand, $protectedPaths), $arguments);
 
             if ($tool instanceof MutatingTool) {
-                $this->draft->keep($run, $this->extractCandidateChange->handle($workspace));
+                $this->tryWorkerChange->keep($run, $workspace, __('That write was not kept'));
             }
 
             return $result;

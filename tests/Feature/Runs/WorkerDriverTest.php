@@ -483,6 +483,52 @@ class WorkerDriverTest extends TestCase
         $this->tool('read_file', $token, ['path' => 'app/Models/Team.php'])->assertDontSee('description');
     }
 
+    public function test_a_write_too_large_to_hand_back_is_not_kept_and_the_change_stays_as_it_was()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $small = ['builder.agents.workers.max_patch_kb' => 1];
+        $this->tool('write_file', $token, ['path' => 'app/Made.php', 'contents' => "<?php\n// made here\n"]);
+
+        $this->tool('write_file', $token, ['path' => 'app/Huge.php', 'contents' => "<?php\n".str_repeat("// line\n", 400)], $small)
+            ->assertSee('That write was not kept: with it, your change would be larger than 1 KB')
+            ->assertSee('Your change is as it was before.');
+
+        // What it reads is what it would hand in.
+        $this->tool('read_file', $token, ['path' => 'app/Huge.php'], $small)->assertSee('does not exist');
+        $this->tool('read_file', $token, ['path' => 'app/Made.php'], $small)->assertSee('made here');
+        $this->tool('submit_change', $token, ['summary' => 'Made a file.'], $small)->assertSee('Received.');
+        $patch = (string) $run->events()->where('type', 'worker_submitted')->sole()->data['patch'];
+        $this->assertStringContainsString('+++ b/app/Made.php', $patch);
+        $this->assertStringNotContainsString('Huge.php', $patch);
+    }
+
+    public function test_a_smaller_write_after_one_too_large_is_kept()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $small = ['builder.agents.workers.max_patch_kb' => 1];
+
+        $this->tool('write_file', $token, ['path' => 'app/Huge.php', 'contents' => "<?php\n".str_repeat("// line\n", 400)], $small)->assertSee('not kept');
+        $this->tool('write_file', $token, ['path' => 'app/Huge.php', 'contents' => "<?php\n// short\n"], $small)->assertDontSee('"isError":true', false);
+
+        $this->assertStringEndsWith("<?php\n// short\n", (string) $this->tool('read_file', $token, ['path' => 'app/Huge.php'], $small)->json('result.content.0.text'));
+    }
+
+    public function test_what_a_try_writes_too_large_to_hand_back_is_not_kept()
+    {
+        $run = $this->startRun();
+        $token = app(GrantWorkerAccess::class)->handle($run);
+        $config = ['builder.agents.workers.max_patch_kb' => 1, 'builder.agents.workers.try_commands' => [['sh', '-c']]];
+        $this->tool('write_file', $token, ['path' => 'app/Made.php', 'contents' => "<?php\n// made here\n"]);
+
+        $this->tool('try_change', $token, ['command' => ['sh', '-c', 'seq 1 2000 > app/Numbers.txt']], $config)
+            ->assertSee('What the command wrote was not kept');
+
+        $this->tool('read_file', $token, ['path' => 'app/Numbers.txt'], $config)->assertSee('does not exist');
+        $this->tool('read_file', $token, ['path' => 'app/Made.php'], $config)->assertSee('made here');
+    }
+
     public function test_a_worker_with_no_folder_hears_what_it_may_not_do_here()
     {
         $run = $this->startRun();
