@@ -4425,10 +4425,12 @@ enforcement can live in controllers, middleware, query scopes or nowhere.
 **How much of the authorization matrix is automatic.** The routes, the actors
 (when roles are an enum or config, as in the fixture, or Spatie's permission
 package, whose roles and the permissions they grant come from the app's own
-migrations and seeders run in a private in-memory database, and in its teams
-mode are given in one team) and the team model (found from bindings and
-relationships, or by the team foreign key in Spatie's teams mode, confirmed once
-by the owner) can be derived. World building works where factories do. The
+migrations and seeders, run where its suite migrates: its test database, with
+its phpunit.xml settings, left migrated and empty as RefreshDatabase leaves it,
+else a private in-memory database; in its teams mode a role is given in one
+team) and the team model (found from bindings and relationships, or by the team
+foreign key in Spatie's teams mode, confirmed once by the owner) can be
+derived. World building works where factories do. The
 expectations split in half: isolation and guest denial need no intent and are
 fully automatic; the in-team role expectations need the notes' rules and one
 owner confirmation.

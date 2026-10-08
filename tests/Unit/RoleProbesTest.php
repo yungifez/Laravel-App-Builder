@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Features\RoleProbes;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 class RoleProbesTest extends TestCase
@@ -164,5 +166,79 @@ class RoleProbesTest extends TestCase
         // Teams mode named with a key that is not a column is not read.
         $this->assertSame([], RoleProbes::found($this->printedSpatie(['relation' => null, 'column' => null, 'spatie' => ['teams' => true, 'key' => 'team id; drop', 'guards' => [], 'permissions' => []]]))['tenants']);
         $this->assertNotFalse(token_get_all(RoleProbes::introspection(), TOKEN_PARSE));
+    }
+
+    /**
+     * Run the start of the introspection script in a folder holding the
+     * given files, with a clean environment plus $environment, and say
+     * what the app would read.
+     *
+     * @param  array<string, string>  $files
+     * @param  array<string, string>  $environment
+     * @return array{env: array<string, string|false>, server: string|null}
+     */
+    protected function settings(array $files, array $environment = []): array
+    {
+        $folder = storage_path('framework/testing/role-probes-'.getmypid());
+        File::deleteDirectory($folder);
+        File::ensureDirectoryExists($folder);
+
+        foreach ($files as $name => $contents) {
+            File::put("{$folder}/{$name}", $contents);
+        }
+
+        File::put("{$folder}/settings.php", RoleProbes::testSettings()."echo json_encode(['env' => ['APP_ENV' => getenv('APP_ENV'), 'DB_CONNECTION' => getenv('DB_CONNECTION'), 'DB_DATABASE' => getenv('DB_DATABASE')], 'server' => \$_SERVER['DB_HOST'] ?? null]);\n");
+        $variables = array_map(fn (string $name, string $value) => "{$name}={$value}", array_keys($environment), $environment);
+        $result = Process::path($folder)->run(['env', '-i', 'PATH='.getenv('PATH'), ...$variables, PHP_BINARY, 'settings.php']);
+        File::deleteDirectory($folder);
+
+        $this->assertTrue($result->successful(), $result->errorOutput());
+
+        return json_decode($result->output(), true);
+    }
+
+    /**
+     * A phpunit.xml with the given lines in its <php> block.
+     */
+    protected function phpunit(string $lines): string
+    {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<phpunit xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" bootstrap=\"vendor/autoload.php\">\n    <php>\n{$lines}\n    </php>\n</phpunit>\n";
+    }
+
+    public function test_the_roles_are_read_with_the_apps_own_test_database_settings(): void
+    {
+        $read = $this->settings(['phpunit.xml' => $this->phpunit(<<<'XML'
+        <env name="APP_ENV" value="testing"/>
+        <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="DB_DATABASE" value="shop_test"/>
+        <server name="DB_HOST" value="127.0.0.1"/>
+XML)]);
+
+        $this->assertSame(['env' => ['APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql', 'DB_DATABASE' => 'shop_test'], 'server' => '127.0.0.1'], $read);
+    }
+
+    public function test_a_dist_file_is_read_and_a_set_value_stays_unless_forced(): void
+    {
+        $read = $this->settings(['phpunit.xml.dist' => $this->phpunit(<<<'XML'
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_DATABASE" value="shop_test"/>
+XML)], ['APP_ENV' => 'local', 'DB_CONNECTION' => 'pgsql']);
+
+        // As PHPUnit runs it: a forced value wins, a set one stays.
+        $this->assertSame(['APP_ENV' => 'testing', 'DB_CONNECTION' => 'pgsql', 'DB_DATABASE' => 'shop_test'], $read['env']);
+    }
+
+    public function test_an_app_without_readable_test_settings_keeps_its_own(): void
+    {
+        $nothing = ['env' => ['APP_ENV' => false, 'DB_CONNECTION' => false, 'DB_DATABASE' => false], 'server' => null];
+
+        $this->assertSame($nothing, $this->settings([]));
+        $this->assertSame($nothing, $this->settings(['phpunit.xml' => '<phpunit><php><env name="DB_DATABASE"']));
+        // A broken file does not hide a good one after it.
+        $this->assertSame('shop_test', $this->settings([
+            'phpunit.xml' => '<phpunit><php>',
+            'phpunit.xml.dist' => $this->phpunit('        <env name="DB_DATABASE" value="shop_test"/>'),
+        ])['env']['DB_DATABASE']);
     }
 }

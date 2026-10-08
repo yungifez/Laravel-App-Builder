@@ -57,8 +57,7 @@ class RoleProbes
      */
     public static function introspection(): string
     {
-        return <<<'PHP'
-<?php
+        return self::testSettings().<<<'PHP'
 
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
@@ -110,28 +109,41 @@ foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
 
 // Spatie's permission package: roles are rows, given to users with
 // assignRole, and in teams mode scoped to a team by its foreign key. The
-// rows the app's own migrations and seeders make are read from a private
-// in-memory database, so no database of the app is touched.
+// rows the app's own migrations and seeders make are read where its suite
+// migrates: its test database, left migrated and empty as RefreshDatabase
+// leaves it. An app whose migrations do not run there, or whose tests do
+// not run as "testing", is read from a private in-memory database.
 $registrar = 'Spatie\\Permission\\PermissionRegistrar';
 
 if (class_exists($registrar) && in_array('Spatie\\Permission\\Traits\\HasRoles', class_uses_recursive($user), true)) {
     $teams = (bool) config('permission.teams');
     $key = (string) config('permission.column_names.team_foreign_key', 'team_id');
-    $roles = rescue(function () use ($registrar) {
-        config(['database.connections.role_probes' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true], 'database.default' => 'role_probes', 'mail.default' => 'array', 'queue.default' => 'sync', 'cache.default' => 'array', 'permission.cache.store' => 'array']);
-        Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true, '--seed' => true]);
-        $found = [];
+    $read = function () use ($registrar) {
+        config(['mail.default' => 'array', 'queue.default' => 'sync', 'cache.default' => 'array', 'permission.cache.store' => 'array']);
+        Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true, '--seed' => true]);
 
-        foreach (app($registrar)->getRoleClass()::query()->with('permissions')->get() as $role) {
-            $found[$role->name]['guard'] ??= (string) $role->guard_name;
-            $found[$role->name]['permissions'] = array_values(array_unique([...$found[$role->name]['permissions'] ?? [], ...$role->permissions->pluck('name')->all()]));
+        try {
+            $found = [];
+
+            foreach (app($registrar)->getRoleClass()::query()->with('permissions')->get() as $role) {
+                $found[$role->name]['guard'] ??= (string) $role->guard_name;
+                $found[$role->name]['permissions'] = array_values(array_unique([...$found[$role->name]['permissions'] ?? [], ...$role->permissions->pluck('name')->all()]));
+            }
+
+            // Most rights first, as an enum's cases usually run.
+            uksort($found, fn (string $a, string $b) => count($found[$b]['permissions']) <=> count($found[$a]['permissions']) ?: array_search($a, array_keys($found), true) <=> array_search($b, array_keys($found), true));
+
+            return $found;
+        } finally {
+            Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
         }
+    };
+    $roles = app()->environment('testing') ? rescue($read, [], report: false) : [];
 
-        // Most rights first, as an enum's cases usually run.
-        uksort($found, fn (string $a, string $b) => count($found[$b]['permissions']) <=> count($found[$a]['permissions']) ?: array_search($a, array_keys($found), true) <=> array_search($b, array_keys($found), true));
-
-        return $found;
-    }, [], report: false);
+    if ($roles === []) {
+        config(['database.connections.role_probes' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true], 'database.default' => 'role_probes']);
+        $roles = rescue($read, [], report: false);
+    }
 
     if ($roles !== []) {
         $candidates = $memberships;
@@ -186,6 +198,45 @@ foreach (app('router')->getRoutes() as $route) {
 }
 
 echo json_encode(['tenants' => array_values($tenants), 'routes' => $routes]), "\n";
+
+PHP;
+    }
+
+    /**
+     * The start of the introspection script: the app's own test settings,
+     * as PHPUnit applies them when its suite runs. An <env> is set unless
+     * it is set already or is forced; each <server> is always set.
+     */
+    public static function testSettings(): string
+    {
+        return <<<'PHP'
+<?php
+
+foreach (['phpunit.xml', 'phpunit.xml.dist', 'phpunit.dist.xml'] as $file) {
+    $xml = is_file(getcwd().'/'.$file) ? @simplexml_load_file(getcwd().'/'.$file) : false;
+
+    if ($xml === false) {
+        continue;
+    }
+
+    foreach ($xml->xpath('/phpunit/php/env') ?: [] as $env) {
+        $name = (string) $env['name'];
+        $value = (string) $env['value'];
+
+        if ($name !== '' && (getenv($name) === false || in_array(strtolower((string) $env['force']), ['true', '1'], true))) {
+            putenv("{$name}={$value}");
+            $_ENV[$name] = $_SERVER[$name] = $value;
+        }
+    }
+
+    foreach ($xml->xpath('/phpunit/php/server') ?: [] as $server) {
+        if ((string) $server['name'] !== '') {
+            $_SERVER[(string) $server['name']] = (string) $server['value'];
+        }
+    }
+
+    break;
+}
 
 PHP;
     }
