@@ -13,7 +13,10 @@ use Illuminate\Support\Str;
  *
  * Roles are read the way Laravel declares them: the team's link to its
  * members has a pivot with a column cast to an enum, and each case is a
- * role. Routes are read from the controllers' own type hints: a route
+ * role. An app on Spatie's permission package has its roles as rows
+ * instead, each given to a member with assignRole along with the
+ * permissions the role grants; in its teams mode a role holds only in the
+ * team it was given in. Routes are read from the controllers' own type hints: a route
  * whose bound values are the team, or the team and one of its members.
  *
  * Only what the request did counts. The team and its members are read
@@ -26,7 +29,8 @@ use Illuminate\Support\Str;
  * or lost a thing is not, since a request may ask for exactly that. It is
  * told to the reviewer and the owner, who hold it against the plan.
  *
- * @phpstan-type Tenant array{model: string, relation: string, column: string, roles: list<string>}
+ * @phpstan-type Spatie array{teams: bool, key: string|null, guards: array<string, string>, permissions: array<string, list<string>>}
+ * @phpstan-type Tenant array{model: string, relation: string|null, column: string|null, roles: list<string>, spatie: Spatie|null}
  * @phpstan-type Route array{method: string, uri: string, name: string|null, tenant: string, team: string, member: string|null}
  * @phpstan-type Found array{tenants: list<Tenant>, routes: list<Route>}
  * @phpstan-type Probe array{route: string, method: string, uri: string, tenant: string, team: string, member: string|null, actor: string}
@@ -62,6 +66,7 @@ $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
 $user = config('auth.providers.users.model');
 $tenants = [];
+$memberships = [];
 
 foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
     $class = 'App\\Models\\'.basename($file, '.php');
@@ -87,6 +92,7 @@ foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
             continue;
         }
 
+        $memberships[class_basename($class)] ??= ['class' => $class, 'relation' => $method->name];
         $pivot = $relation->getPivotClass();
         $casts = (new $pivot)->getCasts();
 
@@ -94,10 +100,62 @@ foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
             $cast = $casts[$column] ?? null;
 
             if (is_string($cast) && enum_exists($cast) && is_subclass_of($cast, BackedEnum::class)) {
-                $tenants[class_basename($class)] = ['model' => class_basename($class), 'relation' => $method->name, 'column' => $column, 'roles' => array_map(fn ($case) => (string) $case->value, $cast::cases())];
+                $tenants[class_basename($class)] = ['model' => class_basename($class), 'relation' => $method->name, 'column' => $column, 'roles' => array_map(fn ($case) => (string) $case->value, $cast::cases()), 'spatie' => null];
 
                 break;
             }
+        }
+    }
+}
+
+// Spatie's permission package: roles are rows, given to users with
+// assignRole, and in teams mode scoped to a team by its foreign key. The
+// rows the app's own migrations and seeders make are read from a private
+// in-memory database, so no database of the app is touched.
+$registrar = 'Spatie\\Permission\\PermissionRegistrar';
+
+if (class_exists($registrar) && in_array('Spatie\\Permission\\Traits\\HasRoles', class_uses_recursive($user), true)) {
+    $teams = (bool) config('permission.teams');
+    $key = (string) config('permission.column_names.team_foreign_key', 'team_id');
+    $roles = rescue(function () use ($registrar) {
+        config(['database.connections.role_probes' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true], 'database.default' => 'role_probes', 'mail.default' => 'array', 'queue.default' => 'sync', 'cache.default' => 'array', 'permission.cache.store' => 'array']);
+        Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true, '--seed' => true]);
+        $found = [];
+
+        foreach (app($registrar)->getRoleClass()::query()->with('permissions')->get() as $role) {
+            $found[$role->name]['guard'] ??= (string) $role->guard_name;
+            $found[$role->name]['permissions'] = array_values(array_unique([...$found[$role->name]['permissions'] ?? [], ...$role->permissions->pluck('name')->all()]));
+        }
+
+        // Most rights first, as an enum's cases usually run.
+        uksort($found, fn (string $a, string $b) => count($found[$b]['permissions']) <=> count($found[$a]['permissions']) ?: array_search($a, array_keys($found), true) <=> array_search($b, array_keys($found), true));
+
+        return $found;
+    }, [], report: false);
+
+    if ($roles !== []) {
+        $candidates = $memberships;
+
+        if ($teams) {
+            $candidates = [];
+
+            foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
+                $class = 'App\\Models\\'.basename($file, '.php');
+
+                if (class_exists($class) && is_subclass_of($class, Illuminate\Database\Eloquent\Model::class) && ! (new ReflectionClass($class))->isAbstract() && (new $class)->getForeignKey() === $key) {
+                    $candidates[class_basename($class)] = ['class' => $class, 'relation' => $memberships[class_basename($class)]['relation'] ?? null];
+                }
+            }
+        }
+
+        foreach ($candidates as $model => $candidate) {
+            $tenants[$model] ??= [
+                'model' => $model,
+                'relation' => $candidate['relation'],
+                'column' => null,
+                'roles' => array_map(strval(...), array_keys($roles)),
+                'spatie' => ['teams' => $teams, 'key' => $teams ? $key : null, 'guards' => array_map(fn (array $role) => $role['guard'], $roles), 'permissions' => array_map(fn (array $role) => $role['permissions'], $roles)],
+            ];
         }
     }
 }
@@ -147,13 +205,25 @@ PHP;
         }
 
         $word = fn (mixed $value) => is_string($value) && preg_match('/^\w+$/', $value) === 1;
+        $names = fn (mixed $list) => is_array($list) ? array_values(array_filter($list, fn (mixed $name) => is_string($name) && preg_match('/^[\w-][\w .:\/-]{0,63}$/', $name) === 1)) : [];
         $tenants = [];
 
         foreach ($data['tenants'] as $tenant) {
-            $roles = is_array($tenant['roles'] ?? null) ? array_values(array_filter($tenant['roles'], fn (mixed $role) => is_string($role) && preg_match('/^[\w-]+$/', $role) === 1)) : [];
+            if (! is_array($tenant) || ! $word($tenant['model'] ?? null) || (($tenant['relation'] ?? null) !== null && ! $word($tenant['relation']))) {
+                continue;
+            }
 
-            if (is_array($tenant) && $word($tenant['model'] ?? null) && $word($tenant['relation'] ?? null) && $word($tenant['column'] ?? null) && $roles !== []) {
-                $tenants[] = ['model' => $tenant['model'], 'relation' => $tenant['relation'], 'column' => $tenant['column'], 'roles' => $roles];
+            $roles = $names($tenant['roles'] ?? null);
+            $spatie = is_array($tenant['spatie'] ?? null) ? self::spatie($tenant['spatie'], $roles, $names) : null;
+
+            // An enum role lives in the team's pivot column; a Spatie role
+            // needs a way into the team: its members, or teams mode.
+            $usable = $spatie === null
+                ? $word($tenant['relation'] ?? null) && $word($tenant['column'] ?? null)
+                : ($tenant['relation'] ?? null) !== null || $spatie['teams'];
+
+            if ($roles !== [] && $usable) {
+                $tenants[] = ['model' => $tenant['model'], 'relation' => $tenant['relation'] ?? null, 'column' => $spatie === null ? $tenant['column'] : null, 'roles' => $roles, 'spatie' => $spatie];
             }
         }
 
@@ -168,6 +238,35 @@ PHP;
         }
 
         return ['tenants' => $tenants, 'routes' => $routes];
+    }
+
+    /**
+     * Read how a Spatie app gives its roles, for the roles that were read.
+     *
+     * @param  array<mixed>  $spatie
+     * @param  list<string>  $roles
+     * @param  callable(mixed): list<string>  $names
+     * @return Spatie|null
+     */
+    protected static function spatie(array $spatie, array $roles, callable $names): ?array
+    {
+        $teams = ($spatie['teams'] ?? null) === true;
+        $key = $spatie['key'] ?? null;
+
+        if (($spatie['teams'] ?? null) !== $teams || ($teams && (! is_string($key) || preg_match('/^\w+$/', $key) !== 1))) {
+            return null;
+        }
+
+        $guards = [];
+        $permissions = [];
+
+        foreach ($roles as $role) {
+            $guard = $spatie['guards'][$role] ?? 'web';
+            $guards[$role] = is_string($guard) && preg_match('/^\w+$/', $guard) === 1 ? $guard : 'web';
+            $permissions[$role] = $names($spatie['permissions'][$role] ?? null);
+        }
+
+        return ['teams' => $teams, 'key' => $teams ? $key : null, 'guards' => $guards, 'permissions' => $permissions];
     }
 
     /**
@@ -240,20 +339,23 @@ PHP;
         return <<<PHP
 <?php
 
-namespace Tests\Feature;
+namespace Tests\\Feature;
 
-use App\Models\User;
+use App\\Models\\User;
 use BackedEnum;
 use DateTimeInterface;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
+use Illuminate\\Database\\Eloquent\\Model;
+use Illuminate\\Foundation\\Testing\\RefreshDatabase;
+use Illuminate\\Support\\Facades\\DB;
+use Tests\\TestCase;
 
 class RoleProbeTest extends TestCase
 {
     use RefreshDatabase;
 
     private const TENANTS = {$tenants};
+
+    private const REGISTRAR = 'Spatie\\Permission\\PermissionRegistrar';
 
 {$methods}
 
@@ -263,16 +365,13 @@ class RoleProbeTest extends TestCase
      */
     private function probe(int \$id, string \$method, string \$uri, string \$tenant, string \$teamParam, ?string \$memberParam, string \$actor): void
     {
-        ['relation' => \$relation, 'column' => \$column, 'roles' => \$roles] = self::TENANTS[\$tenant];
-        \$model = 'App\\\\Models\\\\'.\$tenant;
+        ['relation' => \$relation, 'column' => \$column, 'roles' => \$roles, 'spatie' => \$spatie] = self::TENANTS[\$tenant];
+        \$model = 'App\\Models\\\\'.\$tenant;
         \$team = \$model::factory()->create();
-        \$user = match (true) {
-            \$actor === 'guest' => null,
-            default => User::factory()->create(),
-        };
+        \$user = \$actor === 'guest' ? null : User::factory()->create();
 
         if (\$user !== null && str_starts_with(\$actor, 'role:')) {
-            \$team->{\$relation}()->attach(\$user, [\$column => substr(\$actor, 5)]);
+            \$this->join(\$team, \$user, substr(\$actor, 5), \$relation, \$column, \$spatie);
         }
 
         \$member = null;
@@ -280,8 +379,8 @@ class RoleProbeTest extends TestCase
 
         if (\$memberParam !== null) {
             \$member = User::factory()->create();
-            \$team->{\$relation}()->attach(\$member, [\$column => \$roles[count(\$roles) - 1]]);
-            \$payload = in_array(\$method, ['PUT', 'PATCH'], true) ? [\$column => \$roles[max(0, count(\$roles) - 2)]] : [];
+            \$this->join(\$team, \$member, \$roles[count(\$roles) - 1], \$relation, \$column, \$spatie);
+            \$payload = in_array(\$method, ['PUT', 'PATCH'], true) ? [\$column ?? 'role' => \$roles[max(0, count(\$roles) - 2)]] : [];
         } elseif (in_array(\$method, ['PUT', 'PATCH', 'POST'], true)) {
             \$payload = array_map(fn (mixed \$value) => match (true) {
                 \$value instanceof DateTimeInterface => \$value->format('Y-m-d H:i:s'),
@@ -290,25 +389,25 @@ class RoleProbeTest extends TestCase
             }, \$model::factory()->raw());
         }
 
-        \$pivot = \$team->{\$relation}()->getPivotAccessor();
         \$read = fn () => [
             \$model::query()->whereKey(\$team->getKey())->first()?->getAttributes(),
-            \$team->{\$relation}()->get()->map(function (Model \$person) use (\$pivot, \$column) {
-                \$role = \$person->{\$pivot}->{\$column};
-
-                return [\$person->getKey(), (string) (\$role instanceof BackedEnum ? \$role->value : \$role)];
-            })->sortBy(0)->values()->all(),
+            \$this->members(\$team, \$relation, \$column, \$spatie),
         ];
         \$before = \$read();
 
-        \$url = (string) preg_replace('/\{'.\$teamParam.'(:\w+)?\??\}/', (string) \$team->getRouteKey(), \$uri);
+        \$url = (string) preg_replace('/\\{'.\$teamParam.'(:\\w+)?\\??\\}/', (string) \$team->getRouteKey(), \$uri);
 
         if (\$member !== null) {
-            \$url = (string) preg_replace('/\{'.\$memberParam.'(:\w+)?\??\}/', (string) \$member->getRouteKey(), \$url);
+            \$url = (string) preg_replace('/\\{'.\$memberParam.'(:\\w+)?\\??\\}/', (string) \$member->getRouteKey(), \$url);
         }
 
         if (\$user !== null) {
             \$this->actingAs(\$user);
+        }
+
+        // A role given in a team holds only while that team is the one in use.
+        if (\$spatie !== null && \$spatie['teams']) {
+            app(self::REGISTRAR)->setPermissionsTeamId(\$team->getKey());
         }
 
         \$response = \$this->call(\$method, \$url, \$payload);
@@ -323,6 +422,71 @@ class RoleProbeTest extends TestCase
         ]).PHP_EOL, FILE_APPEND);
 
         \$this->addToAssertionCount(1);
+    }
+
+    /**
+     * Put a person in the team with a role: in the pivot's role column, or
+     * given with Spatie's assignRole along with what the role permits.
+     *
+     * @param  array<string, mixed>|null  \$spatie
+     */
+    private function join(Model \$team, User \$person, string \$role, ?string \$relation, ?string \$column, ?array \$spatie): void
+    {
+        if (\$spatie === null) {
+            \$team->{\$relation}()->attach(\$person, [\$column => \$role]);
+
+            return;
+        }
+
+        if (\$relation !== null) {
+            \$team->{\$relation}()->syncWithoutDetaching([\$person->getKey()]);
+        }
+
+        \$registrar = app(self::REGISTRAR);
+
+        if (\$spatie['teams']) {
+            \$registrar->setPermissionsTeamId(\$team->getKey());
+        }
+
+        \$guard = \$spatie['guards'][\$role];
+        \$given = \$registrar->getRoleClass()::findOrCreate(\$role, \$guard);
+        \$given->givePermissionTo(array_map(fn (string \$name) => \$registrar->getPermissionClass()::findOrCreate(\$name, \$guard), \$spatie['permissions'][\$role]));
+        \$person->assignRole(\$given);
+        \$registrar->forgetCachedPermissions();
+        \$person->unsetRelation('roles')->unsetRelation('permissions');
+    }
+
+    /**
+     * Who is in the team and with which role, as the app keeps it.
+     *
+     * @param  array<string, mixed>|null  \$spatie
+     * @return list<mixed>
+     */
+    private function members(Model \$team, ?string \$relation, ?string \$column, ?array \$spatie): array
+    {
+        if (\$spatie === null) {
+            \$pivot = \$team->{\$relation}()->getPivotAccessor();
+
+            return \$team->{\$relation}()->get()->map(function (Model \$person) use (\$pivot, \$column) {
+                \$role = \$person->{\$pivot}->{\$column};
+
+                return [\$person->getKey(), (string) (\$role instanceof BackedEnum ? \$role->value : \$role)];
+            })->sortBy(0)->values()->all();
+        }
+
+        \$given = fn (string \$table) => DB::table((string) config("permission.table_names.{\$table}"))
+            ->when(\$spatie['teams'], fn (\$query) => \$query->where(\$spatie['key'], \$team->getKey()))
+            ->get()
+            ->map(fn (object \$row) => array_values((array) \$row))
+            ->sort()
+            ->values()
+            ->all();
+
+        return [
+            \$relation === null ? [] : \$team->{\$relation}()->pluck((new User)->getQualifiedKeyName())->sort()->values()->all(),
+            \$given('model_has_roles'),
+            \$given('model_has_permissions'),
+        ];
     }
 }
 

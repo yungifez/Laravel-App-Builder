@@ -53,19 +53,21 @@ class RoleProbeVerificationTest extends TestCase
      *
      * @param  array<int, bool>  $before  Whether each removal went through before the change
      * @param  array<int, bool>  $after  Whether each removal went through with it
+     * @param  list<array<string, mixed>>|null  $tenants  The teams the script finds; an enum role column by default
      */
-    protected function answer(array $before, array $after): void
+    protected function answer(array $before, array $after, ?array $tenants = null): void
     {
         $started = false;
+        $tenants ??= [['model' => 'Team', 'relation' => 'members', 'column' => 'role', 'roles' => ['owner', 'admin', 'member']]];
 
-        $this->driver->onExec = function (string $workspace, array $command) use ($before, $after, &$started) {
+        $this->driver->onExec = function (string $workspace, array $command) use ($before, $after, $tenants, &$started) {
             if (($command[0] ?? null) === 'git' && ($command[1] ?? null) === 'apply') {
                 $started = in_array('--reverse', $command, true);
             }
 
             if ($command === ['php', 'roles.php']) {
                 return new CommandResult(exitCode: 0, output: (string) json_encode([
-                    'tenants' => [['model' => 'Team', 'relation' => 'members', 'column' => 'role', 'roles' => ['owner', 'admin', 'member']]],
+                    'tenants' => $tenants,
                     'routes' => [
                         ['method' => 'PATCH', 'uri' => '/settings/teams/{team}', 'name' => 'teams.update', 'tenant' => 'Team', 'team' => 'team', 'member' => null],
                         ['method' => 'DELETE', 'uri' => '/settings/teams/{team}/members/{member}', 'name' => 'team-members.destroy', 'tenant' => 'Team', 'team' => 'team', 'member' => 'member'],
@@ -124,5 +126,73 @@ class RoleProbeVerificationTest extends TestCase
 
         $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may do what in a team'));
         $this->assertSame(0, collect($this->driver->executed)->where('command', ['php', 'roles.php'])->count());
+    }
+
+    /**
+     * A team whose roles come from Spatie's permission package.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function spatie(bool $teams): array
+    {
+        return [[
+            'model' => 'Team',
+            'relation' => $teams ? null : 'members',
+            'column' => null,
+            'roles' => ['owner', 'admin', 'member'],
+            'spatie' => [
+                'teams' => $teams,
+                'key' => $teams ? 'team_id' : null,
+                'guards' => ['owner' => 'web', 'admin' => 'web', 'member' => 'web'],
+                'permissions' => ['owner' => ['remove members', 'edit team'], 'admin' => ['remove members'], 'member' => []],
+            ],
+        ]];
+    }
+
+    public function test_someone_outside_a_spatie_team_who_gained_a_thing_fails_the_checks(): void
+    {
+        $this->answer(before: [7 => true, 8 => true], after: [6 => true, 7 => true, 8 => true], tenants: $this->spatie(teams: true));
+        $change = FeatureRequest::factory()->generated()->create();
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+        $result = collect($verification->results)->firstWhere('name', 'Who may do what in a team');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringContainsString('A signed-in person outside the team can now use team-members.destroy.', $result['output']);
+        $this->assertSame([['route' => 'team-members.destroy', 'actor' => 'stranger', 'before' => 'no', 'after' => 'yes']], $verification->evidence['roles']['findings'] ?? null);
+        $this->assertSame(VerificationStatus::Failed, $verification->status);
+        // Each role is given in the team, with what it permits.
+        $test = (string) collect($this->driver->files)->first(fn (string $content, string $path) => str_ends_with($path, ':tests/Feature/RoleProbeTest.php'));
+        $this->assertStringContainsString("'remove members'", $test);
+        $this->assertStringContainsString('setPermissionsTeamId', $test);
+    }
+
+    public function test_what_a_spatie_role_gained_without_teams_is_told_and_passes(): void
+    {
+        $this->answer(before: [7 => true, 8 => true], after: [7 => true, 9 => true], tenants: $this->spatie(teams: false));
+        $change = FeatureRequest::factory()->generated()->create();
+
+        app(RequestVerification::class)->handle($change);
+
+        $verification = $change->verifications()->sole();
+        $result = collect($verification->results)->firstWhere('name', 'Who may do what in a team');
+        $this->assertSame('passed', $result['outcome']);
+        $this->assertStringContainsString('- A member with the member role can now use team-members.destroy', $result['output']);
+        $this->assertStringContainsString('- A member with the admin role can no longer use team-members.destroy', $result['output']);
+        $this->assertSame([], $verification->evidence['roles']['findings'] ?? null);
+        $this->assertNotSame(VerificationStatus::Failed, $verification->status);
+    }
+
+    public function test_an_app_with_neither_role_column_nor_spatie_is_not_probed(): void
+    {
+        $this->answer(before: [], after: [6 => true], tenants: []);
+        $change = FeatureRequest::factory()->generated()->create();
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may do what in a team'));
+        $this->assertSame(1, collect($this->driver->executed)->where('command', ['php', 'roles.php'])->count());
+        $this->assertSame(0, collect($this->driver->executed)->filter(fn (array $run) => array_slice($run['command'], 0, 4) === self::PROBE)->count());
     }
 }

@@ -92,4 +92,77 @@ class RoleProbesTest extends TestCase
         $this->assertSame([], $measured['findings']);
         $this->assertStringContainsString('New: team-members.destroy. Could use it: a member with the owner role.', RoleProbes::describe($measured));
     }
+
+    /**
+     * What the script prints for an app on Spatie's permission package:
+     * roles as rows, each with the permissions it grants.
+     *
+     * @param  array<string, mixed>  $tenant
+     */
+    protected function printedSpatie(array $tenant): string
+    {
+        return (string) json_encode([
+            'tenants' => [['model' => 'Team', 'roles' => ['Team Admin', 'editor', 'viewer'], ...$tenant]],
+            'routes' => [
+                ['method' => 'PATCH', 'uri' => '/teams/{team}', 'name' => 'teams.update', 'tenant' => 'Team', 'team' => 'team', 'member' => null],
+            ],
+        ]);
+    }
+
+    public function test_a_spatie_team_app_is_tried_as_each_role_given_in_the_team(): void
+    {
+        $found = RoleProbes::found($this->printedSpatie([
+            'relation' => null,
+            'column' => null,
+            'spatie' => [
+                'teams' => true,
+                'key' => 'team_id',
+                'guards' => ['Team Admin' => 'web', 'editor' => 'web', 'viewer' => 'web'],
+                'permissions' => ['Team Admin' => ['edit team', 'remove members'], 'editor' => ['edit team'], 'viewer' => []],
+            ],
+        ]));
+        $probes = RoleProbes::plan($found, 60);
+        $test = RoleProbes::test($probes, $found['tenants'], 'probes.jsonl');
+
+        $this->assertSame(['guest', 'stranger', 'role:Team Admin', 'role:editor', 'role:viewer'], array_column($probes, 'actor'));
+        $this->assertSame(['teams' => true, 'key' => 'team_id', 'guards' => ['Team Admin' => 'web', 'editor' => 'web', 'viewer' => 'web'], 'permissions' => ['Team Admin' => ['edit team', 'remove members'], 'editor' => ['edit team'], 'viewer' => []]], $found['tenants'][0]['spatie']);
+        // Each role is given in the team, with what it permits, and the
+        // request is sent with that team in use.
+        $this->assertStringContainsString('$person->assignRole($given);', $test);
+        $this->assertStringContainsString("\$given->givePermissionTo(array_map(fn (string \$name) => \$registrar->getPermissionClass()::findOrCreate(\$name, \$guard), \$spatie['permissions'][\$role]));", $test);
+        $this->assertSame(2, substr_count($test, 'setPermissionsTeamId($team->getKey())'));
+        $this->assertStringContainsString("'remove members'", $test);
+        $this->assertNotFalse(token_get_all($test, TOKEN_PARSE));
+    }
+
+    public function test_a_spatie_app_without_teams_gives_its_roles_to_the_teams_members(): void
+    {
+        $spatie = ['teams' => false, 'key' => null, 'guards' => ['Team Admin' => 'web', 'editor' => 'admin', 'viewer' => 'web'], 'permissions' => ['Team Admin' => ['edit team']]];
+        $found = RoleProbes::found($this->printedSpatie(['relation' => 'members', 'column' => null, 'spatie' => $spatie]));
+
+        $this->assertSame(['model' => 'Team', 'relation' => 'members', 'column' => null, 'roles' => ['Team Admin', 'editor', 'viewer'], 'spatie' => [
+            'teams' => false,
+            'key' => null,
+            'guards' => ['Team Admin' => 'web', 'editor' => 'admin', 'viewer' => 'web'],
+            'permissions' => ['Team Admin' => ['edit team'], 'editor' => [], 'viewer' => []],
+        ]], $found['tenants'][0]);
+        $this->assertCount(5, RoleProbes::plan($found, 60));
+
+        // Global roles with no members to give them to reach no team.
+        $this->assertSame([], RoleProbes::found($this->printedSpatie(['relation' => null, 'column' => null, 'spatie' => $spatie]))['tenants']);
+    }
+
+    public function test_an_app_with_neither_enum_roles_nor_spatie_is_not_probed(): void
+    {
+        $found = RoleProbes::found((string) json_encode(['tenants' => [], 'routes' => [
+            ['method' => 'PATCH', 'uri' => '/teams/{team}', 'name' => 'teams.update', 'tenant' => 'Team', 'team' => 'team', 'member' => null],
+        ]]));
+
+        $this->assertSame(['tenants' => [], 'routes' => []], $found);
+        $this->assertSame([], RoleProbes::plan($found, 60));
+
+        // Teams mode named with a key that is not a column is not read.
+        $this->assertSame([], RoleProbes::found($this->printedSpatie(['relation' => null, 'column' => null, 'spatie' => ['teams' => true, 'key' => 'team id; drop', 'guards' => [], 'permissions' => []]]))['tenants']);
+        $this->assertNotFalse(token_get_all(RoleProbes::introspection(), TOKEN_PARSE));
+    }
 }

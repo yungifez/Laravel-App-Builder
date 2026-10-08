@@ -4408,17 +4408,21 @@ real applications.
 
 **Static knowledge chooses the probes; only runtime results are evidence.**
 Introspection (routes, middleware, bindings, FormRequest rules, registered
-policies, roles from their enum or config, factories) decides what to probe and
-how to build the request. Whether a request is actually allowed is always
-observed by running it, because enforcement can live in controllers,
-middleware, query scopes or nowhere.
+policies, roles from their enum, config or Spatie's permission package,
+factories) decides what to probe and how to build the request. Whether a
+request is actually allowed is always observed by running it, because
+enforcement can live in controllers, middleware, query scopes or nowhere.
 
 **How much of the authorization matrix is automatic.** The routes, the actors
-(when roles are an enum or config, as in the fixture) and the team model (found
-from bindings and relationships, confirmed once by the owner) can be derived.
-World building works where factories do. The expectations split in half:
-isolation and guest denial need no intent and are fully automatic; the
-in-team role expectations need the notes' rules and one owner confirmation.
+(when roles are an enum or config, as in the fixture, or Spatie's permission
+package, whose roles and the permissions they grant come from the app's own
+migrations and seeders run in a private in-memory database, and in its teams
+mode are given in one team) and the team model (found from bindings and
+relationships, or by the team foreign key in Spatie's teams mode, confirmed once
+by the owner) can be derived. World building works where factories do. The
+expectations split in half: isolation and guest denial need no intent and are
+fully automatic; the in-team role expectations need the notes' rules and one
+owner confirmation.
 
 **Rules are generators without combinatorial fuzzing.** One dimension changes
 per probe. Each field gets its equivalence classes (valid, missing, each rule's
