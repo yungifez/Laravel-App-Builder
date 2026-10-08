@@ -366,11 +366,28 @@ class WriteTestsFirst
         $framework = str_contains($read('composer.json'), '"pestphp/pest"') ? 'Pest' : 'PHPUnit';
         $sections[] = "## How the app's tests are written\n\nThe app's tests use {$framework}. Only tests under ".Capability::suiteLocation().' are run.';
 
-        // A few of the app's own feature tests, in a fixed order, to copy their style.
-        $samples = array_slice(array_values(array_filter($existing, fn (string $path) => str_starts_with($path, 'tests/Feature/') && Capability::runBySuite($path))), 0, 2);
+        $bytes = (int) config('builder.verification.written_first.sample_bytes');
+
+        // The code the steps change, as it is now: without it the writer
+        // guesses table, column and route names that do not exist.
+        foreach (array_slice(array_values(array_unique(array_column($plan->steps, 'file'))), 0, 4) as $path) {
+            $contents = $read($path);
+
+            if ($contents !== '') {
+                $sections[] = "## {$path} (as it is now)\n\n```\n".Str::limit($contents, $bytes, "\n// …")."\n```";
+            }
+        }
+
+        // Two of the app's own feature tests to copy: those of the areas the
+        // change is about first, as they show how their records are made,
+        // then the others in a fixed order.
+        $areas = array_unique([...$plan->capabilities, ...array_merge([], ...array_map(fn (array $step) => $context->projectContext->claiming($step['file']), $plan->steps))]);
+        $areaTests = array_merge([], ...array_map(fn (string $key) => $context->projectContext->capabilities[$key]->testFiles ?? [], $areas));
+        $feature = array_values(array_filter($existing, fn (string $path) => str_starts_with($path, 'tests/Feature/') && Capability::runBySuite($path)));
+        $samples = array_slice(array_values(array_unique([...array_intersect($areaTests, $feature), ...$feature])), 0, 2);
 
         foreach ($samples as $path) {
-            $sections[] = "## {$path}\n\n```php\n".Str::limit($read($path), (int) config('builder.verification.written_first.sample_bytes'), "\n// …")."\n```";
+            $sections[] = "## {$path}\n\n```php\n".Str::limit($read($path), $bytes, "\n// …")."\n```";
         }
 
         return implode("\n\n", $sections);
