@@ -1,9 +1,12 @@
 # Responder instructions
 
 Each hand-off request (`*.request.json`) is answered by a fresh subagent on
-the same model, given the text below with the request's fields filled in. The
-coding wrapper is identical for both arms; only the task text differs, which
-is the difference under test.
+the same model, given the text below. The subagent reads the fields
+(`workspace`, `prompt`, `instructions`, `schema`, `response`) from its own
+request file, named in its instructions, so long prompts reach it verbatim.
+Reading that one file is allowed in every role. The coding wrapper is
+identical for both arms; only the task text differs, which is the difference
+under test.
 
 ## Coding (`coder` for the pipeline, `plain-coder` for the plain agent)
 
