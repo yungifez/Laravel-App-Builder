@@ -33,9 +33,11 @@ function allowToolPage(string $name = 'Claude'): string
     ]);
 }
 
-// Each button's place and size. The forms do not send, so the page stays
-// here instead of going on to the tool's site.
-const ALLOW_TOOL_BUTTONS = "(() => { document.querySelectorAll('form').forEach((form) => form.addEventListener('submit', (event) => event.preventDefault(), true)); return [...document.querySelectorAll('button')].map((button) => { const box = button.getBoundingClientRect(); return [box.left, box.width, box.height].map(Math.round).join(); }).join(' '); })()";
+// Each button's place and size, once the fonts are in: until a face
+// arrives, the text is set in another and a button can be a pixel off.
+// The forms do not send, so the page stays here instead of going on to
+// the tool's site.
+const ALLOW_TOOL_BUTTONS = "(async () => { await document.fonts.ready; document.querySelectorAll('form').forEach((form) => form.addEventListener('submit', (event) => event.preventDefault(), true)); return [...document.querySelectorAll('button')].map((button) => { const box = button.getBoundingClientRect(); return [box.left, box.width, box.height].map(Math.round).join(); }).join(' '); })()";
 
 const ALLOW_TOOL_PLACES = "[...document.querySelectorAll('button')].map((button) => { const box = button.getBoundingClientRect(); return [box.left, box.width, box.height].map(Math.round).join(); }).join(' ')";
 
