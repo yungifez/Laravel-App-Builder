@@ -107,14 +107,22 @@ class Workbench
     }
 
     /**
-     * Apply a patch; report whether it applied.
+     * Apply a patch and report whether it applied. The route helpers are
+     * generated again afterwards, as verification does after applying a
+     * change, so new routes have their TypeScript helpers.
      */
     public function apply(string $patch, string $label = 'change'): CommandResult
     {
         $file = '.git/evaluation-'.preg_replace('/[^a-z0-9-]/', '-', strtolower($label)).'.patch';
         $this->driver->writeFile($this->name, $file, $patch);
 
-        return $this->run(['git', 'apply', '--whitespace=nowarn', $file], 120);
+        $result = $this->run(['git', 'apply', '--whitespace=nowarn', $file], 120);
+
+        if ($result->successful()) {
+            $this->run(['php', 'artisan', 'wayfinder:generate', '--with-form'], 120);
+        }
+
+        return $result;
     }
 
     /**
