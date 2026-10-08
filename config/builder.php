@@ -1151,6 +1151,25 @@ return [
             'report' => 'storage/logs/access/probes.jsonl',
         ],
 
+        // Who may do what inside a team, before and after the change. When
+        // the change touches PHP, "models" is written and run to find the
+        // app's teams, the roles their members' pivot casts to an enum,
+        // and the routes that work on a team or one of its members. "test"
+        // sends each such request as a signed-out visitor, a person outside
+        // the team and a member of each role, on the change and on the
+        // starting commit. Someone outside the team who gained a thing
+        // fails the check; what a role gained or lost is shown to the
+        // reviewer and the owner. At most "probes" are tried.
+        'roles' => [
+            'enabled' => (bool) env('BUILDER_ROLE_PROBES', true),
+            'probes' => (int) env('BUILDER_ROLE_PROBE_LIMIT', 60),
+            'test' => 'tests/Feature/RoleProbeTest.php',
+            'models' => 'storage/logs/roles/models.php',
+            'command' => ['sh', '-c', 'mkdir -p storage/logs/roles && rm -f storage/logs/roles/probes.jsonl && { php artisan test "$1" > storage/logs/roles/test.log 2>&1 || true; }', 'sh'],
+            'timeout' => 300,
+            'report' => 'storage/logs/roles/probes.jsonl',
+        ],
+
         // The replay engine (direction 32): each form that adds a record the
         // change works on is sent twice as one signed-in person, in a test
         // written to "test" and taken out after. When the database refuses

@@ -18,6 +18,7 @@ use App\Features\AppDrift;
 use App\Features\AppFaults;
 use App\Features\AppTraces;
 use App\Features\NewTests;
+use App\Features\RoleProbes;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Runs\AiAttempts;
@@ -394,6 +395,12 @@ abstract class AgentDriver implements ConstructionDriver
                 .($mutants['survived'] === [] ? '' : " Not noticed, so no test pins this behaviour down:\n".$this->list(array_map(fn (array $mutant) => $mutant['now'] === ''
                     ? "{$mutant['file']}: line {$mutant['line']} `{$mutant['was']}` was left out"
                     : "{$mutant['file']}: line {$mutant['line']} `{$mutant['was']}` became `{$mutant['now']}`", $mutants['survived'])));
+        }
+
+        if (isset($measured['roles'])) {
+            // Who may do what was measured, not read from the code: hold
+            // each gained or lost thing against the plan.
+            $parts[] = "Each request that works on a team or one of its members was sent as a signed-out visitor, a person outside the team and a member of each role, with the change and on the app before it. Check every line against the plan:\n".RoleProbes::describe($measured['roles']);
         }
 
         if (isset($measured['traces'])) {

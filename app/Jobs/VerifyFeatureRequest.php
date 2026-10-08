@@ -40,6 +40,7 @@ use App\Features\PatchSummary;
 use App\Features\ProtectedInputs;
 use App\Features\QueuedWork;
 use App\Features\ReplayProbes;
+use App\Features\RoleProbes;
 use App\Features\ScreenCheck;
 use App\Features\TestMap;
 use App\Features\TestRefusals;
@@ -68,6 +69,8 @@ use Throwable;
 
 /**
  * @phpstan-import-type Record from Scaffold
+ * @phpstan-import-type Probe from RoleProbes
+ * @phpstan-import-type Tenant from RoleProbes
  */
 class VerifyFeatureRequest implements ShouldQueue
 {
@@ -270,6 +273,7 @@ class VerifyFeatureRequest implements ShouldQueue
             // each writes and judges its own tests.
             if (($checksPassed || $this->onlyOldFailures()) && $accepted) {
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
+                $checksPassed = $this->probeRoles($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->shiftTime($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->replayForms($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->probeInputs($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
@@ -1583,6 +1587,108 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $passed = $measured['findings'] === [];
             $this->addResult(__('Who may see and change records'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $command->duration_ms, output: AccessProbes::describe($measured, $planned['unmatched']));
+
+            return $passed;
+        } catch (CommandLost $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return true;
+        }
+    }
+
+    /**
+     * Try who may do what inside a team, with the change and on the
+     * starting commit, and add the result as a check. Return false only
+     * when someone outside a team gained a thing; what a role gained or
+     * lost is kept for the reviewer and the owner. A probe that could not
+     * run proves nothing either way.
+     */
+    protected function probeRoles(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
+    {
+        /** @var array{enabled: bool, probes: int, test: string, models: string, command: list<string>, timeout: int, report: string} $config */
+        $config = config('builder.verification.roles');
+
+        if (! $config['enabled'] || ! collect($this->touched)->keys()->contains(fn (string $path) => str_ends_with($path, '.php'))) {
+            return true;
+        }
+
+        try {
+            $read = fn (string $path) => (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, $path), '', report: false);
+            $find = function () use ($driver, $runWorkspaceCommand, $workspace, $config) {
+                $driver->writeFile((string) $workspace->driver_id, $config['models'], RoleProbes::introspection());
+                $found = RoleProbes::found($runWorkspaceCommand->handle($workspace, ['php', $config['models']], 60)->output);
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['models']], 30);
+
+                return $found;
+            };
+            $send = function (array $probes, array $tenants) use ($driver, $runWorkspaceCommand, $workspace, $config, $read) {
+                /** @var list<Probe> $probes */
+                /** @var list<Tenant> $tenants */
+                $driver->writeFile((string) $workspace->driver_id, $config['test'], RoleProbes::test($probes, $tenants, $config['report']));
+                $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], $config['test']], $config['timeout']);
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['test']], 30);
+
+                if ($command->lost) {
+                    throw new CommandLost($command->error_output);
+                }
+
+                return [RoleProbes::parse($read($config['report'])), $command->duration_ms];
+            };
+
+            $found = $find();
+            $probes = $found === null ? [] : RoleProbes::plan($found, $config['probes']);
+
+            if ($found === null || $probes === []) {
+                return true;
+            }
+
+            [$after, $duration] = $send($probes, $found['tenants']);
+
+            // The same requests on the starting commit, so only what the
+            // change did is told.
+            $lineage = $featureRequest->lineage();
+            $undone = [];
+
+            foreach (array_reverse(array_keys($lineage)) as $position) {
+                if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position, reverse: true)) {
+                    break;
+                }
+
+                $undone[] = $position;
+            }
+
+            $before = [];
+            $routesBefore = null;
+
+            if (count($undone) === count($lineage)) {
+                $start = $find();
+                $routesBefore = $start === null ? null : array_map(RoleProbes::label(...), $start['routes']);
+                [$before] = $start === null ? [[]] : $send($probes, $found['tenants']);
+            }
+
+            foreach (array_reverse($undone) as $position) {
+                if (! $this->applyPatch($driver, $runWorkspaceCommand, $workspace, $lineage, $position)) {
+                    throw new RuntimeException('The change could not be put back after its roles were tried on the starting commit.');
+                }
+            }
+
+            $runWorkspaceCommand->handle($workspace, ['rm', '-rf', FeatureRequest::LINEAGE_DIRECTORY], 30);
+
+            if ($routesBefore === null) {
+                return true;
+            }
+
+            $measured = RoleProbes::measure($probes, $after, $before, $routesBefore);
+
+            if ($measured['tried'] === 0) {
+                return true;
+            }
+
+            $this->keepEvidence('roles', $measured);
+            $passed = $measured['findings'] === [];
+            $this->addResult(__('Who may do what in a team'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $duration, output: RoleProbes::describe($measured));
 
             return $passed;
         } catch (CommandLost $exception) {
