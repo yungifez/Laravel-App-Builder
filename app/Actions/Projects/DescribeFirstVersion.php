@@ -21,10 +21,11 @@ class DescribeFirstVersion
     public function __construct(
         protected DescribeFeatureRequest $describeFeatureRequest,
         protected ProposeFindings $proposeFindings,
+        protected SketchFirstVersion $sketchFirstVersion,
     ) {}
 
     /**
-     * @return array{change: string, state: 'making'|'waiting'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, can_go_on: bool, plan_ran_out: bool, checking: bool}|null
+     * @return array{change: string, state: 'making'|'waiting'|'asking'|'ready'|'stopped', error: string|null, can_retry: bool, can_go_on: bool, plan_ran_out: bool, checking: bool, sketch: array{name: string, look: array{background: string, foreground: string, primary: string, muted_foreground: string, border: string, radius: string|null, font: string|null}|null, parts: list<array{name: string, made: bool}>, now: string|null}|null}|null
      */
     public function handle(Project $project): ?array
     {
@@ -70,6 +71,9 @@ class DescribeFirstVersion
             // the owner's plan, as in the chat.
             'plan_ran_out' => $state === 'stopped' && ($described['run']['plan_ran_out'] ?? false),
             'checking' => $state === 'ready' && ! $described['featureRequest']['can_accept'],
+            // Drawn while it is made and until the owner tries it, so the
+            // app takes shape in place of a spinner.
+            'sketch' => in_array($state, ['making', 'ready'], true) ? $this->sketchFirstVersion->handle($project, $change, building: $state === 'making') : null,
         ];
     }
 

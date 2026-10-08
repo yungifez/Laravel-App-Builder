@@ -590,6 +590,26 @@ export type FirstVersion = {
     plan_ran_out: boolean;
     /** Made, but the checks still run. */
     checking: boolean;
+    /** What the pane draws while it is made and until it is tried. */
+    sketch: FirstVersionSketch | null;
+};
+
+export type FirstVersionSketch = {
+    name: string;
+    /** The app's own colours, font and corners; none draws a neutral look. */
+    look: {
+        background: string;
+        foreground: string;
+        primary: string;
+        muted_foreground: string;
+        border: string;
+        radius: string | null;
+        font: string | null;
+    } | null;
+    /** What it includes, then the plan's parts; made once the coder changed one. */
+    parts: { name: string; made: boolean }[];
+    /** What is being done now, in the change's own words. */
+    now: string | null;
 };
 
 export type EditorPreview = {

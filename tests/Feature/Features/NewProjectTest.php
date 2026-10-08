@@ -318,6 +318,39 @@ class NewProjectTest extends TestCase
         $this->assertStringContainsString('Plan the week.', app(ProjectNotes::class)->files($project)['project.md']);
     }
 
+    public function test_a_new_app_is_drawn_at_once_in_its_own_look_with_what_it_includes()
+    {
+        config(['builder.projects.template' => $this->makeProjectSource([
+            'resources/css/app.css' => ":root {\n    --primary: hsl(0 0% 9%);\n    --radius: 0.5rem;\n}\n\n@theme inline {\n    --font-sans: Instrument Sans, ui-sans-serif, sans-serif;\n}\n",
+        ] + $this->laravelApp())]);
+        $owner = User::factory()->create();
+
+        $this->actingAs($owner)->post(route('projects.new.store'), [
+            'name' => 'Studio Classes',
+            'purpose' => 'Members book a place in a class.',
+            'design' => 'calm',
+            'includes' => ['A timetable of upcoming classes', 'Trainers see who is booked'],
+        ])->assertSessionHasNoErrors();
+
+        $calm = DesignDirection::find('calm');
+        $this->assertNotNull($calm);
+        $sketch = $this->actingAs($owner)->get(route('projects.show', $owner->projects()->sole()))
+            ->viewData('page')['props']['first_version']['sketch'];
+
+        $this->assertSame('Studio Classes', $sketch['name']);
+        $this->assertSame([
+            'background' => $calm->light['background'],
+            'foreground' => $calm->light['foreground'],
+            'primary' => $calm->light['primary'],
+            'muted_foreground' => $calm->light['muted-foreground'],
+            'border' => $calm->light['border'],
+            'radius' => $calm->radius,
+            'font' => $calm->font,
+        ], $sketch['look']);
+        // Before it is planned, only what the owner said it includes, and nothing made yet.
+        $this->assertSame([['name' => 'A timetable of upcoming classes', 'made' => false], ['name' => 'Trainers see who is booked', 'made' => false]], $sketch['parts']);
+    }
+
     public function test_every_look_offered_is_complete()
     {
         $looks = File::glob(resource_path('designs').'/*.json');

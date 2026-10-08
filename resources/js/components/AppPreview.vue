@@ -7,6 +7,7 @@ import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/Feat
 import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import InputError from '@/components/InputError.vue';
+import FirstVersionSketch from '@/components/FirstVersionSketch.vue';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import type { AppPreviewState } from '@/composables/useAppPreview';
@@ -156,7 +157,13 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
             v-else
             class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
         >
-            <template v-if="firstVersion?.state === 'making'">
+            <!-- The app takes shape in its own look while it is made. -->
+            <FirstVersionSketch
+                v-if="firstVersion?.state === 'making' && firstVersion.sketch"
+                :sketch="firstVersion.sketch"
+                building
+            />
+            <template v-else-if="firstVersion?.state === 'making'">
                 <Spinner class="size-6" />
                 <p
                     class="text-sm text-muted-foreground"
@@ -211,12 +218,24 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
             </template>
 
             <template v-else-if="firstVersion?.state === 'ready'">
-                <p class="text-lg font-medium" data-test="first-version-ready">
+                <!-- The drawing stays behind, so nothing jumps when it is ready. -->
+                <FirstVersionSketch
+                    v-if="firstVersion.sketch"
+                    :sketch="firstVersion.sketch"
+                />
+                <div
+                    v-if="firstVersion.sketch"
+                    class="absolute inset-0 bg-background/70 motion-safe:animate-in motion-safe:fade-in"
+                />
+                <p
+                    class="relative text-lg font-medium"
+                    data-test="first-version-ready"
+                >
                     Your first version is ready
                 </p>
                 <p
                     v-if="firstVersion.checking"
-                    class="text-sm text-muted-foreground"
+                    class="relative text-sm text-muted-foreground"
                     data-test="first-version-checking"
                 >
                     Checks are still running.
@@ -229,6 +248,7 @@ watch(scale, (value) => (props.state.zoom = value), { immediate: true });
                         )
                     "
                     :options="{ preserveScroll: true, preserveState: true }"
+                    class="relative"
                     @success="openFirstVersion"
                     v-slot="{ processing }"
                 >

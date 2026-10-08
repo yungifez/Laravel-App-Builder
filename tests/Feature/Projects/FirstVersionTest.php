@@ -8,6 +8,7 @@ use App\Enums\StopReason;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
+use App\Runs\Plan;
 use App\VisualEditing\DesignDrafts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -42,7 +43,7 @@ class FirstVersionTest extends TestCase
             ->viewData('page')['props']['featureRequest']['error'];
 
         $this->assertNotEmpty($error);
-        $this->assertFirstVersion(['change' => $stopped->uuid, 'state' => 'stopped', 'error' => $error, 'can_retry' => true, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false]);
+        $this->assertFirstVersion(['change' => $stopped->uuid, 'state' => 'stopped', 'error' => $error, 'can_retry' => true, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false, 'sketch' => null]);
     }
 
     public function test_a_first_version_stopped_for_credit_says_why_and_whose_fault_like_a_change(): void
@@ -89,22 +90,57 @@ class FirstVersionTest extends TestCase
     public function test_a_first_version_being_made_and_then_ready_are_shown_until_it_is_kept(): void
     {
         $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'making', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'making', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false, 'sketch' => $this->sketch()]);
 
         // Made, while the checks still run: to try, as the list offers it,
         // but not yet to keep.
         $change->update(['status' => FeatureRequestStatus::Generated]);
         $run = Run::factory()->for($change)->create(['status' => RunStatus::Verifying]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => true]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => true, 'sketch' => $this->sketch()]);
         $this->actingAs($this->project->owner)
             ->get(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]))
             ->assertInertia(fn (Assert $page) => $page->where('change.featureRequest.can_accept', false)->etc());
 
         $run->update(['status' => RunStatus::Completed]);
-        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false]);
+        $this->assertFirstVersion(['change' => $change->uuid, 'state' => 'ready', 'error' => null, 'can_retry' => false, 'can_go_on' => false, 'plan_ran_out' => false, 'checking' => false, 'sketch' => $this->sketch()]);
 
         $change->update(['commit_sha' => 'a', 'accepted_at' => now()]);
         $this->assertFirstVersion(null);
+    }
+
+    public function test_a_first_version_being_made_is_drawn_with_the_plans_parts_made_as_the_coder_changes_them(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating, 'prompt' => "Make the first version: A booking page.\n\nIt includes:\n- Rooms to book"]);
+        $run = Run::factory()->for($change)->create(['status' => RunStatus::Implementing, 'plan' => $this->planned([
+            ['key' => 'rooms', 'kind' => 'data', 'label' => 'Rooms', 'file' => 'app/Models/Room.php', 'symbol' => 'Room', 'detail' => 'A room.'],
+            ['key' => 'rooms-page', 'kind' => 'page', 'label' => 'Rooms', 'file' => 'resources/js/pages/Rooms.vue', 'symbol' => 'Rooms', 'detail' => 'The rooms.'],
+            ['key' => 'bookings', 'kind' => 'page', 'label' => 'Bookings', 'file' => 'resources/js/pages/Bookings.vue', 'symbol' => 'Bookings', 'detail' => 'The bookings.'],
+        ])]);
+        $run->recordEvent('agent_story', ['story' => [['kind' => 'read', 'file' => 'resources/js/pages/Bookings.vue'], ['kind' => 'changed', 'file' => 'resources/js/pages/Rooms.vue']]]);
+
+        // The plan's parts replace what the owner listed, once each; only a
+        // part whose file was changed is made, not one only read.
+        $this->assertSame($this->sketch([['name' => 'Rooms', 'made' => true], ['name' => 'Bookings', 'made' => false]]), $this->firstVersionShown()['sketch']);
+    }
+
+    public function test_a_first_version_planned_with_no_parts_keeps_what_the_owner_said_it_includes(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating, 'prompt' => "Make the first version: A booking page.\n\nIt includes:\n- Rooms to book\n- A list of bookings"]);
+        Run::factory()->for($change)->create(['status' => RunStatus::Implementing, 'plan' => $this->planned([])]);
+
+        $this->assertSame($this->sketch([['name' => 'Rooms to book', 'made' => false], ['name' => 'A list of bookings', 'made' => false]]), $this->firstVersionShown()['sketch']);
+    }
+
+    public function test_a_first_version_that_stops_before_it_is_planned_is_not_drawn_and_says_why(): void
+    {
+        $change = $this->firstVersion(['status' => FeatureRequestStatus::Generating]);
+        Run::factory()->for($change)->create(['status' => RunStatus::NeedsUserDecision, 'plan' => null, 'stop_reason' => StopReason::ProvidersUnavailable, 'error' => StopReason::ProvidersUnavailable->said()]);
+
+        $shown = $this->firstVersionShown();
+
+        $this->assertSame('stopped', $shown['state']);
+        $this->assertSame(StopReason::ProvidersUnavailable->said(), $shown['error']);
+        $this->assertNull($shown['sketch']);
     }
 
     public function test_a_first_version_handed_to_the_owners_tool_waits_until_the_tool_asks_for_it(): void
@@ -242,6 +278,28 @@ class FirstVersionTest extends TestCase
     protected function firstVersion(array $attributes): FeatureRequest
     {
         return FeatureRequest::factory()->for($this->project)->create(['prompt' => 'Make the first version: A booking page.', ...$attributes]);
+    }
+
+    /**
+     * A whole plan with the given steps.
+     *
+     * @param  list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>  $steps
+     * @return array<string, mixed>
+     */
+    protected function planned(array $steps): array
+    {
+        return (new Plan('A booking page.', acceptanceCriteria: ['Members book rooms.'], steps: $steps))->toArray();
+    }
+
+    /**
+     * The drawing of an app with no repository to read its look from.
+     *
+     * @param  list<array{name: string, made: bool}>  $parts
+     * @return array<string, mixed>
+     */
+    protected function sketch(array $parts = [], ?string $now = null): array
+    {
+        return ['name' => $this->project->name, 'look' => null, 'parts' => $parts, 'now' => $now];
     }
 
     /**

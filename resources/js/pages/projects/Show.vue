@@ -76,6 +76,7 @@ import ChangeThread from '@/components/ChangeThread.vue';
 import ChatList from '@/components/ChatList.vue';
 import SignInAs from '@/components/SignInAs.vue';
 import DesignPanel from '@/components/DesignPanel.vue';
+import FirstVersionSketch from '@/components/FirstVersionSketch.vue';
 import IdeaMenu from '@/components/ideas/IdeaMenu.vue';
 import StartIdeaDialog from '@/components/ideas/StartIdeaDialog.vue';
 import UseIdeaDialog from '@/components/ideas/UseIdeaDialog.vue';
@@ -537,6 +538,9 @@ const changeCopy = computed(() => {
 // be drawn before it listens, so it asks the copy once it does.
 const changeCopyFrame = ref<HTMLIFrameElement | null>(null);
 const changeCopyLost = ref(false);
+// A first version's copy fades in over the drawing of it once it has drawn
+// itself, in the same place, so nothing jumps.
+const changeCopyDrawn = ref(false);
 
 // The pages of the copy the owner went through, so back, forward and the
 // page list move the copy as they move the app.
@@ -546,6 +550,7 @@ watch(
     () => changeCopy.value?.id,
     () => {
         changeCopyLost.value = false;
+        changeCopyDrawn.value = false;
         copyVisited.value = ['/'];
         copyVisitedAt.value = 0;
     },
@@ -2498,18 +2503,28 @@ function sendOnEnter(event: KeyboardEvent): void {
                 class="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-muted/40"
                 data-test="change-copy"
             >
+                <FirstVersionSketch
+                    v-if="first_version?.sketch"
+                    :sketch="first_version.sketch"
+                />
                 <iframe
                     v-if="changeCopy.status === 'ready' && !changeCopyLost"
                     ref="changeCopyFrame"
                     :key="changeCopy.id"
                     :src="PreviewController.show.url(changeCopy.id)"
                     title="Your app with this change"
-                    class="size-full bg-background"
+                    :class="[
+                        'relative size-full bg-background motion-safe:transition-opacity motion-safe:duration-500',
+                        first_version?.sketch &&
+                            !changeCopyDrawn &&
+                            'opacity-0',
+                    ]"
                     data-test="change-copy-frame"
+                    @load="changeCopyDrawn = true"
                 />
                 <div
                     v-if="changeCopyLost"
-                    class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
+                    class="relative flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
                     data-test="change-copy-lost"
                 >
                     <p class="text-lg font-medium">
@@ -2538,7 +2553,7 @@ function sendOnEnter(event: KeyboardEvent): void {
                 </div>
                 <div
                     v-else
-                    class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
+                    class="relative flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
                 >
                     <LoaderCircle
                         class="size-6 animate-spin text-muted-foreground"
