@@ -3976,7 +3976,9 @@ the code, so drift is found without a model and the owner fixes it in place:
   page polls while it runs, then adds what it found to the same list: checks
   that do not pass and packages with known problems, by name only. What a
   check said stays with the builder. A check of an earlier commit is not
-  shown. A failure on our side says "This is our fault".
+  shown. A failure on our side says "This is our fault". "Fix it" asks the
+  builder to fix what failed (`RequestHealthFix`), as publishing's fix does,
+  with what each step said; a second click opens the same fix.
 - **Notes written before later code.** Each notes file's save time is set
   against `git log` of its part's paths since then. A part with at least
   `BUILDER_STALE_NOTES_MIN_FILES` (3) later-changed files, not counting its

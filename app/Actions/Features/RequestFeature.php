@@ -26,7 +26,7 @@ class RequestFeature
      * @param  array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null, behavior?: string|null}|null  $selection  The element the owner pointed at
      * @param  Experiment|null|false  $experiment  The idea, null for the main app, or false for the one the owner is working in
      * @param  array{deployment_id?: int, preview_id?: int, problem?: string, errors: list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>, during?: string|null}>}|null  $liveErrors  The errors the published app raised, or the app on show while the owner tried it, when the ask is to fix them
-     * @param  array{deployment_id: int, checks: list<array{name: string, output: string}>, online?: true}|null  $failedChecks  The checks that kept the app from going online, or that found it not working once it was, when the ask is to fix them
+     * @param  array{deployment_id?: int, health_check_id?: int, checks: list<array{name: string, output: string}>, online?: true}|null  $failedChecks  The checks that kept the app from going online, or that found it not working once it was, or that the owner's check of the app found, when the ask is to fix them
      * @param  list<array{path: string, name: string}>  $images  Pictures the owner attached, already kept
      * @param  array{of: int, tier: string, shortcuts: list<array{rule: string, path: string, line: int}>}|null  $tidy  The shortcuts to fix, when this is a background tidy-up
      */

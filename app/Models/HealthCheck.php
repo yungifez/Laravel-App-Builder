@@ -101,6 +101,37 @@ class HealthCheck extends Model
     }
 
     /**
+     * Get what failed, with what each step said, for the builder to fix.
+     * A lookup that could not be read has nothing to fix, and a check we
+     * could not finish is ours to run again.
+     *
+     * @return list<array{name: string, output: string}>
+     */
+    public function failures(): array
+    {
+        if ($this->status !== HealthCheckStatus::Failed) {
+            return [];
+        }
+
+        $failures = [];
+
+        foreach ($this->results ?? [] as $result) {
+            if ($result['passed'] || ($result['kind'] === 'packages' && ! isset($result['packages']))) {
+                continue;
+            }
+
+            $failures[] = [
+                'name' => $result['name'],
+                'output' => $result['kind'] === 'packages'
+                    ? 'Known high or critical security problems in: '.implode(', ', $result['packages'] ?? []).'.'
+                    : $result['output'] ?? '',
+            ];
+        }
+
+        return $failures;
+    }
+
+    /**
      * Get the project that was checked.
      *
      * @return BelongsTo<Project, $this>

@@ -33,7 +33,7 @@ use Illuminate\Support\Carbon;
  * @property array{file: string, line: int, column: int, tag: string, text: string|null, area: string|null, behavior?: string|null}|null $selection The element the owner pointed at in the preview
  * @property list<array{path: string, name: string}>|null $images Pictures the owner attached to show what they mean, on the request images disk
  * @property array{deployment_id?: int, preview_id?: int, problem?: string, errors: list<array{class: string|null, message: string, count: int, place?: string|null, trace?: list<string>}>}|null $live_errors The errors the published app raised, or the app on show while the owner tried it, when the ask is to fix them
- * @property array{deployment_id: int, checks: list<array{name: string, output: string}>, online?: true}|null $failed_checks The checks that kept the app from going online, or that found it not working once it was, with what each said, when the ask is to fix them
+ * @property array{deployment_id?: int, health_check_id?: int, checks: list<array{name: string, output: string}>, online?: true}|null $failed_checks The checks that kept the app from going online, or that found it not working once it was, or that the owner's check of the app found, with what each said, when the ask is to fix them
  * @property array{of: int, tier: string, shortcuts: list<array{rule: string, path: string, line: int}>}|null $tidy The shortcuts a kept change took, when this is the background pass that fixes them, and whether the light or the full coder makes it
  * @property string|null $target_step
  * @property FeatureRequestStatus $status
@@ -156,7 +156,7 @@ class FeatureRequest extends Model
         }
 
         if ($this->failed_checks !== null) {
-            return $this->prompt."\n\n".$this->failedCheckInstructions($this->failed_checks['checks'], isset($this->failed_checks['online']));
+            return $this->prompt."\n\n".$this->failedCheckInstructions($this->failed_checks['checks'], isset($this->failed_checks['online']), isset($this->failed_checks['health_check_id']));
         }
 
         if ($this->tidy !== null) {
@@ -203,11 +203,11 @@ class FeatureRequest extends Model
     /**
      * Describe the checks that kept the app from going online, or that
      * found it not working once it was. They ran on the main app's version
-     * the owner tried to publish.
+     * the owner tried to publish, or the one the owner asked to check.
      *
      * @param  list<array{name: string, output: string}>  $checks
      */
-    protected function failedCheckInstructions(array $checks, bool $online = false): string
+    protected function failedCheckInstructions(array $checks, bool $online = false, bool $asked = false): string
     {
         if ($online) {
             return "The app's checks passed and its new version went online, but these checks of its live address failed, so people cannot use it properly. Find why each fails once the app runs online and fix the cause in the app's code. Do not remove a page or a route to make a check pass:\n"
@@ -219,7 +219,11 @@ class FeatureRequest extends Model
             $checks,
         );
 
-        return "These checks failed when the owner tried to put the app online, so it did not go online. Find why each fails and fix the cause in the app's code. Do not skip, weaken or delete a check or a test to make it pass:\n".implode("\n", $lines);
+        $intro = $asked
+            ? "These checks failed when the owner had the app's current version checked. Find why each fails and fix the cause in the app's code. Update a package with known security problems to a version without them."
+            : "These checks failed when the owner tried to put the app online, so it did not go online. Find why each fails and fix the cause in the app's code.";
+
+        return "{$intro} Do not skip, weaken or delete a check or a test to make it pass:\n".implode("\n", $lines);
     }
 
     /**

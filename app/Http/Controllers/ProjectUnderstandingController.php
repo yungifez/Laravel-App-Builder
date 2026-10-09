@@ -169,6 +169,8 @@ class ProjectUnderstandingController extends Controller
                 return [
                     'active' => $healthCheck->status->active(),
                     'findings' => $healthCheck->status->active() ? [] : $healthCheck->findings(),
+                    // Whether the builder can fix what it found, in one click.
+                    'fixable' => $healthCheck->failures() !== [],
                 ];
             },
         ]);

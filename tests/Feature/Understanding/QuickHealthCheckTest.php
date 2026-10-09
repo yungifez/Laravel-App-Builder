@@ -93,7 +93,7 @@ class QuickHealthCheckTest extends TestCase
         $this->assertSame(HealthCheckStatus::Passed, $healthCheck->status);
         $this->assertSame(app(ProjectRepository::class)->head($this->project), $healthCheck->commit_sha);
         $this->assertSame(['Install PHP dependencies', 'Tests', 'Static analysis', 'PHP packages'], array_column($healthCheck->results, 'name'));
-        $this->assertSame(['active' => false, 'findings' => []], $health);
+        $this->assertSame(['active' => false, 'findings' => [], 'fixable' => false], $health);
         // Nothing in the app changed.
         $this->assertSame($healthCheck->commit_sha, app(ProjectRepository::class)->head($this->project));
     }
@@ -110,6 +110,7 @@ class QuickHealthCheckTest extends TestCase
             ['title' => 'Some of your app\'s checks do not pass.', 'details' => ['Tests']],
             ['title' => 'Some packages your app uses have known security problems.', 'details' => ['acme/old-mailer']],
         ], $health['findings']);
+        $this->assertTrue($health['fixable']);
         $this->assertStringNotContainsString('secret-output', (string) json_encode($health));
         // What the check said stays with the builder, for a fix.
         $this->assertStringContainsString('secret-output', (string) HealthCheck::sole()->results[1]['output']);
@@ -155,7 +156,7 @@ class QuickHealthCheckTest extends TestCase
 
         $this->assertSame(1, HealthCheck::query()->count());
         Queue::assertPushed(CheckProjectHealth::class, 1);
-        $this->assertSame(['active' => true, 'findings' => []], $health);
+        $this->assertSame(['active' => true, 'findings' => [], 'fixable' => false], $health);
     }
 
     public function test_a_check_of_an_earlier_version_is_not_shown()

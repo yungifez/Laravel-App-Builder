@@ -21,6 +21,7 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import HealthFixController from '@/actions/App/Http/Controllers/HealthFixController';
 import ProjectHealthCheckController from '@/actions/App/Http/Controllers/ProjectHealthCheckController';
 import ProjectNotesFixController from '@/actions/App/Http/Controllers/ProjectNotesFixController';
 import ExploreAppPanel from '@/components/ExploreAppPanel.vue';
@@ -112,7 +113,11 @@ const props = defineProps<{
     check?: CheckFinding[];
     // The full checks of the app's current version, while they run and
     // once done; null before any, or when the app changed since.
-    health: { active: boolean; findings: CheckFinding[] } | null;
+    health: {
+        active: boolean;
+        findings: CheckFinding[];
+        fixable: boolean;
+    } | null;
 }>();
 
 const checking = ref(false);
@@ -684,6 +689,24 @@ function setCompatibility(keep: boolean | null): void {
                             </div>
                         </li>
                     </ul>
+                    <!-- What the app's own checks found: the builder
+                         fixes it, so a finding is never a dead end. -->
+                    <Form
+                        v-if="health?.fixable"
+                        v-bind="HealthFixController.store.form(project.id)"
+                        v-slot="{ errors, processing }"
+                    >
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            class="h-11 select-none sm:h-8"
+                            :disabled="processing"
+                            data-test="fix-health"
+                        >
+                            Fix it
+                        </Button>
+                        <InputError class="mt-1" :message="errors.fix" />
+                    </Form>
                 </div>
             </section>
 

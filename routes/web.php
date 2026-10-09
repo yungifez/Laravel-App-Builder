@@ -41,6 +41,7 @@ use App\Http\Controllers\FeatureRequestReversionController;
 use App\Http\Controllers\FeatureRequestStepChangeController;
 use App\Http\Controllers\FeatureRequestVerificationController;
 use App\Http\Controllers\FeatureRequestWorkerController;
+use App\Http\Controllers\HealthFixController;
 use App\Http\Controllers\LegalPageController;
 use App\Http\Controllers\LiveErrorFixController;
 use App\Http\Controllers\NewPartController;
@@ -160,6 +161,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('projects/{project}/notes-draft', [ProjectNotesDraftController::class, 'destroy'])->name('projects.notes-draft.destroy');
     Route::post('projects/{project}/notes-fixes', [ProjectNotesFixController::class, 'store'])->name('projects.notes-fixes.store');
     Route::post('projects/{project}/health-checks', [ProjectHealthCheckController::class, 'store'])->name('projects.health-checks.store');
+    Route::post('projects/{project}/health-fixes', [HealthFixController::class, 'store'])->name('health-fixes.store');
     Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');
     Route::put('projects/{project}/compatibility', [ProjectCompatibilityController::class, 'update'])->name('projects.compatibility.update');
     Route::put('projects/{project}/careful-areas', [ProjectCarefulAreaController::class, 'update'])->name('projects.careful-areas.update');
