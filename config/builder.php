@@ -1387,11 +1387,14 @@ return [
         // count. An app with no package-lock.json is looked up by what npm
         // installed, which it records in node_modules/.package-lock.json;
         // the lookup runs on a copy so nothing is written into the app.
+        // npm looks only at what the app ships ("dependencies"): in a
+        // starter-kit app, devDependencies are build tools that never run
+        // online.
         'security' => [
             'enabled' => (bool) env('BUILDER_SECURITY_AUDIT', true),
             'steps' => [
                 ['name' => 'PHP packages', 'report' => 'composer', 'command' => ['composer', 'audit', '--locked', '--no-interaction', '--format=json', '--abandoned=ignore', '--ignore-severity=low', '--ignore-severity=medium'], 'timeout' => 120, 'needs' => 'composer.json'],
-                ['name' => 'JavaScript packages', 'report' => 'npm', 'command' => ['sh', '-c', 'if [ -f package-lock.json ] || [ ! -f node_modules/.package-lock.json ]; then exec npm audit --package-lock-only --json; fi; d=$(mktemp -d) && cp package.json "$d/" && cp node_modules/.package-lock.json "$d/package-lock.json" && { [ ! -f .npmrc ] || cp .npmrc "$d/"; } && cd "$d" && exec npm audit --package-lock-only --json'], 'timeout' => 120, 'needs' => 'package.json'],
+                ['name' => 'JavaScript packages', 'report' => 'npm', 'command' => ['sh', '-c', 'if [ -f package-lock.json ] || [ ! -f node_modules/.package-lock.json ]; then exec npm audit --package-lock-only --omit=dev --json; fi; d=$(mktemp -d) && cp package.json "$d/" && cp node_modules/.package-lock.json "$d/package-lock.json" && { [ ! -f .npmrc ] || cp .npmrc "$d/"; } && cd "$d" && exec npm audit --package-lock-only --omit=dev --json'], 'timeout' => 120, 'needs' => 'package.json'],
             ],
         ],
     ],
