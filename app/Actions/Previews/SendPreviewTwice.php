@@ -96,7 +96,7 @@ class SendPreviewTwice
      * came of it. other names the second person, or is null when there was
      * none or they were a signed-out visitor.
      *
-     * @return array{words: string, broke: bool, other: string|null, sends: list<array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}>}
+     * @return array{words: string, broke: bool, other: string|null, sends: list<array{id: string, page: string, status: int, outcome: string|null, slow: string|null, did: list<array{text: string, failed: bool}>, times: int}>}
      *
      * @throws ValidationException when the app does not run or has taken no form yet.
      */

@@ -228,6 +228,9 @@ class Recorder
     /** How many requests this test has made. */
     protected int $requests = 0;
 
+    /** How many times the request on hand has asked the database. */
+    protected int $lookups = 0;
+
     /** How many jobs the sync queue is running now, one inside the other. */
     protected int $jobs = 0;
 
@@ -456,6 +459,7 @@ class Recorder
         }
 
         $events->listen(QueryExecuted::class, function (QueryExecuted $query) {
+            $this->lookups++;
             $this->watch($query->connection);
             $this->effect(['kind' => 'query', 'sql' => $query->sql]);
         });
@@ -577,6 +581,7 @@ class Recorder
         $this->matched = null;
         $this->ended = null;
         $this->requests++;
+        $this->lookups = 0;
         $this->moveClock();
         $this->live = $this->liveFault();
         $this->markLive();
@@ -904,6 +909,14 @@ class Recorder
         $this->operation['route'] = $this->route($request, response: $response);
         $this->operation['status'] = $status;
         $this->keepSend($request, $status);
+
+        // How long the page took and how often it asked the database, so
+        // the owner sees a page that slows down with lots saved. Not in
+        // tests, where one process serves many requests.
+        if (! $this->app->runningUnitTests() && is_float($_SERVER['REQUEST_TIME_FLOAT'] ?? null)) {
+            $this->operation['ms'] = (int) round((microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']) * 1000);
+            $this->operation['lookups'] = $this->lookups;
+        }
         $this->operation['refused'] = $status >= 400 || $this->invalid($request);
         $this->operation['blind'] = $this->fakes->hiding($this->hidden);
 

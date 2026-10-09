@@ -198,6 +198,13 @@ async function sendTwice(twoPeople: boolean): Promise<void> {
                 >
                     {{ request.outcome }}
                 </p>
+                <p
+                    v-if="request.slow"
+                    class="text-xs text-amber-500"
+                    :data-test="`app-happening-slow-${request.id}`"
+                >
+                    {{ request.slow }}
+                </p>
                 <ul v-if="request.did.length > 0" class="mt-1 space-y-0.5">
                     <li
                         v-for="(step, index) in request.did"

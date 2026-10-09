@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
@@ -100,6 +101,7 @@ class PreviewHappeningsTest extends TestCase
                         'page' => 'Sent a form on /bookings/{booking}/cancel',
                         'status' => 500,
                         'outcome' => 'Ended in an error. See Problems.',
+                        'slow' => null,
                         'did' => [
                             ['text' => 'Deleted a booking', 'failed' => false],
                             ['text' => 'Forgot what it kept for later', 'failed' => false],
@@ -115,6 +117,7 @@ class PreviewHappeningsTest extends TestCase
                         'page' => 'Sent a form on /bookings',
                         'status' => 302,
                         'outcome' => 'Sent the visitor on to another page',
+                        'slow' => null,
                         'did' => [
                             ['text' => 'Saved a new booking', 'failed' => false],
                             ['text' => 'Changed a room', 'failed' => false],
@@ -134,6 +137,7 @@ class PreviewHappeningsTest extends TestCase
                         'page' => 'Opened /bookings',
                         'status' => 200,
                         'outcome' => null,
+                        'slow' => null,
                         // What the framework keeps for itself is not something the app did.
                         'did' => [['text' => 'Looked at bookings, rooms', 'failed' => false]],
                         'times' => 1,
@@ -218,6 +222,32 @@ class PreviewHappeningsTest extends TestCase
             ->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
                 ->where('happenings.requests.0.page', 'Ran a task: Delete non email verified users')));
+    }
+
+    public function test_a_slow_page_says_how_long_it_took_and_how_often_it_looked_things_up()
+    {
+        $this->recorded([
+            ['n' => 0, 'method' => 'GET', 'route' => '/books', 'status' => 200, 'effects' => [], 'ms' => 2430, 'lookups' => 340],
+            ['n' => 1, 'method' => 'GET', 'route' => '/shelves', 'status' => 200, 'effects' => [], 'ms' => 1500, 'lookups' => 3],
+            ['n' => 2, 'method' => 'GET', 'route' => '/', 'status' => 200, 'effects' => [], 'ms' => 120, 'lookups' => 900],
+            // Written before pages were timed, or by the app's own tests.
+            ['n' => 3, 'method' => 'GET', 'route' => '/about', 'status' => 200, 'effects' => []],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                ->where('happenings.requests.0.slow', null)
+                ->where('happenings.requests.1.slow', null)
+                ->where('happenings.requests.2.slow', 'Slow: took 1.5 seconds')
+                ->where('happenings.requests.3.slow', 'Slow: took 2.4 seconds, looking things up 340 times')));
+
+        // Operators set what counts as slow.
+        config(['builder.preview.recorder.slow_ms' => 100]);
+        Cache::flush();
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                ->where('happenings.requests.1.slow', 'Slow: took 0.1 seconds, looking things up 900 times')));
     }
 
     public function test_the_newest_form_the_recorder_kept_can_be_sent_twice()

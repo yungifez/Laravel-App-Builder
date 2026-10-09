@@ -3161,6 +3161,11 @@ reads the preview's workspace, so the app itself does not change.
   `BUILDER_PREVIEW_RECORDER=false` turns it off. Reads of framework
   tables (sessions, cache, jobs) are not something the app did and are
   left out; saves are said on their own, so only a read is "looked at".
+  The recorder also writes how long each page took and how often it asked
+  the database, never while the app's own tests run. A page from one
+  second (`BUILDER_PREVIEW_SLOW_MS`) reads "Slow: took 2.4 seconds", and
+  from 50 lookups (`BUILDER_PREVIEW_MANY_LOOKUPS`) adds "looking things up
+  340 times", so "Add lots more" shows which pages do not cope.
 - **What if it fails** (built). A select in the same tab lets the owner
   pretend one kind of thing is down while they use the app: "Email is
   down", "Outside services do not answer", "Storage is full", "The cache

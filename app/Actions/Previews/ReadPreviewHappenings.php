@@ -56,7 +56,7 @@ class ReadPreviewHappenings
      * "again" names the newest form the owner can send twice at once (see
      * SendPreviewTwice), when the recorder kept it.
      *
-     * @return array{fault: string, again: string|null, requests: list<array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}>}
+     * @return array{fault: string, again: string|null, requests: list<array{id: string, page: string, status: int, outcome: string|null, slow: string|null, did: list<array{text: string, failed: bool}>, times: int}>}
      */
     public function handle(Project $project): array
     {
@@ -140,7 +140,7 @@ class ReadPreviewHappenings
      * Say one request the recorder wrote as the owner reads it.
      *
      * @param  array<string, mixed>  $operation
-     * @return array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}
+     * @return array{id: string, page: string, status: int, outcome: string|null, slow: string|null, did: list<array{text: string, failed: bool}>, times: int}
      */
     public function describe(array $operation, int $number): array
     {
@@ -151,7 +151,7 @@ class ReadPreviewHappenings
      * Say one request as the owner reads it.
      *
      * @param  array<string, mixed>  $operation
-     * @return array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}
+     * @return array{id: string, page: string, status: int, outcome: string|null, slow: string|null, did: list<array{text: string, failed: bool}>, times: int}
      */
     protected function request(array $operation, int $number): array
     {
@@ -189,9 +189,32 @@ class ReadPreviewHappenings
             'page' => $this->page($method, $route),
             'status' => $status,
             'outcome' => $this->outcome($status, $operation),
+            'slow' => $this->slow($operation),
             'did' => $did,
             'times' => 1,
         ];
+    }
+
+    /**
+     * Say that a page was slow, and how often it asked the database when
+     * that was a lot: "Slow: took 2.4 seconds, looking things up 340 times".
+     *
+     * @param  array<string, mixed>  $operation
+     */
+    protected function slow(array $operation): ?string
+    {
+        $ms = $operation['ms'] ?? null;
+
+        if (! is_int($ms) || $ms < Config::integer('builder.preview.recorder.slow_ms')) {
+            return null;
+        }
+
+        $words = __('Slow: took :seconds seconds', ['seconds' => number_format($ms / 1000, 1)]);
+        $lookups = $operation['lookups'] ?? null;
+
+        return is_int($lookups) && $lookups >= Config::integer('builder.preview.recorder.many_lookups')
+            ? $words.__(', looking things up :count times', ['count' => number_format($lookups)])
+            : $words;
     }
 
     /**

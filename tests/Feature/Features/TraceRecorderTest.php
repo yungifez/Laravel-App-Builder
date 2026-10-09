@@ -511,6 +511,32 @@ class TraceRecorderTest extends TestCase
         $this->assertFileDoesNotExist("{$this->directory}/last-send.json");
     }
 
+    public function test_a_page_in_use_says_how_long_it_took_and_how_often_it_asked_the_database()
+    {
+        Route::middleware('web')->get('/_slow/books', fn () => count([DB::select('select 1'), DB::select('select 2'), DB::select('select 3')]));
+        $this->record();
+        $this->app['env'] = 'local';
+
+        $this->get('/_slow/books')->assertOk();
+
+        $written = array_map(fn (string $line) => json_decode($line, true), array_filter(explode("\n", File::get("{$this->directory}/trace.jsonl"))));
+        $this->assertIsInt($written[0]['ms']);
+        $this->assertGreaterThanOrEqual(0, $written[0]['ms']);
+        $this->assertSame(3, $written[0]['lookups']);
+    }
+
+    public function test_no_time_is_written_while_the_apps_own_tests_run()
+    {
+        Route::middleware('web')->get('/_slow/books', fn () => count(DB::select('select 1')));
+        $this->record();
+
+        $this->get('/_slow/books')->assertOk();
+
+        $written = json_decode(explode("\n", File::get("{$this->directory}/trace.jsonl"))[0], true);
+        $this->assertArrayNotHasKey('ms', $written);
+        $this->assertArrayNotHasKey('lookups', $written);
+    }
+
     public function test_a_failure_made_up_for_the_owner_points_at_their_app_and_never_at_our_recorder()
     {
         Route::post('/_failing/order', [RecordedApp::class, 'order']);

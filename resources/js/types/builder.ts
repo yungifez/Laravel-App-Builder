@@ -509,6 +509,8 @@ export type ProofLine = {
         accepted: boolean;
         proposal?: string;
     };
+    /** A problem the change did not cause, which one tap asks to have fixed as a change of its own. */
+    fix?: { change: string };
 };
 
 // Everything about one change, as its page and the workspace chat show it.
@@ -658,6 +660,8 @@ export type AppHappenings = {
         page: string;
         status: number;
         outcome: string | null;
+        /** "Slow: took 2.4 seconds", when the page took long. */
+        slow: string | null;
         did: { text: string; failed: boolean }[];
         /** How many times in a row the app did just this. */
         times: number;
