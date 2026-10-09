@@ -63,6 +63,10 @@ class PhoneAppTest extends TestCase
         $this->assertSame(['Point the phone app at Bright Cleaning', 'Import Bright Cleaning phone app'], array_column($repository->log($phone), 'subject'));
         $this->assertStringContainsString('The phone app for Bright Cleaning.', app(ProjectNotes::class)->files($phone)['project.md']);
 
+        // The owner's app is changed so the phone can sign in to it.
+        $this->assertSame(['Let my phone app sign in with the same accounts as this app.'], $this->project->featureRequests()->pluck('prompt')->all());
+        $this->assertSame(0, $phone->featureRequests()->count());
+
         // Each app's menu leads to the other.
         $this->actingAs($this->owner)->get(route('projects.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->where('project.phone', ['app' => ['id' => $phone->uuid, 'name' => $phone->name], 'parent' => null, 'available' => true]));
@@ -98,6 +102,20 @@ class PhoneAppTest extends TestCase
         $this->actingAs(User::factory()->create())->post(route('projects.phone-app.store', $this->project))->assertForbidden();
 
         $this->assertSame(2, Project::count());
+        $this->assertSame(1, $this->project->featureRequests()->count());
+    }
+
+    public function test_an_app_that_already_hands_out_sign_in_tokens_is_not_asked_to_again()
+    {
+        $project = app(CreateProject::class)->handle($this->owner, 'Corner Shop', $this->makeProjectSource([
+            ...$this->laravelApp(),
+            'routes/api.php' => "<?php\n\nRoute::post('/sanctum/token', fn () => \$user->createToken(\$request->device_name)->plainTextToken);\n",
+        ]));
+
+        $this->actingAs($this->owner)->post(route('projects.phone-app.store', $project))->assertSessionHasNoErrors();
+
+        $this->assertNotNull($project->phoneApp()->first());
+        $this->assertSame(0, $project->featureRequests()->count());
     }
 
     public function test_without_a_phone_app_template_nothing_is_made_and_it_says_whose_fault()

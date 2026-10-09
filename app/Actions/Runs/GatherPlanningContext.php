@@ -74,6 +74,7 @@ class GatherPlanningContext
             frontend: $this->frontend($workspace, $files),
             areas: $areas,
             names: $this->names($workspace, array_values($ours)),
+            phone: WriteBrief::phone($featureRequest->project),
         );
     }
 

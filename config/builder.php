@@ -86,6 +86,15 @@ return [
         // The start of each phone app's store id, before the app's own name:
         // "com.example.brightcleaning". Owners change it before publishing.
         'mobile_app_id_prefix' => env('BUILDER_MOBILE_APP_ID_PREFIX', 'com.example'),
+        // Adding a phone app asks for this change to the owner's app, so the
+        // phone can sign in. The guidance tells the planner and the coder how
+        // the two apps talk: "server" for the owner's app, "phone" for the
+        // phone app, where :name is the owner's app.
+        'mobile_request' => 'Let my phone app sign in with the same accounts as this app.',
+        'mobile_guidance' => [
+            'server' => 'A phone app talks to this app: a separate NativePHP app on people\'s phones, with the same accounts. It signs in through the API in routes/api.php. When the app has none, add it with `php artisan install:api` (Laravel Sanctum) and give the User model the HasApiTokens trait. POST /api/sanctum/token takes email, password and device_name and answers with a token from createToken(), as in Sanctum\'s sign-in for mobile apps; wrong details answer 422 with a validation error. Every other address in routes/api.php sits behind auth:sanctum, answers JSON through API resources and asks the same policies as the pages. Keep the pages and their sign-in working as they are.',
+            'phone' => 'This is a phone app for :name: a NativePHP Mobile (v4) Laravel app that runs on the phone. It keeps none of :name\'s records. It reads and changes them through :name\'s API at config(\'services.backend.url\'), with Laravel\'s Http client. A person signs in with POST {url}/api/sanctum/token (email, password, device_name); keep the token on the phone with Native\Mobile\Facades\SecureStorage and send it as a bearer token. Never write a key, token or password into .env.example or config: the settings file ships inside the app, where anyone can read it. Make screens with `php artisan native:make` and list them in routes/mobile.php with Route::native(). Test them with Native::test() and Http::fake(), finding elements by ref. Read vendor/nativephp/mobile/resources/boost/skills/nativephp-mobile/SKILL.md before writing screens.',
+        ],
         // Build the first version of a new app from the owner's sentence,
         // as its first change, so they see their app and not the template's
         // welcome page. Each new app then spends model calls at once.
@@ -1552,6 +1561,10 @@ return [
             'enabled' => (bool) env('BUILDER_PREVIEW_RECORDER', true),
             'prepend' => env('BUILDER_TRACE_RECORDER', '/opt/trace-recorder').'/prepend.php',
             'directory' => 'storage/logs/recorder',
+            // "What happened" calls a page slow from this long, and says how
+            // often it asked the database from this many times.
+            'slow_ms' => (int) env('BUILDER_PREVIEW_SLOW_MS', 1000),
+            'many_lookups' => (int) env('BUILDER_PREVIEW_MANY_LOOKUPS', 50),
         ],
 
         // Moving the app on show ahead a day, a week or a month, through

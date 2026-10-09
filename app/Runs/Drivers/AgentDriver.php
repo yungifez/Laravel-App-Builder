@@ -266,6 +266,10 @@ abstract class AgentDriver implements ConstructionDriver
             $sections[] = WriteBrief::services($context->services);
         }
 
+        if ($context->phone !== null) {
+            $sections[] = $context->phone;
+        }
+
         $sections[] = "## Project files\n\nEach line is a folder, then the files in it.\n\n".self::byFolder($context->files);
 
         foreach ($context->contents as $path => $contents) {

@@ -3,6 +3,7 @@
 namespace App\Actions\Projects;
 
 use App\Actions\Context\UpdateProjectNotes;
+use App\Actions\Features\RequestFeature;
 use App\Context\ProjectNotes;
 use App\Models\Project;
 use App\Projects\ProjectRepository;
@@ -18,6 +19,7 @@ class AddPhoneApp
         private ProjectRepository $repository,
         private UpdateProjectNotes $updateProjectNotes,
         private ProjectNotes $notes,
+        private RequestFeature $requestFeature,
     ) {}
 
     /**
@@ -33,7 +35,8 @@ class AddPhoneApp
     /**
      * Start a phone app for the owner's app. It is a project of its own,
      * so every change to it is planned, built and proved like any other,
-     * and it is set to talk to the app it belongs to.
+     * and it is set to talk to the app it belongs to. The owner's app is
+     * asked to let the phone sign in, unless it already does.
      *
      * @throws ValidationException when the app cannot have a phone app, or
      *                             phone apps are switched off here.
@@ -59,7 +62,7 @@ class AddPhoneApp
 
         $owner = $project->owner;
 
-        return DB::transaction(function () use ($project, $owner, $template) {
+        $phone = DB::transaction(function () use ($project, $owner, $template) {
             $name = $this->freeName($project, __(':name phone app', ['name' => $project->name]));
             $phone = $this->createProject->handle($owner, $name, $template, draftNotes: false);
             $phone->forceFill(['parent_id' => $project->id, 'started_here' => true])->save();
@@ -69,6 +72,23 @@ class AddPhoneApp
 
             return $phone;
         });
+
+        if (! $this->signsInPhones($project)) {
+            $this->requestFeature->handle($project, $owner, (string) config('builder.projects.mobile_request'));
+        }
+
+        return $phone;
+    }
+
+    /**
+     * Whether the owner's app already hands out sign-in tokens, as the
+     * phone app's sign-in needs.
+     */
+    protected function signsInPhones(Project $project): bool
+    {
+        $routes = $this->repository->exists($project) ? $this->repository->show($project, $this->repository->head($project), 'routes/api.php') : null;
+
+        return str_contains((string) $routes, 'createToken(');
     }
 
     /**

@@ -23,6 +23,7 @@ final readonly class PlanningContext
      * @param  Frontend|null  $frontend  What the app's screens are made with
      * @param  array<string, string>  $areas  The areas the change is about by evidence, with why (SelectAreas)
      * @param  list<string>  $names  The page data and relations the code of those areas already uses (AreaNames)
+     * @param  string|null  $phone  How the app and its phone app talk (WriteBrief::phone)
      */
     public function __construct(
         public string $request,
@@ -41,5 +42,6 @@ final readonly class PlanningContext
         public ?Frontend $frontend = null,
         public array $areas = [],
         public array $names = [],
+        public ?string $phone = null,
     ) {}
 }

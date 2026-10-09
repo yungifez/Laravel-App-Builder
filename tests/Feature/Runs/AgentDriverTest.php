@@ -1281,6 +1281,27 @@ class AgentDriverTest extends TestCase
             && ! str_contains($prompt, 'Resend'));
     }
 
+    public function test_the_agent_is_told_how_an_app_and_its_phone_app_talk()
+    {
+        FeaturePlanner::fake([$this->plan(), $this->plan(), $this->plan()]);
+        $server = $this->request();
+        $server->project->forceFill(['name' => 'Bright Cleaning'])->save();
+        $phone = $this->request();
+        $phone->project->forceFill(['parent_id' => $server->project->id])->save();
+
+        app(StartRun::class)->handle($server);
+        app(StartRun::class)->handle($phone);
+        // An app with no phone app hears nothing of one.
+        app(StartRun::class)->handle($this->request());
+
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'POST /api/sanctum/token takes email, password and device_name'));
+        FeaturePlanner::assertPrompted(fn (AgentPrompt $prompt) => str_contains($prompt->prompt, 'This is a phone app for Bright Cleaning'));
+        $tasks = collect($this->coder->tasks)->map(fn (AgentTask $task) => $task->prompt."\n\n".$task->instructions);
+        $this->assertSame(1, $tasks->filter(fn (string $prompt) => str_contains($prompt, 'php artisan install:api'))->count());
+        $this->assertSame(1, $tasks->filter(fn (string $prompt) => str_contains($prompt, 'SecureStorage') && str_contains($prompt, "Bright Cleaning's API"))->count());
+        $this->assertSame(1, $tasks->reject(fn (string $prompt) => str_contains($prompt, '## The phone app'))->count());
+    }
+
     public function test_the_owners_choice_about_the_old_way_outranks_whether_the_app_is_used()
     {
         FeaturePlanner::fake([$this->plan()]);

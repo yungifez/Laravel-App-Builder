@@ -4,6 +4,7 @@ namespace App\Actions\Runs;
 
 use App\Context\Capability;
 use App\Context\ProjectNotes;
+use App\Models\Project;
 use App\Models\Run;
 use App\Models\RunEvent;
 use App\Runs\Plan;
@@ -205,6 +206,10 @@ class WriteBrief
             $sections[] = self::services($services);
         }
 
+        if (($phone = self::phone($run->featureRequest->project)) !== null) {
+            $sections[] = $phone;
+        }
+
         if ($plan->preserve !== []) {
             $sections[] = "## Keep as it is\n\nDo not change these. If the request cannot be done without changing one, stop and say so.\n\n".$this->list(array_column($plan->preserve, 'statement'));
         }
@@ -311,6 +316,22 @@ class WriteBrief
 
         Never edit a migration that already exists: it has already run on the live database, so a change to it would never reach the data. Add a new migration instead.
         TEXT;
+    }
+
+    /**
+     * Say how the app and its phone app talk, for either of them: the
+     * owner's app serves the phone app's sign-in and records, and the phone
+     * app keeps none of its own. Null for an app with no phone app.
+     */
+    public static function phone(Project $project): ?string
+    {
+        $guidance = match (true) {
+            $project->parent !== null => strtr((string) config('builder.projects.mobile_guidance.phone'), [':name' => $project->parent->name]),
+            $project->phoneApp !== null => (string) config('builder.projects.mobile_guidance.server'),
+            default => null,
+        };
+
+        return $guidance === null ? null : "## The phone app\n\n{$guidance}";
     }
 
     /**
