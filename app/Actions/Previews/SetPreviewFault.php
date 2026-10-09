@@ -25,7 +25,7 @@ class SetPreviewFault
         $workspace = $preview->workspace;
 
         if ($workspace === null || ! Config::boolean('builder.preview.recorder.enabled')) {
-            throw ValidationException::withMessages(['fault' => __('Your app on show cannot pretend this. This is our fault.')]);
+            throw ValidationException::withMessages(['fault' => __('This is our fault: your app on show cannot pretend this now. Start it again and try once more.')]);
         }
 
         $directory = trim(Config::string('builder.preview.recorder.directory'), '/');

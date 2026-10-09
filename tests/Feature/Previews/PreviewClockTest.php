@@ -130,6 +130,17 @@ class PreviewClockTest extends TestCase
         $this->assertSame('Your app could not say what it runs on its own. See Problems for what went wrong.', Cache::get(ReadPreviewClock::outcomeKey($this->preview))['error']);
     }
 
+    public function test_an_app_that_cannot_move_in_time_says_whose_fault_and_what_to_do()
+    {
+        config(['builder.preview.clock.enabled' => false]);
+
+        $this->actingAs($this->owner)
+            ->put(route('preview-clock.update', $this->project), ['jump' => 'day'])
+            ->assertSessionHasErrors(['jump' => 'This is our fault: your app on show cannot move in time now. Start it again and try once more.']);
+
+        $this->assertSame([], $this->runs);
+    }
+
     public function test_one_jump_at_a_time_only_the_owner_jumps_and_only_by_known_steps()
     {
         Cache::put(ReadPreviewClock::movingKey($this->preview), true);

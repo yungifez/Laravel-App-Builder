@@ -290,6 +290,15 @@ class PreviewHappeningsTest extends TestCase
             ->assertSessionHasErrors('fault');
     }
 
+    public function test_an_app_that_cannot_pretend_says_whose_fault_and_what_to_do()
+    {
+        config(['builder.preview.recorder.enabled' => false]);
+
+        $this->actingAs($this->owner)
+            ->put(route('preview-fault.update', $this->project), ['fault' => 'mail'])
+            ->assertSessionHasErrors(['fault' => 'This is our fault: your app on show cannot pretend this now. Start it again and try once more.']);
+    }
+
     public function test_the_apps_server_loads_the_recorder_and_starts_with_all_working()
     {
         config(['builder.preview.recorder.prepend' => '/opt/trace-recorder/prepend.php']);

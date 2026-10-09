@@ -29,7 +29,7 @@ class SetPreviewClock
         $workspace = $preview->workspace;
 
         if ($workspace === null || ! Config::boolean('builder.preview.recorder.enabled') || ! Config::boolean('builder.preview.clock.enabled')) {
-            throw ValidationException::withMessages(['jump' => __('Your app on show cannot move in time. This is our fault.')]);
+            throw ValidationException::withMessages(['jump' => __('This is our fault: your app on show cannot move in time now. Start it again and try once more.')]);
         }
 
         if ($jump === 'today') {
