@@ -67,6 +67,9 @@ class SwapProbesTest extends TestCase
             // The form keys come last: the task's project, sent as another team's.
             'POST /projects/{project}/tasks field create Task',
             'PUT /projects/{project}/tasks/{task} field update Task',
+            // Then the extra fields of each form that saves.
+            'POST /projects/{project}/tasks raise create Task',
+            'PUT /projects/{project}/tasks/{task} raise update Task',
         ], $probes);
         $this->assertSame(['project_id', 'Project'], [$plan['probes'][5]['key'], $plan['probes'][5]['target']]);
         $this->assertSame([0, 'Team'], [$plan['skipped'], $plan['probes'][0]['team']]);
@@ -170,8 +173,8 @@ class SwapProbesTest extends TestCase
             json_encode(['id' => 3, 'owners' => true, 'control' => $sent(302, 1), 'swap' => $sent(500, 1)]),
         ])));
 
-        // The fifth is the form key of the PATCH, which never reported.
-        $this->assertSame([0, 5, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
+        // The fifth and sixth are the PATCH's form key and extra fields, which never reported.
+        $this->assertSame([0, 6, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
     }
 
     public function test_a_change_that_wrote_nothing_still_judges_a_refusal_but_not_a_swap_that_went_through(): void
@@ -193,8 +196,8 @@ class SwapProbesTest extends TestCase
             json_encode(['id' => 2, 'owners' => true, 'control' => $sent(302, 0, true), 'swap' => $sent(404), 'guest' => null, 'policy' => false]),
         ])));
 
-        // The third untried is the PATCH's form key, which never reported.
-        $this->assertSame([1, 1, 3, []], [$measured['tried'], $measured['refused'], $measured['untried'], $measured['findings']]);
+        // The others untried are the PATCH's form key and both forms' extra fields, which never reported.
+        $this->assertSame([1, 1, 5, []], [$measured['tried'], $measured['refused'], $measured['untried'], $measured['findings']]);
     }
 
     public function test_a_form_that_saved_a_row_pointing_at_someone_elses_record_is_a_finding_and_one_that_kept_its_own_key_is_not(): void
@@ -272,5 +275,72 @@ class SwapProbesTest extends TestCase
         $this->assertStringNotContainsString("'Note' =>", $test, 'only the owners of records the swaps use');
         $this->assertStringContainsString("base_path('storage/logs/access/swaps.jsonl')", $test);
         $this->assertStringNotContainsString('__', str_replace(['__construct', '__invoke'], '', $test), 'every placeholder is filled');
+    }
+
+    public function test_each_form_that_saves_is_sent_with_extra_fields_and_the_ones_its_code_names_are_left_out(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            // A profile form: no record in the address, so it saves the person's own account.
+            [...$this->route(['PATCH'], '/settings/profile', [], 'update'), 'named' => []],
+            // An admin's own form for roles names role, and a name that is not an extra field is dropped.
+            [...$this->route(['PUT'], '/projects/{project}', [['project', 'Project']], 'update'), 'named' => ['role', 'colour']],
+            // A form that only does something saves no record of its own.
+            [...$this->route(['POST'], '/projects/{project}/archive', [['project', 'Project']], 'archive'), 'named' => []],
+        ]));
+        $raises = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::RAISE));
+
+        $this->assertSame([
+            'PATCH /settings/profile update User',
+            'PUT /projects/{project} update Project role',
+        ], array_map(fn (array $probe) => trim("{$probe['method']} {$probe['uri']} {$probe['action']} {$probe['payload']} ".implode(',', $probe['named'])), $raises));
+        $this->assertStringContainsString("\$this->probe(0, 'PATCH', '/settings/profile', array ( ), 'User', 'raise', NULL, NULL, NULL, array ( ));", SwapProbes::test($raises, $found, 'swaps.jsonl'));
+    }
+
+    public function test_an_extra_field_saved_is_a_finding_unless_the_form_saved_it_without_it_too(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            [...$this->route(['PATCH'], '/settings/profile', [], 'update'), 'named' => []],
+            [...$this->route(['POST'], '/notes', [], 'store'), 'named' => []],
+            [...$this->route(['PUT'], '/projects/{project}', [['project', 'Project']], 'update'), 'named' => []],
+            [...$this->route(['PATCH'], '/projects/{project}/tasks/{task}', [['project', 'Project'], ['task', 'Task']], 'update'), 'named' => []],
+            [...$this->route(['PATCH'], '/settings/password', [], 'password'), 'named' => []],
+        ]));
+        $probes = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::RAISE));
+        $sent = fn (int $status, array $raised = [], bool $invalid = false) => ['status' => $status, 'invalid' => $invalid, 'writes' => 1, 'landed' => null, 'raised' => $raised];
+        $line = fn (int $id, array $control, array $swap) => json_encode(['id' => $id, 'owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => null, 'policy' => null]);
+
+        $measured = SwapProbes::measure($probes, SwapProbes::parse(implode("\n", [
+            // The person made themselves an admin.
+            $line(0, $sent(302), $sent(302, ['is_admin', 'not_a_field'])),
+            // Every new note gets a balance, sent or not: the app's own default.
+            $line(1, $sent(201, ['balance']), $sent(201, ['balance'])),
+            // Turned down for the extra field, or saved without it.
+            $line(2, $sent(302), $sent(302, ['role'], true)),
+            $line(3, $sent(302), $sent(302)),
+            // The table has none of the fields: nothing to try.
+            json_encode(['id' => 4, 'owners' => true, 'none' => true]),
+        ])));
+
+        $this->assertSame([4, 3, 0], [$measured['tried'], $measured['refused'], $measured['untried']]);
+        $this->assertSame([['PATCH', ['is_admin']]], array_map(fn (array $finding) => [$finding['method'], $finding['raised']], $measured['findings']));
+        $this->assertStringContainsString('A signed-in person could give more rights to their own account by adding is_admin to the form: PATCH /settings/profile saved it. Save only the validated fields ($request->validated()), and keep is_admin out of the model\'s fillable attributes.', SwapProbes::describe($measured, 0));
+    }
+
+    public function test_an_extra_field_proves_nothing_when_the_form_without_it_did_not_work(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            [...$this->route(['PATCH'], '/settings/profile', [], 'update'), 'named' => []],
+            [...$this->route(['POST'], '/notes', [], 'store'), 'named' => []],
+        ]));
+        $probes = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::RAISE));
+        $sent = fn (int $status, int $writes, array $raised = [], bool $invalid = false) => ['status' => $status, 'invalid' => $invalid, 'writes' => $writes, 'landed' => null, 'raised' => $raised];
+
+        $measured = SwapProbes::measure($probes, SwapProbes::parse(implode("\n", [
+            // Wrote nothing as it is, or was turned down: the saved field proves nothing.
+            json_encode(['id' => 0, 'owners' => true, 'control' => $sent(302, 0), 'swap' => $sent(302, 1, ['role'])]),
+            json_encode(['id' => 1, 'owners' => true, 'control' => $sent(302, 1, [], true), 'swap' => $sent(302, 1, ['credits'])]),
+        ])));
+
+        $this->assertSame([0, 2, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
     }
 }

@@ -25,15 +25,22 @@ use Illuminate\Support\Str;
  * of the person's own. It is a finding only when a saved row then points
  * at their record: rows linked to it are counted before and after.
  *
+ * A form that saves a record, the person's own account among them, is also
+ * sent with extra fields the record's table has and the form does not ask
+ * for, such as role or is_admin. It is a finding only when a saved row then
+ * holds the value sent, counted before and after, and the same send without
+ * the extra fields did not save it too. A field the route's code names is
+ * one the form asks for, such as an admin's own "change role" form.
+ *
  * @phpstan-type Param array{name: string, model: string|null, field: string|null}
  * @phpstan-type Step array{relation: string, model: string, key: string|null}
  * @phpstan-type Owner array{path: list<Step>, end: string}
  * @phpstan-type Tenant array{relation: string, column: string|null, role: string|null}
- * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>}
- * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null}
- * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null}
- * @phpstan-type Observed array{id: int, owners: bool, broke: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null}
- * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, status: int}
+ * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>}
+ * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>}
+ * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null, raised: list<string>}
+ * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null}
+ * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>, status: int, raised: list<string>}
  * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
  */
 class SwapProbes
@@ -54,6 +61,17 @@ class SwapProbes
     public const FIELD = 'field';
 
     /**
+     * The person's own record, with extra fields the form does not ask for.
+     */
+    public const RAISE = 'raise';
+
+    /**
+     * The fields that give a person more than the form offers: rights, a
+     * confirmed email, or money. Only those the table has are sent.
+     */
+    public const RAISED = ['role', 'is_admin', 'admin', 'is_super_admin', 'super_admin', 'is_staff', 'email_verified_at', 'balance', 'credits'];
+
+    /**
      * How many links a record may be from its owner.
      */
     protected const DEPTH = 3;
@@ -67,6 +85,7 @@ class SwapProbes
     public static function introspection(): string
     {
         $depth = self::DEPTH;
+        $raised = self::export(self::RAISED);
 
         return <<<PHP
 <?php
@@ -76,6 +95,7 @@ require getcwd().'/vendor/autoload.php';
 \$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
 \$depth = {$depth};
+\$raised = {$raised};
 
 PHP.<<<'PHP'
 $user = config('auth.providers.users.model');
@@ -180,10 +200,38 @@ foreach (app('router')->getRoutes() as $route) {
     } catch (Throwable) {
     }
 
-    // A form with no record in its address may still name one in a key.
-    if ($bound === [] && ($route->parameterNames() !== [] || ! in_array('POST', $route->methods(), true))) {
+    // A form with no record in its address may still name one in a key,
+    // or save the person's own account.
+    if ($bound === [] && ($route->parameterNames() !== [] || array_intersect(['POST', 'PUT', 'PATCH'], $route->methods()) === [])) {
         continue;
     }
+
+    // The extra fields the route's code names, in its action or its form
+    // request: those the form asks for.
+    $source = '';
+
+    try {
+        if ($route->getControllerClass() !== null) {
+            $action = new ReflectionMethod($route->getControllerClass(), $route->getActionMethod() === $route->getControllerClass() ? '__invoke' : $route->getActionMethod());
+            $source = implode('', array_slice(file((string) $action->getFileName()) ?: [], $action->getStartLine() - 1, $action->getEndLine() - $action->getStartLine() + 1));
+
+            foreach ($action->getParameters() as $parameter) {
+                $type = $parameter->getType();
+
+                // The form request, and the traits and parents it keeps its
+                // rules in, as the starter kits' profile rules are.
+                if ($type instanceof ReflectionNamedType && is_subclass_of($type->getName(), Illuminate\Foundation\Http\FormRequest::class)) {
+                    foreach ([$type->getName(), ...array_values(class_parents($type->getName()) ?: []), ...array_values(class_uses_recursive($type->getName()))] as $class) {
+                        $file = (string) (new ReflectionClass($class))->getFileName();
+                        $source .= str_starts_with($file, app_path()) ? (string) file_get_contents($file) : '';
+                    }
+                }
+            }
+        }
+    } catch (Throwable) {
+    }
+
+    $named = array_values(array_filter($raised, fn (string $field) => preg_match('/[\'"]'.$field.'[\'".]/', $source) === 1));
 
     $params = [];
 
@@ -200,6 +248,7 @@ foreach (app('router')->getRoutes() as $route) {
         'controller' => $route->getControllerClass(),
         'action' => $route->getActionMethod(),
         'params' => $params,
+        'named' => $named,
     ];
 }
 
@@ -276,6 +325,7 @@ PHP;
                 'controller' => is_string($route['controller'] ?? null) ? $route['controller'] : null,
                 'action' => is_string($route['action'] ?? null) ? $route['action'] : null,
                 'params' => $params,
+                'named' => array_values(array_intersect(self::RAISED, is_array($route['named'] ?? null) ? $route['named'] : [])),
             ];
         }
 
@@ -299,6 +349,7 @@ PHP;
     {
         $probes = [];
         $fields = [];
+        $raises = [];
         $skipped = 0;
 
         foreach ($found['routes'] as $route) {
@@ -307,6 +358,7 @@ PHP;
             }
 
             $fields = [...$fields, ...self::fields($route, $found)];
+            $raises = [...$raises, ...self::raises($route, $found)];
 
             if ($route['params'] === []) {
                 continue;
@@ -350,13 +402,13 @@ PHP;
                         continue;
                     }
 
-                    $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $leaf, 'payload' => $payload, 'mode' => $mode, 'ability' => $ability, 'team' => $team, 'key' => null, 'target' => null];
+                    $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $leaf, 'payload' => $payload, 'mode' => $mode, 'ability' => $ability, 'team' => $team, 'key' => null, 'target' => null, 'named' => []];
                 }
             }
         }
 
         // After the addresses, so the limit keeps those first.
-        return ['probes' => array_slice([...$probes, ...$fields], 0, $limit), 'skipped' => $skipped];
+        return ['probes' => array_slice([...$probes, ...$fields, ...$raises], 0, $limit), 'skipped' => $skipped];
     }
 
     /**
@@ -399,8 +451,40 @@ PHP;
                 // person or team at the end of the key's links.
                 $keys[$step['key']] = true;
                 $action = $step['model'] === $found['user'] ? 'assign' : ($method === 'POST' ? 'create' : 'update');
-                $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $saved, 'payload' => $saved, 'mode' => self::FIELD, 'ability' => null, 'team' => $owner['end'] === 'user' ? null : $owner['end'], 'key' => $step['key'], 'target' => $step['model']];
+                $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $saved, 'payload' => $saved, 'mode' => self::FIELD, 'ability' => null, 'team' => $owner['end'] === 'user' ? null : $owner['end'], 'key' => $step['key'], 'target' => $step['model'], 'named' => []];
             }
+        }
+
+        return $probes;
+    }
+
+    /**
+     * Plan the extra fields of one route: for each method that saves a
+     * record of the person's own, one send with every extra field the form
+     * does not ask for. A form with no record in its address that changes
+     * something saves the person's own account, as a profile form does.
+     *
+     * @param  array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>}  $route
+     * @param  Found  $found
+     * @return list<Probe>
+     */
+    protected static function raises(array $route, array $found): array
+    {
+        $probes = [];
+        $leaf = $route['params'] === [] ? $found['user'] : $route['params'][count($route['params']) - 1]['model'];
+
+        foreach (array_intersect($route['methods'], ['POST', 'PUT', 'PATCH']) as $method) {
+            $saved = $method === 'POST' ? self::posting($route['uri'], array_keys($found['owners']))[2] : $leaf;
+            $owners = $saved === null ? [] : ($found['owners'][$saved] ?? []);
+            $reached = [$saved, ...array_merge([], ...array_map(fn (array $owner) => [...array_column($owner['path'], 'model'), $owner['end'] === 'user' ? $found['user'] : $owner['end']], $owners))];
+
+            if ($saved === null || $owners === [] || array_filter($route['params'], fn (array $param) => ! in_array($param['model'], $reached, true)) !== []) {
+                continue;
+            }
+
+            /** @var list<array{name: string, model: string, field: string|null}> $params */
+            $params = $route['params'];
+            $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $method === 'POST' ? 'create' : 'update', 'params' => $params, 'leaf' => $saved, 'payload' => $saved, 'mode' => self::RAISE, 'ability' => null, 'team' => null, 'key' => null, 'target' => null, 'named' => $route['named']];
         }
 
         return $probes;
@@ -436,7 +520,7 @@ PHP;
 
         foreach ($probes as $id => $probe) {
             $methods[] = sprintf(
-                "    public function test_swap_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s, %s, %s);\n    }",
+                "    public function test_swap_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s, %s, %s, %s);\n    }",
                 $id,
                 $id,
                 var_export($probe['method'], true),
@@ -447,6 +531,7 @@ PHP;
                 var_export($probe['ability'], true),
                 var_export($probe['key'], true),
                 var_export($probe['target'], true),
+                self::export($probe['named']),
             );
         }
 
@@ -483,6 +568,8 @@ class SwapProbeTest extends TestCase
 
     private const USER = __USER__;
 
+    private const RAISED = __RAISED__;
+
     private int $writes = 0;
 
     private bool $listening = false;
@@ -494,11 +581,12 @@ __METHODS__
      * factories could not make proves nothing.
      *
      * @param  list<array{name: string, model: string, field: string|null}>  $params
+     * @param  list<string>  $named
      */
-    private function probe(int $id, string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability, ?string $key, ?string $target): void
+    private function probe(int $id, string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability, ?string $key, ?string $target, array $named): void
     {
         try {
-            $seen = $this->exchange($method, $uri, $params, $payload, $mode, $ability, $key, $target);
+            $seen = $mode === 'raise' ? $this->raise($method, $uri, $params, (string) $payload, $named) : $this->exchange($method, $uri, $params, $payload, $mode, $ability, $key, $target);
         } catch (Throwable) {
             $seen = ['broke' => true];
         }
@@ -528,16 +616,7 @@ __METHODS__
             return ['owners' => false];
         }
 
-        $body = [];
-
-        if ($payload !== null) {
-            $raw = ('App\\Models\\'.$payload)::factory()->raw();
-            $body = array_map(fn (mixed $value) => match (true) {
-                $value instanceof DateTimeInterface => $value->format('Y-m-d H:i:s'),
-                $value instanceof BackedEnum => $value->value,
-                default => $value,
-            }, array_filter($raw, fn (mixed $value, string $key) => ! str_ends_with($key, '_id') && ! $value instanceof Model, ARRAY_FILTER_USE_BOTH));
-        }
+        $body = $payload === null ? [] : $this->body($payload);
 
         $linked = fn (?Model $to) => $to === null ? null : ('App\\Models\\'.$payload)::query()->where((string) $key, $to->getKey())->count();
         $sent = function (string $url, ?Model $to = null) use ($method, $body, $key, $linked): array {
@@ -580,6 +659,88 @@ __METHODS__
         }
 
         return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => $guest, 'policy' => $policy];
+    }
+
+    /**
+     * Send the person's own form twice: as it is, then with each extra
+     * field the table has and the form does not ask for. A field counts
+     * as saved when more rows hold the value sent after the send than
+     * before, and the send without it did not save it too.
+     *
+     * @param  list<array{name: string, model: string, field: string|null}>  $params
+     * @param  list<string>  $named
+     * @return array<string, mixed>
+     */
+    private function raise(string $method, string $uri, array $params, string $payload, array $named): array
+    {
+        $this->listen();
+        [$mine, $me] = $this->world($payload);
+
+        if ($me === null) {
+            return ['owners' => false];
+        }
+
+        $record = new ('App\\Models\\'.$payload);
+        $table = $record->getTable();
+        $extra = [];
+
+        foreach (array_diff(array_intersect(self::RAISED, Schema::getColumnListing($table)), $named) as $field) {
+            $cast = $record->getCasts()[$field] ?? null;
+            $value = match (true) {
+                is_string($cast) && enum_exists($cast) && is_subclass_of($cast, BackedEnum::class) => $cast::cases()[0]->value ?? null,
+                $field === 'role' => preg_match('/char|text|string/i', Schema::getColumnType($table, $field)) === 1 ? 'admin' : null,
+                $field === 'email_verified_at' => '2001-02-03 04:05:06',
+                in_array($field, ['balance', 'credits'], true) => 987654,
+                default => true,
+            };
+
+            if ($value !== null) {
+                $extra[$field] = $value;
+            }
+        }
+
+        // The form asks for every one of them, or the table has none.
+        if ($extra === []) {
+            return ['owners' => true, 'none' => true];
+        }
+
+        $body = $this->body($payload);
+        $url = $this->address($uri, $params, fn (int $index) => $mine);
+        $holding = fn () => array_map(fn (string $field) => DB::table($table)->where($field, $extra[$field])->count(), array_combine(array_keys($extra), array_keys($extra)));
+        $sent = function (array $fields) use ($method, $url, $body, $holding): array {
+            $this->writes = 0;
+            $before = $holding();
+            $response = $this->call($method, $url, [...$body, ...$fields]);
+            $after = $holding();
+            $seen = ['status' => $response->getStatusCode(), 'invalid' => $response->getStatusCode() === 422 || session()->has('errors'), 'writes' => $this->writes, 'landed' => null, 'raised' => array_keys(array_filter($after, fn (int $count, string $field) => $count > $before[$field], ARRAY_FILTER_USE_BOTH))];
+            $this->flushSession();
+
+            return $seen;
+        };
+
+        $this->actingAs($me);
+        $control = $sent([]);
+        $this->actingAs($me->fresh() ?? $me);
+        $swap = $sent($extra);
+
+        return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => null, 'policy' => null];
+    }
+
+    /**
+     * A valid form for a record, from the app's factory: no keys, no
+     * records, and none of the extra fields.
+     *
+     * @return array<string, mixed>
+     */
+    private function body(string $payload): array
+    {
+        $raw = ('App\\Models\\'.$payload)::factory()->raw();
+
+        return array_map(fn (mixed $value) => match (true) {
+            $value instanceof DateTimeInterface => $value->format('Y-m-d H:i:s'),
+            $value instanceof BackedEnum => $value->value,
+            default => $value,
+        }, array_filter($raw, fn (mixed $value, string $key) => ! str_ends_with($key, '_id') && ! $value instanceof Model && ! in_array($key, self::RAISED, true), ARRAY_FILTER_USE_BOTH));
     }
 
     /**
@@ -681,6 +842,7 @@ PHP, [
             '__OWNERS__' => self::export(array_intersect_key($found['owners'], array_flip($leaves))),
             '__TENANTS__' => self::export($found['tenants']),
             '__USER__' => var_export($found['user'], true),
+            '__RAISED__' => self::export(self::RAISED),
             '__METHODS__' => implode("\n\n", $methods),
             '__REPORT__' => var_export($report, true),
         ]);
@@ -703,7 +865,7 @@ PHP, [
     {
         $observed = [];
         $sent = fn (mixed $value) => is_array($value) && is_int($value['status'] ?? null)
-            ? ['status' => $value['status'], 'invalid' => ($value['invalid'] ?? false) === true, 'writes' => is_int($value['writes'] ?? null) ? $value['writes'] : 0, 'landed' => is_int($value['landed'] ?? null) ? $value['landed'] : null]
+            ? ['status' => $value['status'], 'invalid' => ($value['invalid'] ?? false) === true, 'writes' => is_int($value['writes'] ?? null) ? $value['writes'] : 0, 'landed' => is_int($value['landed'] ?? null) ? $value['landed'] : null, 'raised' => array_values(array_intersect(self::RAISED, is_array($value['raised'] ?? null) ? $value['raised'] : []))]
             : null;
 
         foreach (preg_split('/\R/', trim($report)) ?: [] as $line) {
@@ -714,6 +876,7 @@ PHP, [
                     'id' => $data['id'],
                     'owners' => ($data['owners'] ?? false) === true,
                     'broke' => ($data['broke'] ?? false) === true,
+                    'none' => ($data['none'] ?? false) === true,
                     'control' => $sent($data['control'] ?? null),
                     'swap' => $sent($data['swap'] ?? null),
                     'guest' => is_int($data['guest'] ?? null) ? $data['guest'] : null,
@@ -746,6 +909,11 @@ PHP, [
 
         foreach ($probes as $id => $probe) {
             $seen = $observed[$id] ?? null;
+
+            // No extra field to send: nothing was tried.
+            if ($seen !== null && $seen['none']) {
+                continue;
+            }
             $control = $seen['control'] ?? null;
             $swap = $seen['swap'] ?? null;
             $reading = $probe['method'] === 'GET';
@@ -771,9 +939,17 @@ PHP, [
             }
 
             // A form swap worked only when a saved row now points at
-            // their record; an app that keeps its own key wrote, too.
-            if ($probe['mode'] === self::FIELD ? $swap['status'] < 400 && ! $swap['invalid'] && ($swap['landed'] ?? 0) > 0 : $worked($swap)) {
-                $findings[] = [...$probe, 'status' => $swap['status']];
+            // their record; an app that keeps its own key wrote, too. An
+            // extra field worked only when it was saved and the same form
+            // without it did not save the same value.
+            $raised = array_values(array_diff($swap['raised'], $control['raised']));
+
+            if (match ($probe['mode']) {
+                self::FIELD => $swap['status'] < 400 && ! $swap['invalid'] && ($swap['landed'] ?? 0) > 0,
+                self::RAISE => $swap['status'] < 400 && ! $swap['invalid'] && $raised !== [],
+                default => $worked($swap),
+            }) {
+                $findings[] = [...$probe, 'status' => $swap['status'], 'raised' => $raised];
             } else {
                 $refused++;
             }
@@ -795,6 +971,12 @@ PHP, [
         foreach ($measured['findings'] as $finding) {
             if ($finding['mode'] === self::FIELD) {
                 $lines[] = self::field($finding);
+
+                continue;
+            }
+
+            if ($finding['mode'] === self::RAISE) {
+                $lines[] = self::raised($finding);
 
                 continue;
             }
@@ -823,7 +1005,7 @@ PHP, [
             $lines[] = "A signed-in person {$did}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. Make this route check the {$finding['leaf']} policy, or find the {$noun} through what the person may reach.";
         }
 
-        $lines[] = "Tried {$measured['tried']} requests with someone else's records in the address or a form; {$measured['refused']} ".($measured['refused'] === 1 ? 'was' : 'were').' refused, as they should be.';
+        $lines[] = "Tried {$measured['tried']} requests with someone else's records in the address or a form, or with fields the form does not ask for; {$measured['refused']} ".($measured['refused'] === 1 ? 'was' : 'were').' refused, as they should be.';
 
         if ($measured['shared'] > 0) {
             $lines[] = "{$measured['shared']} ".($measured['shared'] === 1 ? 'is' : 'are').' shared on purpose: the app\'s own policy allows it, or anyone can open the page.';
@@ -864,5 +1046,23 @@ PHP, [
         $verb = $finding['action'] === 'create' ? "put a {$noun} in" : "move a {$noun} into";
 
         return "A signed-in person could {$verb} {$whose}: {$sent} it. Check that the {$words} the form names is one the person may reach, for example with the {$target} policy or an exists rule limited to what they may reach.";
+    }
+
+    /**
+     * Say what an extra field that was saved let the person do.
+     *
+     * @param  Finding  $finding
+     */
+    protected static function raised(array $finding): string
+    {
+        $fields = implode(', ', $finding['raised']);
+        $whose = $finding['params'] === [] && $finding['method'] !== 'POST' ? 'their own account' : 'a '.AccessProbes::words($finding['leaf']);
+        $gives = match (true) {
+            array_intersect($finding['raised'], ['balance', 'credits']) !== [] => 'set the money on',
+            $finding['raised'] === ['email_verified_at'] => 'confirm the email of',
+            default => 'give more rights to',
+        };
+
+        return "A signed-in person could {$gives} {$whose} by adding {$fields} to the form: {$finding['method']} {$finding['uri']} saved it. Save only the validated fields (\$request->validated()), and keep {$fields} out of the model's fillable attributes.";
     }
 }

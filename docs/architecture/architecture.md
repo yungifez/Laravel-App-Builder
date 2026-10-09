@@ -4661,6 +4661,23 @@ key from the address, or ignores it, writes but is refused. A key to the
 user model saves a record in another person's name. These sends come after
 the address swaps, within the same limit.
 
+A form can also save more than it asks for. Each create or update form on
+those routes, and a form with no record in its address that saves the
+person's own account (a profile form), is sent once as it is and once with
+extra fields: `role`, `is_admin`, `admin`, `is_super_admin`, `super_admin`,
+`is_staff`, `email_verified_at`, `balance` and `credits`, each only when the
+table has it. Each gets an unusual value: the first case of an enum cast,
+`admin` for a text role, `true` for a flag, a fixed old date, or 987654. It
+is a finding only when more rows hold the value after the send than before,
+and the send without the field did not save it too. So a value the row held
+already, or a default every new row gets, is never one. A field the route's
+action or its form request names in quotes is one the form asks for, such as
+an admin's own form for roles, and it is not sent. A send without the fields
+that writes nothing or is turned down cannot be judged. These sends come
+last, within the same limit. On a copy of the fixture with `is_admin` made
+fillable and the profile form saving `$request->all()`, it was found. The
+plain starter kits gave no finding.
+
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
 the like), its own tests run again with the clock stopped. A PHPUnit extension,
