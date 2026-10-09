@@ -1149,6 +1149,19 @@ return [
             'command' => ['sh', '-c', 'rm -f storage/logs/access/probes.jsonl && { php artisan test "$1" > storage/logs/access/test.log 2>&1 || true; }', 'sh'],
             'timeout' => 300,
             'report' => 'storage/logs/access/probes.jsonl',
+            // Someone else's records in the address (SwapProbes): "bindings"
+            // is written and run to read the routes that bind models and
+            // whose each model is; "swaps" sends each route of a controller
+            // the change touched with the person's own records, then with
+            // another person's. At most "limit" are tried.
+            'swaps' => [
+                'enabled' => (bool) env('BUILDER_SWAP_PROBES', true),
+                'limit' => (int) env('BUILDER_SWAP_PROBE_LIMIT', 30),
+                'bindings' => 'storage/logs/access/bindings.php',
+                'test' => 'tests/Feature/SwapProbeTest.php',
+                'command' => ['sh', '-c', 'rm -f storage/logs/access/swaps.jsonl && { php artisan test "$1" > storage/logs/access/swaps.log 2>&1 || true; }', 'sh'],
+                'report' => 'storage/logs/access/swaps.jsonl',
+            ],
         ],
 
         // Who may do what inside a team, before and after the change. When

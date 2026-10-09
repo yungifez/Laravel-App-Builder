@@ -22,10 +22,24 @@ class AccessProbeVerificationTest extends TestCase
 
     protected const PROBE = ['sh', '-c', 'run the probes', 'sh'];
 
+    protected const SWAP = ['sh', '-c', 'run the swaps', 'sh'];
+
     /**
      * What the script that finds the app's teams prints.
      */
     protected string $teams = '{"tenants":[],"owned":{}}';
+
+    /**
+     * What the script that reads the routes' records prints.
+     */
+    protected string $bindings = 'Nothing to read.';
+
+    /**
+     * What each swap did.
+     *
+     * @var list<string>
+     */
+    protected array $swaps = [];
 
     protected function setUp(): void
     {
@@ -49,6 +63,14 @@ class AccessProbeVerificationTest extends TestCase
                 'command' => self::PROBE,
                 'timeout' => 60,
                 'report' => 'probes.jsonl',
+                'swaps' => [
+                    'enabled' => true,
+                    'limit' => 30,
+                    'bindings' => 'bindings.php',
+                    'test' => 'tests/Feature/SwapProbeTest.php',
+                    'command' => self::SWAP,
+                    'report' => 'swaps.jsonl',
+                ],
             ],
         ]);
     }
@@ -117,6 +139,14 @@ class AccessProbeVerificationTest extends TestCase
 
             if (array_slice($command, 0, 4) === self::PROBE) {
                 $this->driver->files["{$workspace}:probes.jsonl"] = implode("\n", $lines);
+            }
+
+            if ($command === ['php', 'bindings.php']) {
+                return new CommandResult(exitCode: 0, output: $this->bindings, errorOutput: '', durationMs: 5);
+            }
+
+            if (array_slice($command, 0, 4) === self::SWAP) {
+                $this->driver->files["{$workspace}:swaps.jsonl"] = implode("\n", $this->swaps);
             }
 
             return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
@@ -318,5 +348,74 @@ class AccessProbeVerificationTest extends TestCase
         app(RequestVerification::class)->handle($change);
 
         $this->assertNotContains(self::ROUTES, array_column($this->driver->executed, 'command'));
+    }
+
+    /**
+     * A change that touched the projects controller, in an app whose
+     * projects belong to a team with members.
+     */
+    protected function projectChange(): FeatureRequest
+    {
+        $this->bindings = "Booting.\n".json_encode([
+            'user' => 'User',
+            'routes' => [
+                ['methods' => ['GET'], 'uri' => '/projects/{project}', 'name' => 'projects.show', 'domain' => null, 'controller' => 'App\Http\Controllers\ProjectController', 'action' => 'show', 'params' => [['name' => 'project', 'model' => 'Project', 'field' => null]]],
+            ],
+            'owners' => ['Project' => [['path' => [['relation' => 'team', 'model' => 'Team']], 'end' => 'Team']]],
+            'tenants' => ['Team' => ['relation' => 'members', 'column' => 'role', 'role' => 'owner']],
+        ]);
+
+        return FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/app/Http/Controllers/ProjectController.php b/app/Http/Controllers/ProjectController.php',
+            '--- a/app/Http/Controllers/ProjectController.php',
+            '+++ b/app/Http/Controllers/ProjectController.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+// Projects',
+            '',
+        ])]);
+    }
+
+    public function test_a_person_who_opened_another_teams_project_fails_the_checks_and_says_how(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"swap":{"status":200,"invalid":false,"writes":0},"guest":302,"policy":false}'];
+        $this->answer([]);
+        $change = $this->projectChange();
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringContainsString('A signed-in person could see a project of another team: GET /projects/{project} answered 200.', $result['output']);
+
+        // The swaps ran with their test's path, and the test and the script were taken out after.
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains([...self::SWAP, 'tests/Feature/SwapProbeTest.php'], $commands);
+        $this->assertContains(['rm', '-f', 'tests/Feature/SwapProbeTest.php'], $commands);
+        $this->assertContains(['rm', '-f', 'bindings.php'], $commands);
+    }
+
+    public function test_a_page_anyone_can_open_is_shared_on_purpose_and_passes(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"swap":{"status":200,"invalid":false,"writes":0},"guest":200,"policy":null}'];
+        $this->answer([]);
+        $change = $this->projectChange();
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records'), 'nothing was refused or found, so there is nothing to say');
+        $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+    }
+
+    public function test_a_route_the_person_could_not_use_with_their_own_records_proves_nothing(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":404,"invalid":false,"writes":0},"swap":{"status":200,"invalid":false,"writes":0},"guest":302,"policy":null}'];
+        $this->answer([]);
+        $change = $this->projectChange();
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records'));
+        $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
     }
 }

@@ -42,6 +42,7 @@ use App\Features\QueuedWork;
 use App\Features\ReplayProbes;
 use App\Features\RoleProbes;
 use App\Features\ScreenCheck;
+use App\Features\SwapProbes;
 use App\Features\TestMap;
 use App\Features\TestRefusals;
 use App\Features\TestReport;
@@ -1501,7 +1502,7 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function probeAccess(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
     {
-        /** @var array{enabled: bool, probes: int, test: string, models: string, routes: array{command: list<string>, report: string}, command: list<string>, timeout: int, report: string} $config */
+        /** @var array{enabled: bool, probes: int, test: string, models: string, routes: array{command: list<string>, report: string}, command: list<string>, timeout: int, report: string, swaps: array{enabled: bool, limit: int, bindings: string, test: string, command: list<string>, report: string}} $config */
         $config = config('builder.verification.access');
 
         if (! $config['enabled']) {
@@ -1560,21 +1561,56 @@ class VerifyFeatureRequest implements ShouldQueue
                 )];
             }
 
-            if ($planned['probes'] === []) {
+            // Someone else's records in the address, on the routes of the
+            // controllers the change touched. A route a person outside the
+            // team already tries is not tried again with one record.
+            $found = null;
+            $swaps = ['probes' => [], 'skipped' => 0];
+
+            if ($controllers !== [] && $config['swaps']['enabled']) {
+                $driver->writeFile((string) $workspace->driver_id, $config['swaps']['bindings'], SwapProbes::introspection());
+                $found = SwapProbes::found($runWorkspaceCommand->handle($workspace, ['php', $config['swaps']['bindings']], 60)->output);
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['swaps']['bindings']], 30);
+                $strangers = array_map(fn (array $probe) => "{$probe['method']} {$probe['uri']}", array_filter($planned['probes'], fn (array $probe) => $probe['actor'] === AccessProbes::STRANGER));
+                $swaps = $found === null ? $swaps : SwapProbes::plan($found, $controllers, array_values($strangers), $config['swaps']['limit']);
+            }
+
+            if ($planned['probes'] === [] && $swaps['probes'] === []) {
                 return true;
             }
 
-            $driver->writeFile((string) $workspace->driver_id, $config['test'], AccessProbes::test($planned['probes'], $config['report']));
-            $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], $config['test']], $config['timeout']);
-            $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['test']], 30);
+            $durationMs = 0;
+            $measured = ['tried' => 0, 'refused' => 0, 'findings' => [], 'untried' => 0];
 
-            if ($command->lost) {
-                throw new CommandLost($command->error_output);
+            if ($planned['probes'] !== []) {
+                $driver->writeFile((string) $workspace->driver_id, $config['test'], AccessProbes::test($planned['probes'], $config['report']));
+                $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], $config['test']], $config['timeout']);
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['test']], 30);
+
+                if ($command->lost) {
+                    throw new CommandLost($command->error_output);
+                }
+
+                $durationMs += (int) $command->duration_ms;
+                $measured = AccessProbes::measure($planned['probes'], AccessProbes::parse($read($config['report'])));
             }
 
-            $measured = AccessProbes::measure($planned['probes'], AccessProbes::parse($read($config['report'])));
+            $swapped = ['tried' => 0, 'refused' => 0, 'shared' => 0, 'findings' => [], 'untried' => 0];
 
-            if ($measured['tried'] === 0) {
+            if ($swaps['probes'] !== [] && $found !== null) {
+                $driver->writeFile((string) $workspace->driver_id, $config['swaps']['test'], SwapProbes::test($swaps['probes'], $found, $config['swaps']['report']));
+                $command = $runWorkspaceCommand->handle($workspace, [...$config['swaps']['command'], $config['swaps']['test']], $config['timeout']);
+                $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['swaps']['test']], 30);
+
+                if ($command->lost) {
+                    throw new CommandLost($command->error_output);
+                }
+
+                $durationMs += (int) $command->duration_ms;
+                $swapped = SwapProbes::measure($swaps['probes'], SwapProbes::parse($read($config['swaps']['report'])));
+            }
+
+            if ($measured['tried'] === 0 && $swapped['tried'] === 0) {
                 return true;
             }
 
@@ -1585,8 +1621,12 @@ class VerifyFeatureRequest implements ShouldQueue
                 array_filter($measured['findings'], fn (array $finding) => ! in_array($finding['record'], $names, true) && $finding['rule'] !== 'policy' && ! str_starts_with($finding['rule'], 'tenant:')),
             ))));
 
-            $passed = $measured['findings'] === [];
-            $this->addResult(__('Who may see and change records'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $command->duration_ms, output: AccessProbes::describe($measured, $planned['unmatched']));
+            $passed = $measured['findings'] === [] && $swapped['findings'] === [];
+            $output = implode("\n", array_filter([
+                $measured['tried'] > 0 ? AccessProbes::describe($measured, $planned['unmatched']) : null,
+                $swapped['tried'] > 0 ? SwapProbes::describe($swapped, $swaps['skipped']) : null,
+            ]));
+            $this->addResult(__('Who may see and change records'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $durationMs, output: $output);
 
             return $passed;
         } catch (CommandLost $exception) {

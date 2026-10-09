@@ -4513,6 +4513,36 @@ owner confirms the team model yet; records with no matching route and routes
 that need other values are not probed. The scaffold no longer asks the form for the
 person who added a record: it comes from the signed-in user.
 
+**Someone else's records in the address (`SwapProbes`).** The probes above
+need a stated rule or a policy, and a route with one record. Most holes in
+generated code are elsewhere: an action route (`orders/{order}/refund`), a
+nested one that never checks the task is the project's
+(`projects/{project}/tasks/{task}`), or a child added to someone else's
+parent. So whose a record is, is guessed from the models, and the request
+decides. A second script asks Laravel which models each route binds
+(`signatureParameters`, as implicit binding does) and follows each model's
+`BelongsTo` links, up to three, to the user model or to a team with
+members. That gives the allowed list: a record is a person's when one of
+its links ends at them, or at a team they are in. On the routes of
+controllers the change touched, one test makes two people with the app's
+factories. The first is the user at the end of a link, put in each team at
+the end of one with the role that has the most rights. The first person
+then sends the route twice: with their own records, and with the second
+person's. With more than one record in the address, it is also sent with
+their own records and the other person's last one. The first send must
+work: a page that opens, or a send that writes and is not turned down.
+Otherwise the swap proves nothing and is counted. When the swap works the
+same way, the person reached what is not theirs, and the check "Who may
+see and change records" fails. A page anyone signed out can open, or one
+the app's own policy allows, is shared on purpose. A route with a value
+that is not a record, or a record with no link to an owner, is counted,
+never judged. A POST names what it adds by the address
+(`projects/{project}/tasks` adds a task, sent with the task factory's
+values) or acts on the record itself. A route a person outside the team
+already tries with one record is not tried again. On a copy of the
+fixture with four planted holes, all four were found, and its own team
+routes and a route that checks its policy were refused.
+
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
 the like), its own tests run again with the clock stopped. A PHPUnit extension,

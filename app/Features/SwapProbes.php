@@ -1,0 +1,742 @@
+<?php
+
+namespace App\Features;
+
+use Illuminate\Support\Str;
+
+/**
+ * Put another person's record in an address (§26.11). Each route the change
+ * touched that binds models is sent twice by the same signed-in person:
+ * first with records of their own, then with records of someone else. The
+ * first send must work; it shows the route can be used at all. When the
+ * second works too, the person reached what is not theirs.
+ *
+ * Whose a record is comes from the models alone: the belongsTo links from
+ * it to a user, or to a team with members. The app's own factories make
+ * each person's records, and the person is the user at the end of a link
+ * and a member of each team at the end of one. A model with no such link
+ * is shared, and its routes are left out and counted.
+ *
+ * An address with more than one record is also sent with the person's own
+ * records and someone else's last one: my project, your task.
+ *
+ * @phpstan-type Param array{name: string, model: string|null, field: string|null}
+ * @phpstan-type Step array{relation: string, model: string}
+ * @phpstan-type Owner array{path: list<Step>, end: string}
+ * @phpstan-type Tenant array{relation: string, column: string|null, role: string|null}
+ * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>}
+ * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null}
+ * @phpstan-type Sent array{status: int, invalid: bool, writes: int}
+ * @phpstan-type Observed array{id: int, owners: bool, broke: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null}
+ * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, status: int}
+ * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
+ */
+class SwapProbes
+{
+    /**
+     * Every record in the address is someone else's.
+     */
+    public const ALL = 'all';
+
+    /**
+     * Only the last record in the address is someone else's.
+     */
+    public const LEAF = 'leaf';
+
+    /**
+     * How many links a record may be from its owner.
+     */
+    protected const DEPTH = 3;
+
+    /**
+     * The script that lists, with the app's own PHP, each route that binds
+     * a model, whose each model is (its links to a user or a team), and how
+     * a person joins a team. It reads only what the routes and models
+     * declare, and asks the database nothing.
+     */
+    public static function introspection(): string
+    {
+        $depth = self::DEPTH;
+
+        return <<<PHP
+<?php
+
+require getcwd().'/vendor/autoload.php';
+\$app = require getcwd().'/bootstrap/app.php';
+\$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+\$depth = {$depth};
+
+PHP.<<<'PHP'
+$user = config('auth.providers.users.model');
+$models = [];
+
+foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
+    $class = 'App\\Models\\'.basename($file, '.php');
+
+    if (class_exists($class) && is_subclass_of($class, Illuminate\Database\Eloquent\Model::class) && ! (new ReflectionClass($class))->isAbstract()) {
+        $models[class_basename($class)] = $class;
+    }
+}
+
+$relations = function (string $class, string $type) {
+    $found = [];
+
+    foreach ((new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+        $returns = $method->getReturnType();
+
+        if ($method->class === $class && $method->getNumberOfParameters() === 0 && $returns instanceof ReflectionNamedType && is_a($returns->getName(), $type, true)) {
+            try {
+                $found[$method->name] = (new $class)->{$method->name}();
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    return $found;
+};
+
+// A team is a model with members. A role the pivot casts to an enum is
+// given as its first case, which by the usual order has the most rights.
+$tenants = [];
+
+foreach ($models as $name => $class) {
+    if ($class === $user) {
+        continue;
+    }
+
+    foreach ($relations($class, Illuminate\Database\Eloquent\Relations\BelongsToMany::class) as $method => $relation) {
+        if (! $relation->getRelated() instanceof $user || isset($tenants[$name])) {
+            continue;
+        }
+
+        $tenants[$name] = ['relation' => $method, 'column' => null, 'role' => null];
+        $casts = (new ($relation->getPivotClass()))->getCasts();
+
+        foreach ($relation->getPivotColumns() as $column) {
+            $cast = $casts[$column] ?? null;
+
+            if (is_string($cast) && enum_exists($cast) && is_subclass_of($cast, BackedEnum::class) && $cast::cases() !== []) {
+                $tenants[$name] = ['relation' => $method, 'column' => $column, 'role' => (string) $cast::cases()[0]->value];
+
+                break;
+            }
+        }
+    }
+}
+
+// Whose each model is: every chain of belongsTo links from it that ends at
+// the user model or at a team.
+$owners = [];
+
+foreach ($models as $name => $class) {
+    if ($class === $user || isset($tenants[$name])) {
+        $owners[$name] = [['path' => [], 'end' => $class === $user ? 'user' : $name]];
+
+        continue;
+    }
+
+    $queue = [[$class, []]];
+
+    while ($queue !== [] && count($owners[$name] ?? []) < 4) {
+        [$at, $path] = array_shift($queue);
+
+        foreach ($relations($at, Illuminate\Database\Eloquent\Relations\BelongsTo::class) as $method => $relation) {
+            $related = get_class($relation->getRelated());
+            $next = [...$path, ['relation' => $method, 'model' => class_basename($related)]];
+
+            if ($related === $user || isset($tenants[class_basename($related)])) {
+                $owners[$name][] = ['path' => $next, 'end' => $related === $user ? 'user' : class_basename($related)];
+            } elseif (count($next) < $depth && ! in_array(class_basename($related), array_column($next, 'model'), true) && $related !== $class) {
+                $queue[] = [$related, $next];
+            }
+        }
+    }
+}
+
+$routes = [];
+
+foreach (app('router')->getRoutes() as $route) {
+    $bound = [];
+
+    try {
+        foreach ($route->signatureParameters(['subClass' => Illuminate\Database\Eloquent\Model::class]) as $parameter) {
+            $type = Illuminate\Support\Reflector::getParameterClassName($parameter);
+
+            if ($type !== null && in_array($type, $models, true)) {
+                $bound[$parameter->getName()] = class_basename($type);
+            }
+        }
+    } catch (Throwable) {
+    }
+
+    if ($bound === []) {
+        continue;
+    }
+
+    $params = [];
+
+    foreach ($route->parameterNames() as $param) {
+        $model = $bound[$param] ?? $bound[Illuminate\Support\Str::camel($param)] ?? null;
+        $params[] = ['name' => $param, 'model' => $model, 'field' => $route->bindingFieldFor($param)];
+    }
+
+    $routes[] = [
+        'methods' => array_values(array_diff($route->methods(), ['HEAD'])),
+        'uri' => '/'.ltrim($route->uri(), '/'),
+        'name' => $route->getName(),
+        'domain' => $route->getDomain(),
+        'controller' => $route->getControllerClass(),
+        'action' => $route->getActionMethod(),
+        'params' => $params,
+    ];
+}
+
+echo json_encode(['user' => class_basename($user), 'routes' => $routes, 'owners' => $owners, 'tenants' => $tenants]), "\n";
+
+PHP;
+    }
+
+    /**
+     * Read what introspection() printed, or null when it printed nothing
+     * usable. Only names are kept, so nothing the app printed can reach the
+     * test as code.
+     *
+     * @return Found|null
+     */
+    public static function found(string $output): ?array
+    {
+        $data = json_decode(trim((string) Str::of($output)->trim()->explode("\n")->last()), true);
+        $word = fn (mixed $value) => is_string($value) && preg_match('/^\w+$/', $value) === 1;
+
+        if (! is_array($data) || ! $word($data['user'] ?? null) || ! is_array($data['routes'] ?? null) || ! is_array($data['owners'] ?? null) || ! is_array($data['tenants'] ?? null)) {
+            return null;
+        }
+
+        $tenants = [];
+
+        foreach ($data['tenants'] as $name => $tenant) {
+            if ($word($name) && is_array($tenant) && $word($tenant['relation'] ?? null) && (($tenant['column'] ?? null) === null || $word($tenant['column'])) && (($tenant['role'] ?? null) === null || $word($tenant['role']))) {
+                $tenants[(string) $name] = ['relation' => $tenant['relation'], 'column' => $tenant['column'] ?? null, 'role' => $tenant['role'] ?? null];
+            }
+        }
+
+        $owners = [];
+
+        foreach ($data['owners'] as $name => $chains) {
+            foreach (is_array($chains) && $word($name) ? $chains : [] as $chain) {
+                $path = is_array($chain) && is_array($chain['path'] ?? null) ? $chain['path'] : null;
+                $end = is_array($chain) ? ($chain['end'] ?? null) : null;
+
+                if ($path === null || ! ($end === 'user' || isset($tenants[$end]))) {
+                    continue;
+                }
+
+                $steps = array_values(array_filter($path, fn (mixed $step) => is_array($step) && $word($step['relation'] ?? null) && $word($step['model'] ?? null)));
+
+                if (count($steps) === count($path)) {
+                    $owners[(string) $name][] = ['path' => array_map(fn (array $step) => ['relation' => $step['relation'], 'model' => $step['model']], $steps), 'end' => $end];
+                }
+            }
+        }
+
+        $routes = [];
+
+        foreach ($data['routes'] as $route) {
+            if (! is_array($route) || ! is_string($route['uri'] ?? null) || ! is_array($route['methods'] ?? null) || ! is_array($route['params'] ?? null)) {
+                continue;
+            }
+
+            $params = [];
+
+            foreach ($route['params'] as $param) {
+                if (! is_array($param) || ! $word($param['name'] ?? null)) {
+                    continue 2;
+                }
+
+                $params[] = ['name' => $param['name'], 'model' => $word($param['model'] ?? null) ? $param['model'] : null, 'field' => $word($param['field'] ?? null) ? $param['field'] : null];
+            }
+
+            $routes[] = [
+                'methods' => array_values(array_filter($route['methods'], is_string(...))),
+                'uri' => $route['uri'],
+                'name' => is_string($route['name'] ?? null) ? $route['name'] : null,
+                'domain' => is_string($route['domain'] ?? null) ? $route['domain'] : null,
+                'controller' => is_string($route['controller'] ?? null) ? $route['controller'] : null,
+                'action' => is_string($route['action'] ?? null) ? $route['action'] : null,
+                'params' => $params,
+            ];
+        }
+
+        return ['user' => $data['user'], 'routes' => $routes, 'owners' => $owners, 'tenants' => $tenants];
+    }
+
+    /**
+     * Plan the swaps: for each route of a controller the change touched
+     * whose records all have an owner, each method, and each way to swap.
+     * A route a person outside the record's team already tries (`$tried`,
+     * as "METHOD uri") is not tried again with one record. A route with a
+     * value that is not a record, or a record with no owner, is counted.
+     * A route that works on a team's members is the role probes'.
+     *
+     * @param  Found  $found
+     * @param  list<string>  $controllers  Controllers the change touched, by class name
+     * @param  list<string>  $tried
+     * @return array{probes: list<Probe>, skipped: int}
+     */
+    public static function plan(array $found, array $controllers, array $tried, int $limit): array
+    {
+        $probes = [];
+        $skipped = 0;
+
+        foreach ($found['routes'] as $route) {
+            if ($route['domain'] !== null || $route['controller'] === null || ! in_array($route['controller'], $controllers, true) || $route['params'] === []) {
+                continue;
+            }
+
+            $params = $route['params'];
+            $leaf = $params[count($params) - 1]['model'];
+
+            if ($leaf === $found['user'] && count($params) > 1) {
+                continue;
+            }
+
+            $owners = $leaf === null ? [] : ($found['owners'][$leaf] ?? []);
+            $reached = array_merge(...array_map(fn (array $owner) => [...array_column($owner['path'], 'model'), $owner['end']], $owners ?: [['path' => [], 'end' => '']]));
+
+            // Each record before the last is found on the last one's links.
+            $usable = $owners !== [] && array_filter(
+                array_slice($params, 0, -1),
+                fn (array $param) => $param['model'] === null || ! in_array($param['model'], $reached, true),
+            ) === [];
+
+            if (! $usable) {
+                $skipped++;
+
+                continue;
+            }
+
+            /** @var list<array{name: string, model: string, field: string|null}> $params */
+            $team = collect($owners)->first(fn (array $owner) => $owner['end'] !== 'user')['end'] ?? null;
+
+            foreach (array_intersect($route['methods'], ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) as $method) {
+                [$action, $ability, $payload] = match ($method) {
+                    'GET' => $route['action'] === 'edit' ? ['update', 'update', null] : ['view', 'view', null],
+                    'PUT', 'PATCH' => ['update', 'update', $leaf],
+                    'DELETE' => ['delete', 'delete', null],
+                    default => self::posting($route['uri'], array_keys($found['owners'])),
+                };
+
+                foreach (count($params) > 1 ? [self::ALL, self::LEAF] : [self::ALL] as $mode) {
+                    if ($mode === self::ALL && count($params) === 1 && in_array("{$method} {$route['uri']}", $tried, true)) {
+                        continue;
+                    }
+
+                    $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $leaf, 'payload' => $payload, 'mode' => $mode, 'ability' => $ability, 'team' => $team];
+                }
+            }
+        }
+
+        return ['probes' => array_slice($probes, 0, $limit), 'skipped' => $skipped];
+    }
+
+    /**
+     * What a POST to a record's address does: adds the record named after
+     * it (projects/{project}/tasks adds a task), or does something to the
+     * record itself (orders/{order}/refund). No policy ability is known
+     * for either, so the policy is not asked.
+     *
+     * @param  list<string>  $models
+     * @return array{string, null, string|null}
+     */
+    protected static function posting(string $uri, array $models): array
+    {
+        $last = Str::afterLast(rtrim($uri, '/'), '/');
+        $model = Str::studly(Str::singular($last));
+
+        return ! str_starts_with($last, '{') && in_array($model, $models, true) ? ['create', null, $model] : ['act', null, null];
+    }
+
+    /**
+     * Write the test that sends each swap and notes what each send did. It
+     * never fails on what it finds; the report is read back instead.
+     *
+     * @param  list<Probe>  $probes
+     * @param  Found  $found
+     */
+    public static function test(array $probes, array $found, string $report): string
+    {
+        $methods = [];
+
+        foreach ($probes as $id => $probe) {
+            $methods[] = sprintf(
+                "    public function test_swap_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s);\n    }",
+                $id,
+                $id,
+                var_export($probe['method'], true),
+                var_export($probe['uri'], true),
+                self::export($probe['params']),
+                var_export($probe['payload'], true),
+                var_export($probe['mode'], true),
+                var_export($probe['ability'], true),
+            );
+        }
+
+        $leaves = array_values(array_unique(array_column($probes, 'leaf')));
+
+        return strtr(<<<'PHP'
+<?php
+
+namespace Tests\Feature;
+
+use BackedEnum;
+use DateTimeInterface;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
+use Throwable;
+
+class SwapProbeTest extends TestCase
+{
+    use RefreshDatabase;
+
+    /**
+     * Whose each record is, by its links to a user or a team.
+     */
+    private const OWNERS = __OWNERS__;
+
+    /**
+     * How a person joins each team.
+     */
+    private const TENANTS = __TENANTS__;
+
+    private const USER = __USER__;
+
+    private int $writes = 0;
+
+    private bool $listening = false;
+
+__METHODS__
+
+    /**
+     * Send one swap and note what each send did. A record the app's
+     * factories could not make proves nothing.
+     *
+     * @param  list<array{name: string, model: string, field: string|null}>  $params
+     */
+    private function probe(int $id, string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability): void
+    {
+        try {
+            $seen = $this->exchange($method, $uri, $params, $payload, $mode, $ability);
+        } catch (Throwable) {
+            $seen = ['broke' => true];
+        }
+
+        file_put_contents(base_path(__REPORT__), json_encode(['id' => $id, ...$seen]).PHP_EOL, FILE_APPEND);
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Make two people with records of their own, then send as the first:
+     * with their own records, and with the second's.
+     *
+     * @param  list<array{name: string, model: string, field: string|null}>  $params
+     * @return array<string, mixed>
+     */
+    private function exchange(string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability): array
+    {
+        $this->listen();
+        $leaf = $params[count($params) - 1]['model'];
+        [$mine, $me] = $this->world($leaf);
+        [$theirs, $them] = $this->world($leaf);
+
+        if ($me === null || $them === null || $me->is($them)) {
+            return ['owners' => false];
+        }
+
+        $body = [];
+
+        if ($payload !== null) {
+            $raw = ('App\\Models\\'.$payload)::factory()->raw();
+            $body = array_map(fn (mixed $value) => match (true) {
+                $value instanceof DateTimeInterface => $value->format('Y-m-d H:i:s'),
+                $value instanceof BackedEnum => $value->value,
+                default => $value,
+            }, array_filter($raw, fn (mixed $value, string $key) => ! str_ends_with($key, '_id') && ! $value instanceof Model, ARRAY_FILTER_USE_BOTH));
+        }
+
+        $sent = function (string $url) use ($method, $body): array {
+            $this->writes = 0;
+            $response = $this->call($method, $url, $body);
+            $seen = ['status' => $response->getStatusCode(), 'invalid' => $response->getStatusCode() === 422 || session()->has('errors'), 'writes' => $this->writes];
+            $this->flushSession();
+
+            return $seen;
+        };
+
+        $last = count($params) - 1;
+        $this->actingAs($me);
+        $control = $sent($this->address($uri, $params, fn (int $index) => $mine));
+        $policy = $ability !== null && Gate::getPolicyFor($theirs[$leaf]) !== null ? Gate::forUser($me)->allows($ability, $theirs[$leaf]) : null;
+        $this->actingAs($me);
+        $swap = $sent($this->address($uri, $params, fn (int $index) => $mode === 'all' || $index === $last ? $theirs : $mine));
+        $guest = null;
+
+        // A page anyone can open is shared on purpose.
+        if ($method === 'GET') {
+            $this->app['auth']->forgetGuards();
+            $guest = $sent($this->address($uri, $params, fn (int $index) => $theirs))['status'];
+        }
+
+        return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => $guest, 'policy' => $policy];
+    }
+
+    /**
+     * Make a record with the app's factory, and its owner: the user at the
+     * end of one of its links, who is also put in each team at the end of
+     * one. Returns the records met on the way, by model, and the owner.
+     *
+     * @return array{array<string, Model>, Model|null}
+     */
+    private function world(string $leaf): array
+    {
+        $record = ('App\\Models\\'.$leaf)::factory()->create();
+        $records = [$leaf => $record];
+        $users = [];
+        $teams = [];
+
+        foreach (self::OWNERS[$leaf] ?? [] as $owner) {
+            $at = $record;
+
+            foreach ($owner['path'] as $step) {
+                $at = $at instanceof Model ? $at->{$step['relation']} : null;
+
+                if ($at instanceof Model) {
+                    $records[$step['model']] ??= $at;
+                }
+            }
+
+            if ($at instanceof Model) {
+                $records[$owner['end'] === 'user' ? self::USER : $owner['end']] ??= $at;
+
+                if ($owner['end'] === 'user') {
+                    $users[] = $at;
+                } else {
+                    $teams[] = [$owner['end'], $at];
+                }
+            }
+        }
+
+        if ($users === [] && $teams === []) {
+            return [$records, null];
+        }
+
+        $person = $users[0] ?? ('App\\Models\\'.self::USER)::factory()->create();
+
+        foreach ($teams as [$tenant, $team]) {
+            ['relation' => $relation, 'column' => $column, 'role' => $role] = self::TENANTS[$tenant];
+
+            if (! $team->{$relation}()->whereKey($person->getKey())->exists()) {
+                $team->{$relation}()->attach($person, $column === null ? [] : [$column => $role]);
+            }
+        }
+
+        // The team in use, where the app keeps one as Laravel's starter kits do.
+        if ($teams !== [] && Schema::hasColumn($person->getTable(), 'current_team_id')) {
+            $person->forceFill(['current_team_id' => $teams[0][1]->getKey()])->save();
+        }
+
+        return [$records, $person->fresh()];
+    }
+
+    /**
+     * Fill the address with the record each parameter takes from the
+     * records given for it.
+     *
+     * @param  list<array{name: string, model: string, field: string|null}>  $params
+     * @param  callable(int): array<string, Model>  $from
+     */
+    private function address(string $uri, array $params, callable $from): string
+    {
+        foreach ($params as $index => $param) {
+            $record = $from($index)[$param['model']];
+            $value = $param['field'] === null ? $record->getRouteKey() : $record->getAttribute($param['field']);
+            $uri = (string) preg_replace('/\{'.$param['name'].'(:\w+)?\??\}/', (string) $value, $uri);
+        }
+
+        return $uri;
+    }
+
+    /**
+     * Count what each send writes, leaving out the framework's own tables.
+     */
+    private function listen(): void
+    {
+        if ($this->listening) {
+            return;
+        }
+
+        $this->listening = true;
+
+        DB::listen(function ($query) {
+            if (preg_match('/^\s*(insert|update|delete)\b/i', $query->sql) === 1 && preg_match('/\b(sessions|cache|cache_locks|jobs|job_batches|failed_jobs|password_reset_tokens)\b/', $query->sql) !== 1) {
+                $this->writes++;
+            }
+        });
+    }
+}
+
+PHP, [
+            '__OWNERS__' => self::export(array_intersect_key($found['owners'], array_flip($leaves))),
+            '__TENANTS__' => self::export($found['tenants']),
+            '__USER__' => var_export($found['user'], true),
+            '__METHODS__' => implode("\n\n", $methods),
+            '__REPORT__' => var_export($report, true),
+        ]);
+    }
+
+    /**
+     * Write a value as PHP on one line.
+     */
+    protected static function export(mixed $value): string
+    {
+        return (string) preg_replace('/\s+/', ' ', var_export($value, true));
+    }
+
+    /**
+     * Read the report into what each swap did, by probe.
+     *
+     * @return array<int, Observed>
+     */
+    public static function parse(string $report): array
+    {
+        $observed = [];
+        $sent = fn (mixed $value) => is_array($value) && is_int($value['status'] ?? null)
+            ? ['status' => $value['status'], 'invalid' => ($value['invalid'] ?? false) === true, 'writes' => is_int($value['writes'] ?? null) ? $value['writes'] : 0]
+            : null;
+
+        foreach (preg_split('/\R/', trim($report)) ?: [] as $line) {
+            $data = json_decode($line, true);
+
+            if (is_array($data) && is_int($data['id'] ?? null)) {
+                $observed[$data['id']] = [
+                    'id' => $data['id'],
+                    'owners' => ($data['owners'] ?? false) === true,
+                    'broke' => ($data['broke'] ?? false) === true,
+                    'control' => $sent($data['control'] ?? null),
+                    'swap' => $sent($data['swap'] ?? null),
+                    'guest' => is_int($data['guest'] ?? null) ? $data['guest'] : null,
+                    'policy' => is_bool($data['policy'] ?? null) ? $data['policy'] : null,
+                ];
+            }
+        }
+
+        return $observed;
+    }
+
+    /**
+     * Judge each swap. The send with the person's own records must have
+     * worked: a page that opened, or a send that wrote something and was
+     * not turned down. Otherwise nothing can be told from the swap. A swap
+     * that worked the same way is a finding, unless the app's own policy
+     * lets the person do it or anyone can open the page: then it is shared
+     * on purpose.
+     *
+     * @param  list<Probe>  $probes
+     * @param  array<int, Observed>  $observed
+     * @return Measured
+     */
+    public static function measure(array $probes, array $observed): array
+    {
+        $findings = [];
+        $refused = 0;
+        $shared = 0;
+        $untried = 0;
+
+        foreach ($probes as $id => $probe) {
+            $seen = $observed[$id] ?? null;
+            $control = $seen['control'] ?? null;
+            $swap = $seen['swap'] ?? null;
+            $reading = $probe['method'] === 'GET';
+            $worked = fn (array $sent) => $reading
+                ? $sent['status'] === 200
+                : $sent['status'] < 400 && ! $sent['invalid'] && $sent['writes'] > 0;
+
+            if ($seen === null || $control === null || $swap === null || ! $worked($control) || $swap['status'] >= 500) {
+                $untried++;
+
+                continue;
+            }
+
+            if ($seen['policy'] === true || ($reading && $seen['guest'] === 200)) {
+                $shared++;
+
+                continue;
+            }
+
+            if ($worked($swap)) {
+                $findings[] = [...$probe, 'status' => $swap['status']];
+            } else {
+                $refused++;
+            }
+        }
+
+        return ['tried' => $refused + count($findings), 'refused' => $refused, 'shared' => $shared, 'findings' => $findings, 'untried' => $untried];
+    }
+
+    /**
+     * Say what the swaps found, for the agent that repairs the change and
+     * for the owner reading the check.
+     *
+     * @param  Measured  $measured
+     */
+    public static function describe(array $measured, int $skipped): string
+    {
+        $lines = [];
+
+        foreach ($measured['findings'] as $finding) {
+            $noun = AccessProbes::words($finding['leaf']);
+            $whose = match ($finding['team']) {
+                null => "another person's {$noun}",
+                $finding['leaf'] => "a {$noun} they are not in",
+                default => "a {$noun} of another ".AccessProbes::words($finding['team']),
+            };
+            $did = match ($finding['action']) {
+                'view' => "could see {$whose}",
+                'update' => $finding['method'] === 'GET' ? "could open the form to change {$whose}" : "could change {$whose}",
+                'delete' => "could remove {$whose}",
+                'create' => 'could add a '.AccessProbes::words((string) $finding['payload'])." to {$whose}",
+                default => "could act on {$whose}",
+            };
+
+            if ($finding['mode'] === self::LEAF) {
+                $parent = AccessProbes::words($finding['params'][count($finding['params']) - 2]['model']);
+                $lines[] = "A signed-in person {$did}, through the address of their own {$parent}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. Scope the route's bindings (Route::scopeBindings()), so the {$noun} must belong to the {$parent} in the address.";
+
+                continue;
+            }
+
+            $lines[] = "A signed-in person {$did}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. Make this route check the {$finding['leaf']} policy, or find the {$noun} through what the person may reach.";
+        }
+
+        $lines[] = "Tried {$measured['tried']} requests with someone else's records in the address; {$measured['refused']} ".($measured['refused'] === 1 ? 'was' : 'were').' refused, as they should be.';
+
+        if ($measured['shared'] > 0) {
+            $lines[] = "{$measured['shared']} ".($measured['shared'] === 1 ? 'is' : 'are').' shared on purpose: the app\'s own policy allows it, or anyone can open the page.';
+        }
+
+        if ($measured['untried'] > 0) {
+            $lines[] = "{$measured['untried']} could not be judged: the request did not work with the person's own records, or the records could not be made.";
+        }
+
+        if ($skipped > 0) {
+            $lines[] = "{$skipped} ".($skipped === 1 ? 'route was' : 'routes were').' left out: a value in the address is not a record, or a record has no owner.';
+        }
+
+        return implode("\n", $lines);
+    }
+}
