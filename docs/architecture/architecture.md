@@ -5008,7 +5008,9 @@ Not met:
 - **Isolated sandboxes.** Each workspace runs as its own user, cannot reach
   private addresses, and only it can open its previews (runner machines).
   Workspaces on one machine still share its kernel, and can reach the whole
-  internet. A stronger boundary per run is not built yet.
+  internet. A stronger boundary per run is not built yet. Their internet stays
+  open (owner's decision, 2026-10-08): owners' apps call outside services we
+  cannot list, so a list of allowed hosts would break them in the preview.
 - **Someone other than us** has not created an app and shipped changes, edits
   and a deploy without our help. Importing an existing app is out of scope
   for V1 (§18).
