@@ -6,6 +6,7 @@ use App\Actions\Runs\GatherReviewEvidence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\VerificationStatus;
 use App\Evaluation\PipelineHarness;
+use App\Features\MigrationChecks;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\Verification;
@@ -24,7 +25,7 @@ use Tests\TestCase;
 | The evaluation reviews a change the way the run's review stage does, so
 | it measures the review that ships: the reviewer gets the same evidence,
 | test results, role probes and security findings included, and the
-| platform's own checks block what they block there.
+| platform's own checks and its gate block what they block there.
 */
 class PipelineHarnessReviewTest extends TestCase
 {
@@ -94,7 +95,9 @@ class PipelineHarnessReviewTest extends TestCase
 
         $review = app(PipelineHarness::class)->review($run, $verification);
 
-        $this->assertTrue($review['approved']);
+        // The security finding is also one the gate sends back.
+        $this->assertFalse($review['approved']);
+        $this->assertStringStartsWith('B1: ', $review['findings'][0]['summary']);
         $this->assertCount(1, $this->asked);
         $evidence = $this->asked[0];
         $this->assertSame('member', $evidence->changeEvidence['roles']['findings'][0]['actor'] ?? null);
@@ -214,6 +217,54 @@ class PipelineHarnessReviewTest extends TestCase
         [$run, $verification] = $this->verified([], screen: 'Teams');
 
         $this->assertTrue(app(PipelineHarness::class)->review($run, $verification)['approved']);
+    }
+
+    public function test_the_gate_blocks_an_edited_migration_as_in_the_run_review()
+    {
+        [$run, $verification] = $this->verified(['migrations' => $this->editedMigration()]);
+
+        $review = app(PipelineHarness::class)->review($run, $verification);
+
+        $this->assertFalse($review['approved']);
+        $this->assertStringStartsWith('B1: The change edits database/migrations/0001_create_teams_table.php', $review['findings'][0]['summary']);
+        $this->assertSame([], $review['asked']);
+        $this->assertTrue(app(PipelineHarness::class)->judge($run, $verification)['approved']);
+    }
+
+    public function test_a_finding_the_agent_asked_to_keep_holds_the_change_until_the_owner_answers()
+    {
+        [$run, $verification] = $this->verified(['migrations' => $this->editedMigration()]);
+        $run->featureRequest->findingProposals()->create(['run_id' => $run->id, 'kind' => MigrationChecks::EDITED, 'identity' => MigrationChecks::EDITED.'|database/migrations/0001_create_teams_table.php', 'reason' => 'It fixes a typo before launch.']);
+
+        $review = app(PipelineHarness::class)->review($run, $verification);
+
+        $this->assertFalse($review['approved']);
+        $this->assertSame([], $review['findings']);
+        $this->assertCount(1, $review['asked']);
+        $this->assertStringStartsWith('The change edits database/migrations/0001_create_teams_table.php', $review['asked'][0]);
+    }
+
+    public function test_a_finding_the_owner_kept_blocks_nothing()
+    {
+        [$run, $verification] = $this->verified(['migrations' => $this->editedMigration()]);
+        $run->featureRequest->acceptedFindings()->create(['user_id' => $run->featureRequest->user_id, 'kind' => MigrationChecks::EDITED, 'identity' => MigrationChecks::EDITED.'|database/migrations/0001_create_teams_table.php']);
+
+        $review = app(PipelineHarness::class)->review($run, $verification);
+
+        $this->assertTrue($review['approved']);
+        $this->assertSame([], $review['findings']);
+        $this->assertSame([], $review['asked']);
+    }
+
+    /**
+     * What the verification measured of a change that edits a migration
+     * that already ran.
+     *
+     * @return array<string, mixed>
+     */
+    protected function editedMigration(): array
+    {
+        return ['added' => [], 'edited' => ['database/migrations/0001_create_teams_table.php'], 'up' => true, 'down' => true, 'again' => true, 'failed' => null, 'output' => null, 'risks' => []];
     }
 
     /**

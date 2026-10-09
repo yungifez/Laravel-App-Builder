@@ -105,10 +105,11 @@ class PipelineHarness
     /**
      * Review a verified change the way the run's review stage does: the
      * reviewer gets the same evidence, test results, role probes and
-     * security findings included, the platform's own checks block what they
-     * block there, and the review is assessed for what should be preserved.
+     * security findings included, the platform's own checks and its gate
+     * block what they block there, and the review is assessed for what
+     * should be preserved.
      *
-     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>}
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>, asked: list<string>}
      */
     public function review(Run $run, Verification $verification): array
     {
@@ -119,7 +120,7 @@ class PipelineHarness
      * Get only the reviewer's judgement of a change, without the platform's
      * own checks, for comparing reviewers on the same evidence.
      *
-     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>}
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>, asked: list<string>}
      */
     public function judge(Run $run, Verification $verification): array
     {
@@ -127,7 +128,7 @@ class PipelineHarness
     }
 
     /**
-     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>}
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>, asked: list<string>}
      */
     protected function reviewed(Run $run, Verification $verification, bool $checked): array
     {
@@ -139,14 +140,19 @@ class PipelineHarness
 
         $review = $driver->review($run, $evidence)->withGuardingTestsMinor($verification->evidence['new_tests'] ?? []);
         $verified = [];
+        $asked = [];
 
         if ($checked) {
             ['review' => $review, 'verified' => $verified] = $this->checkReviewedChange->handle($review, $plan, $verification, $driver->canRepair());
+            ['review' => $review, 'asked' => $asked] = $this->checkReviewedChange->gate($review, $run->featureRequest, $verification, $driver->canRepair());
             $review = $this->checkReviewedChange->screens($review, $verification, $driver->canRepair());
         }
 
         return [
-            'approved' => $review->approved,
+            // A finding the agent asked to keep holds an approved change
+            // until the owner answers, so it does not ship yet.
+            'approved' => $review->approved && $asked === [],
+            'asked' => array_column($asked, 'text'),
             'summary' => $review->summary,
             'findings' => $review->findings,
             'changes' => array_map(fn (array $change) => [

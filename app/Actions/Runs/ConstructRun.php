@@ -7,7 +7,6 @@ use App\Actions\Context\AssessCoverage;
 use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\CompileContext;
 use App\Actions\Context\KeepAssumptions;
-use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\SelectAreas;
 use App\Actions\Features\AcceptFindings;
 use App\Actions\Features\ProposeFindings;
@@ -22,21 +21,9 @@ use App\Enums\Consequence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
 use App\Enums\StopReason;
-use App\Features\AppBoundaries;
-use App\Features\AppContainment;
-use App\Features\AppDrift;
-use App\Features\AppFaults;
-use App\Features\AppRoutes;
-use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
-use App\Features\MigrationChecks;
-use App\Features\NarrowedFormats;
-use App\Features\OwnedRecords;
-use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
-use App\Features\QueuedWork;
 use App\Jobs\WriteTestsBeside;
-use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
 use App\Models\Verification;
@@ -92,7 +79,6 @@ class ConstructRun
         private MeasureUsage $measureUsage,
         private AcceptFindings $acceptFindings,
         private ProposeFindings $proposeFindings,
-        private ReadProjectContext $readProjectContext,
         private ScaffoldDataShape $scaffoldDataShape,
         private KeepAssumptions $keepAssumptions,
         private WriteTestsFirst $writeTestsFirst,
@@ -753,11 +739,7 @@ class ConstructRun
         // owner's yes lets it stay: until they answer, it holds the change,
         // but it is never sent back to the agent, who can do nothing more
         // about it. Repairs are only for what the agent can fix.
-        $gate = $driver->canRepair() ? $this->gate($featureRequest, $verification) : [];
-        $pending = $this->proposeFindings->pending($featureRequest);
-        $asked = array_values(array_filter($gate, fn (array $finding) => in_array($finding['identity'], $pending, true)));
-        $gate = $this->proposeFindings->keyed($featureRequest, array_values(array_filter($gate, fn (array $finding) => ! in_array($finding['identity'], $pending, true))));
-        $review = $review->withBlockingFindings(array_column($gate, 'text'));
+        ['review' => $review, 'gate' => $gate, 'asked' => $asked] = $this->checkReviewedChange->gate($review, $featureRequest, $verification, $driver->canRepair());
 
         $review = $this->checkReviewedChange->screens($review, $verification, $driver->canRepair());
 
@@ -857,121 +839,6 @@ class ConstructRun
         ]]);
 
         return $fresh;
-    }
-
-    /**
-     * Get what the gate holds against the change, each by what it is: what
-     * a test run proves its code did where Laravel expects nothing to
-     * change, and what a caused failure proves it left behind. In a part
-     * the owner asked to be extra careful with, what was only read from
-     * the code, and a call to an outside service from a new place, count
-     * too (strict mode). What the owner said they want is left out.
-     *
-     * @return list<array{kind: string, identity: string, text: string}>
-     */
-    protected function gate(FeatureRequest $featureRequest, Verification $verification): array
-    {
-        $accepted = $this->acceptFindings->identities($featureRequest);
-        $evidence = $verification->evidence ?? [];
-        $boundaries = AppBoundaries::without($evidence['boundaries'] ?? null, $accepted);
-        $gate = [];
-
-        if (config('builder.verification.boundaries.send_back')) {
-            foreach ($boundaries['findings'] ?? [] as $finding) {
-                $gate[] = ['kind' => $finding['kind'], 'identity' => BoundaryCode::identity($finding), 'text' => AppBoundaries::finding($finding)];
-            }
-        }
-
-        // A new address that changes data with no check on who may use
-        // it, or one that lost its check (§12). The owner may want it, such
-        // as a contact form, and says so in the proof.
-        if (config('builder.verification.routes_send_back')) {
-            foreach (AppRoutes::findings($evidence['routes'] ?? null, $accepted) as $finding) {
-                $gate[] = ['kind' => $finding['kind'], 'identity' => AppRoutes::identity($finding), 'text' => AppRoutes::finding($finding)];
-            }
-        }
-
-        // A migration that did not run up, down and up again, or one that
-        // already existed and was edited, breaks the owner's live data when
-        // published (§9). The owner may keep one, such as a data migration
-        // that cannot be undone on purpose.
-        $migrations = $evidence['migrations'] ?? null;
-
-        foreach (MigrationChecks::findings($migrations, $accepted) as $finding) {
-            $gate[] = ['kind' => $finding['kind'], 'identity' => MigrationChecks::identity($finding), 'text' => MigrationChecks::finding($finding, $migrations)];
-        }
-
-        // New queued work that does not say how it tries again or fails
-        // fails quietly on the live app (§12). The owner may keep work that
-        // must run once only.
-        $queued = $evidence['queued'] ?? [];
-
-        foreach (QueuedWork::findings($queued, $accepted) as $finding) {
-            $gate[] = ['kind' => $finding['kind'], 'identity' => QueuedWork::identity($finding), 'text' => QueuedWork::finding($finding, $queued)];
-        }
-
-        // Records that name an owner with nothing that keeps one owner's
-        // from another (§12). The owner may keep records that are public
-        // on purpose.
-        $owners = $evidence['owners'] ?? [];
-
-        foreach (OwnedRecords::findings($owners, $accepted) as $finding) {
-            $gate[] = ['kind' => $finding['kind'], 'identity' => OwnedRecords::identity($finding), 'text' => OwnedRecords::finding($finding, $owners)];
-        }
-
-        // A format made stricter that people's saved values fail (§9). The
-        // old rule is kept until the owner says to turn them away.
-        foreach (NarrowedFormats::findings($evidence['narrowed'] ?? null, $accepted) as $finding) {
-            $gate[] = ['kind' => $finding['kind'], 'identity' => NarrowedFormats::identity($finding), 'text' => NarrowedFormats::finding($finding)];
-        }
-
-        // New packages outside the dependency policy (§12, §13). The owner
-        // may keep a package they chose.
-        $packages = $evidence['packages'] ?? ['changes' => [], 'problems' => []];
-
-        foreach (PackagePolicy::findings($packages, $accepted) as $finding) {
-            $gate[] = ['kind' => $finding['kind'], 'identity' => PackagePolicy::identity($finding), 'text' => PackagePolicy::finding($finding, $packages)];
-        }
-
-        if (config('builder.verification.faults.send_back')) {
-            foreach (AppFaults::without($evidence['faults'] ?? null, $accepted)['findings'] ?? [] as $finding) {
-                $gate[] = ['kind' => $finding['kind'], 'identity' => AppFaults::identity($finding), 'text' => AppFaults::finding($finding)];
-            }
-        }
-
-        $careful = $featureRequest->project->careful_areas ?? [];
-
-        // Work that grew far past an area's ceiling, in a careful area.
-        foreach ($evidence['drift']['findings'] ?? [] as $finding) {
-            $identity = AppDrift::identity($finding);
-
-            if ($finding['far'] && in_array($finding['area'], $careful, true) && ! in_array($identity, $accepted, true)) {
-                $gate[] = ['kind' => AppDrift::GREW, 'identity' => $identity, 'text' => AppDrift::finding($finding, $finding['name'])];
-            }
-        }
-
-        if ($careful === [] || (($boundaries['read'] ?? []) === [] && ($evidence['containment']['findings'] ?? []) === [])) {
-            return $gate;
-        }
-
-        $context = $this->readProjectContext->current($featureRequest->project);
-        $names = array_map(fn (Capability $capability) => $capability->name, array_filter($context->capabilities, fn (Capability $capability) => in_array($capability->key, $careful, true)));
-
-        foreach ($boundaries['read'] ?? [] as $finding) {
-            if (array_intersect($context->claiming((string) preg_replace('/:\d+$/', '', $finding['at'])), $careful) !== []) {
-                $gate[] = ['kind' => $finding['kind'], 'identity' => BoundaryCode::identity($finding), 'text' => AppBoundaries::readFinding($finding)];
-            }
-        }
-
-        foreach ($evidence['containment']['findings'] ?? [] as $finding) {
-            $identity = AppContainment::identity($finding);
-
-            if (! in_array($identity, $accepted, true) && array_intersect([...$finding['from'], ...$finding['home']], $names) !== []) {
-                $gate[] = ['kind' => AppContainment::CALLED_ELSEWHERE, 'identity' => $identity, 'text' => AppContainment::finding($finding)];
-            }
-        }
-
-        return $gate;
     }
 
     /**
