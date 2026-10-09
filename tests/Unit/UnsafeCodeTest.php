@@ -100,4 +100,58 @@ class UnsafeCodeTest extends TestCase
         $this->assertSame('Line 4 of app/Services/Billing.php writes a secret key into the code, where anyone with the code can read it and use it. Read it from a setting instead: config() in the code, env() in a file under config/, and the setting name with no value in .env.example.', UnsafeCode::finding(UnsafeCode::found($patch)[0]));
         $this->assertFalse(UnsafeCode::scans($this->adding('storage/keys/deploy', ['nothing'])));
     }
+
+    public function test_a_secret_setting_sent_to_the_browser_is_found()
+    {
+        $patch = implode("\n", [
+            $this->adding('.env.example', ['VITE_STRIPE_SECRET="${STRIPE_SECRET}"']),
+            $this->adding('resources/js/lib/maps.ts', ['const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;']),
+            $this->adding('app/Http/Middleware/HandleInertiaRequests.php', ["            'mailgun' => config('services.mailgun.secret'),"]),
+            $this->adding('resources/views/checkout.blade.php', ["<div data-key=\"{{ env('PADDLE_API_KEY') }}\"></div>"]),
+            $this->adding('app/Http/Controllers/BillingController.php', ["        return Inertia::render('Billing', [", "            'key' => config('app.key'),", '        ]);']),
+        ]);
+
+        $this->assertSame([
+            ['rule' => 'secret_to_browser', 'path' => '.env.example', 'line' => 3],
+            ['rule' => 'secret_to_browser', 'path' => 'resources/js/lib/maps.ts', 'line' => 3],
+            ['rule' => 'secret_to_page', 'path' => 'app/Http/Middleware/HandleInertiaRequests.php', 'line' => 3],
+            ['rule' => 'secret_to_page', 'path' => 'resources/views/checkout.blade.php', 'line' => 3],
+            ['rule' => 'secret_to_props', 'path' => 'app/Http/Controllers/BillingController.php', 'line' => 4],
+        ], UnsafeCode::found($patch));
+
+        // A prop added to a page the app already renders, through the helper.
+        $existing = implode("\n", ['diff --git a/app/Http/Controllers/TeamController.php b/app/Http/Controllers/TeamController.php', '--- a/app/Http/Controllers/TeamController.php', '+++ b/app/Http/Controllers/TeamController.php', '@@ -10,2 +10,3 @@', "        return inertia('Team', [", "+            'token' => env('SLACK_BOT_TOKEN'),", '        ]);']);
+        $this->assertSame([['rule' => 'secret_to_props', 'path' => 'app/Http/Controllers/TeamController.php', 'line' => 11]], UnsafeCode::found($existing));
+        $this->assertSame('Line 3 of .env.example gives a secret setting a VITE_ name, so its value is built into the JavaScript every visitor downloads. Keep the secret on the server without the VITE_ prefix, and let the page reach what it needs through a route of the app.', UnsafeCode::finding(UnsafeCode::found($patch)[0]));
+    }
+
+    public function test_settings_made_for_browsers_and_secrets_kept_on_the_server_are_not_found()
+    {
+        $patch = implode("\n", [
+            $this->adding('.env.example', ['VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"', 'VITE_STRIPE_KEY="${STRIPE_KEY}"', 'VITE_ALGOLIA_SEARCH_KEY=', 'VITE_KEYBOARD_LAYOUT=qwerty', 'STRIPE_SECRET=']),
+            $this->adding('app/Http/Middleware/HandleInertiaRequests.php', ["            'stripeKey' => config('services.stripe.key'),", "            'reverb' => env('REVERB_APP_KEY'),"]),
+            // Passed to a client on the server, beside a page.
+            $this->adding('app/Http/Controllers/BillingController.php', ["        \$stripe = new StripeClient(['api_key' => config('services.stripe.secret')]);", "        return Inertia::render('Billing');"]),
+            // A controller that renders no page sends nothing to one.
+            $this->adding('app/Http/Controllers/WebhookController.php', ["        \$client = new Client(['token' => config('services.slack.token')]);"]),
+            $this->adding('config/services.php', ["        'secret' => env('STRIPE_SECRET'),"]),
+        ]);
+
+        $this->assertSame([], UnsafeCode::found($patch));
+
+        // A key a service makes for browsers is allowed in the settings, never in a comment.
+        config(['builder.verification.browser_settings' => [...config('builder.verification.browser_settings'), 'MAPBOX_ACCESS_TOKEN']]);
+        $this->assertSame([], UnsafeCode::found($this->adding('resources/js/lib/maps.ts', ['const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;'])));
+    }
+
+    public function test_a_comment_never_lets_a_secret_reach_the_page_and_lines_not_added_or_in_tests_are_not_found()
+    {
+        $commented = $this->adding('app/Http/Middleware/HandleInertiaRequests.php', ['            // safe: only signed-in staff see this', "            'mailgun' => config('services.mailgun.secret'),"]);
+        $removed = implode("\n", ['diff --git a/.env.example b/.env.example', '--- a/.env.example', '+++ b/.env.example', '@@ -1,2 +1,1 @@', ' APP_NAME=Laravel', '-VITE_STRIPE_SECRET="${STRIPE_SECRET}"']);
+        $test = $this->adding('tests/Feature/BillingTest.php', ["        \$this->assertSame(config('services.mailgun.secret'), \$page['mailgun']);", '        // VITE_STRIPE_SECRET']);
+
+        $this->assertSame([['rule' => 'secret_to_page', 'path' => 'app/Http/Middleware/HandleInertiaRequests.php', 'line' => 4]], UnsafeCode::found($commented));
+        $this->assertSame('Line 4 of app/Http/Middleware/HandleInertiaRequests.php puts a secret setting on the page, where anyone who opens it can read it. Keep the secret on the server, and let the page reach what it needs through a route of the app.', UnsafeCode::finding(UnsafeCode::found($commented)[0]));
+        $this->assertSame([], UnsafeCode::found($removed."\n".$test));
+    }
 }

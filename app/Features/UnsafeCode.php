@@ -3,12 +3,13 @@
 namespace App\Features;
 
 use App\Support\Secrets;
+use Illuminate\Support\Str;
 
 /**
  * Common safety mistakes on the lines a change adds, found by pattern alone:
  * text shown on a page without escaping it, database queries built from
- * values, records open to every field of a form, and secret settings or
- * keys kept in the app's history. Only added lines count, so code the app
+ * values, records open to every field of a form, secret settings or keys
+ * kept in the app's history, and secret settings sent to the browser. Only added lines count, so code the app
  * already had (a starter kit's own QR code, say) is never held against a
  * change.
  *
@@ -22,7 +23,7 @@ class UnsafeCode
      * Each rule: the files it reads, the pattern it finds, what is wrong,
      * and the safe way to do it.
      *
-     * @var array<string, array{files: string, pattern: string, problem: string, fix: string, always?: bool}>
+     * @var array<string, array{files: string, pattern: string, problem: string, fix: string, always?: bool, within?: string, named?: bool}>
      */
     protected const RULES = [
         'unescaped_output' => [
@@ -68,7 +69,45 @@ class UnsafeCode
             'fix' => 'Read it from a setting instead: config() in the code, env() in a file under config/, and the setting name with no value in .env.example.',
             'always' => true,
         ],
+        // Vite puts every VITE_ setting the code reads into the built
+        // JavaScript, so its value reaches everyone who opens a page. The
+        // settings made for browsers are in builder.verification
+        // .browser_settings. No comment lets a secret through.
+        'secret_to_browser' => [
+            'files' => '/^(?!tests\/)(.*(^|\/)\.env\.example$|config\/.*\.php$|.*\.(vue|js|mjs|jsx|ts|tsx|svelte)$)/',
+            'pattern' => '/\bVITE_(?<name>(?:\w*_)?(?:KEY|SECRET|TOKEN|PASSWORD|PASSPHRASE|PRIVATE|CREDENTIALS?)(?:_\w*)?)\b/',
+            'problem' => 'gives a secret setting a VITE_ name, so its value is built into the JavaScript every visitor downloads',
+            'fix' => 'Keep the secret on the server without the VITE_ prefix, and let the page reach what it needs through a route of the app.',
+            'always' => true,
+            'named' => true,
+        ],
+        // Shared Inertia props and Blade views go to every page they render.
+        'secret_to_page' => [
+            'files' => '/^(?!tests\/)(.*(^|\/)HandleInertiaRequests\.php$|.*\.blade\.php$)/',
+            'pattern' => '/'.self::SECRET_READ.'/',
+            'problem' => 'puts a secret setting on the page, where anyone who opens it can read it',
+            'fix' => 'Keep the secret on the server, and let the page reach what it needs through a route of the app.',
+            'always' => true,
+            'named' => true,
+        ],
+        // A page's own props: a value inside the Inertia::render() call. A
+        // secret passed to a client on the server, beside it, is not one.
+        'secret_to_props' => [
+            'files' => '/^(?!tests\/).*Controllers\/.*\.php$/',
+            'pattern' => '/=>\s*'.self::SECRET_READ.'/',
+            'problem' => 'puts a secret setting in a page\'s props, where anyone who opens the page can read it',
+            'fix' => 'Keep the secret on the server, and let the page reach what it needs through a route of the app.',
+            'always' => true,
+            'within' => '/\bInertia::render\(|\binertia\(/',
+            'named' => true,
+        ],
     ];
+
+    /**
+     * Reading a secret setting: a service's secret, key, token or password,
+     * the app's own key, or an env() setting named like one.
+     */
+    protected const SECRET_READ = '(?:config\(\s*[\'"](?<config>services\.[\w-]+\.(?:[\w-]+\.)*(?:secret|token|password|key|client_secret|webhook_secret|api_key)|app\.key)[\'"]|env\(\s*[\'"](?<name>\w*(?:KEY|SECRET|TOKEN|PASSWORD|PASSPHRASE)\w*)[\'"])';
 
     /**
      * A comment that says why a line is safe.
@@ -92,15 +131,17 @@ class UnsafeCode
                 continue;
             }
 
+            $inside = array_map(fn (array $rule) => isset($rule['within']) ? self::inside($file['diff'], $rule['within']) : null, $rules);
+
             foreach (PatchSummary::addedLines($file['diff']) as $added) {
                 $commented = preg_match(self::SAFE_COMMENT, $added['text'].' '.$added['previous']) === 1;
 
                 foreach ($rules as $key => $rule) {
-                    if ($commented && ! ($rule['always'] ?? false)) {
+                    if (($commented && ! ($rule['always'] ?? false)) || (($inside[$key] ?? null) !== null && ! isset($inside[$key][$added['line']]))) {
                         continue;
                     }
 
-                    if (! isset($found[$file['path'].$key]) && preg_match($rule['pattern'], $added['text']) === 1) {
+                    if (! isset($found[$file['path'].$key]) && preg_match($rule['pattern'], $added['text'], $match) === 1 && ! (($rule['named'] ?? false) && self::forBrowsers($match))) {
                         $found[$file['path'].$key] = ['rule' => $key, 'path' => $file['path'], 'line' => $added['line']];
                     }
                 }
@@ -108,6 +149,62 @@ class UnsafeCode
         }
 
         return array_values($found);
+    }
+
+    /**
+     * Get the lines of the new file, numbered as in it, that are inside a
+     * call the pattern opens, by counting its brackets over the lines the
+     * diff shows. A call that opened before the hunk is not seen.
+     *
+     * @return array<int, true>
+     */
+    protected static function inside(string $diff, string $opens): array
+    {
+        $inside = [];
+        $depth = 0;
+        $number = 0;
+        $inHunk = false;
+
+        foreach (explode("\n", $diff) as $line) {
+            if (preg_match('/^@@ -\d+(?:,\d+)? \+(\d+)/', $line, $match) === 1) {
+                [$inHunk, $number, $depth] = [true, (int) $match[1] - 1, 0];
+
+                continue;
+            }
+
+            if (! $inHunk || str_starts_with($line, '-') || str_starts_with($line, '\\')) {
+                continue;
+            }
+
+            $number++;
+            $text = substr($line, 1);
+
+            if (preg_match($opens, $text, $match, PREG_OFFSET_CAPTURE) === 1) {
+                $text = substr($text, $match[0][1]);
+                $inside[$number] = true;
+            } elseif ($depth > 0) {
+                $inside[$number] = true;
+            } else {
+                continue;
+            }
+
+            $depth = max(0, $depth + substr_count($text, '(') + substr_count($text, '[') - substr_count($text, ')') - substr_count($text, ']'));
+        }
+
+        return $inside;
+    }
+
+    /**
+     * Determine if a setting a line sends to the browser is one made to be
+     * read there, by its name without the VITE_ prefix or its config key.
+     *
+     * @param  array<int|string, string>  $match
+     */
+    protected static function forBrowsers(array $match): bool
+    {
+        $name = ($match['config'] ?? '') !== '' ? $match['config'] : Str::chopStart($match['name'] ?? '', 'VITE_');
+
+        return Str::is((array) config('builder.verification.browser_settings', []), $name);
     }
 
     /**

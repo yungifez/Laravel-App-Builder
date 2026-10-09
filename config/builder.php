@@ -885,6 +885,14 @@ return [
         // is a blocking finding, so the coder is sent back to fix it.
         'safety_scan' => (bool) env('BUILDER_SAFETY_SCAN', true),
 
+        // Settings made to be read in the browser, so a change may send
+        // them to the page: Reverb's and Pusher's app keys, Cashier's
+        // publishable Stripe key, and publishable, public, search and maps
+        // keys. Matched against a setting's name without its VITE_ prefix,
+        // or a config() key; * matches anything. A key a service makes for
+        // browsers goes here, never into a comment in the app.
+        'browser_settings' => ['REVERB_APP_KEY', 'PUSHER_APP_KEY', 'STRIPE_KEY', '*PUBLISHABLE*', '*PUBLIC*', '*SEARCH*', '*MAPS*', 'services.stripe.key'],
+
         // Screen checks (direction 26). The screen lines a change adds are
         // checked for colours written out (hex values, rgb() and the like)
         // instead of taken from the app's theme, and for pictures without

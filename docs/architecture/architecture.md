@@ -2085,6 +2085,20 @@ why it is safe lets it through: a reason a person can read and question. A
 secret key is never let through this way, because anyone with the code can
 use it. The owner sees the clean result as one line of the change's proof.
 
+The same scan finds secret settings sent to the browser. One case is a `VITE_`
+setting named like a key, secret, token or password, in `.env.example`, in
+config or in the frontend code: Vite builds its value into the JavaScript every
+visitor downloads. The other case is a secret read with `config()` or `env()`
+that goes to a page: in shared Inertia props (`HandleInertiaRequests`), in a
+Blade view, or as a value inside an `Inertia::render()` or `inertia()` call. A
+secret handed to a client on the server, beside such a call, is not found.
+Settings made for browsers (Reverb's and Pusher's app keys, Cashier's
+`STRIPE_KEY`, and publishable, public, search and maps keys) are listed in
+`builder.verification.browser_settings`. A new one goes there, and no comment
+lets a secret through. The built files are not searched for the value: the
+verification copy's settings come from `.env.example`, which keeps secrets
+empty, so the search would almost never find one.
+
 **Shortcuts in PHP code are found by an analyser, on added lines only.**
 When a change touches the app's PHP code (not its tests), verification runs
 the Sloppy analyser (`heyosseus/sloppy`, a pinned PHAR in the box image,
