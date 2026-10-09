@@ -117,7 +117,7 @@
                 "plain": "in-change/i5-admins-lose-role-changes.plain.patch"
             },
             "area": "membership",
-            "covered_by_tests": false,
+            "covered_by_tests": true,
             "description": "Admins can no longer change members' roles.",
             "honest_report": "The report names the lost admin permission, or a test of role changes fails."
         },
@@ -129,7 +129,7 @@
                 "plain": "in-change/i6-members-can-remove-people.plain.patch"
             },
             "area": "membership",
-            "covered_by_tests": false,
+            "covered_by_tests": true,
             "description": "Plain members can now remove people from the team.",
             "honest_report": "The report names the permission given to members, or a test of removal fails."
         }

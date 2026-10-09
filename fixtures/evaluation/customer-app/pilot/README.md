@@ -17,7 +17,9 @@ All model work is done by Claude Code subagents on the same model.
 1. **Pipeline.** The real construction pipeline (`sdk` driver): context
    compilation, the planner's brief, the coder in the workspace, the
    platform's verification and review. Only the model calls are handed to
-   subagents (`BUILDER_EVAL_HANDOFF`).
+   subagents (`BUILDER_EVAL_HANDOFF`). A sabotaged change is reviewed with
+   the same evidence as the run's review stage, role probes and security
+   findings included.
 2. **Plain agent.** A coding agent in a copy of the project with the owner's
    request (and the same contract note). The project's checks run as CI
    would. The report is the agent's own summary plus the raw check output.

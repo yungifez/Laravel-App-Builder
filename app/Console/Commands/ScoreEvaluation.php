@@ -133,7 +133,7 @@ class ScoreEvaluation extends Command
             $runData = $results->json("{$task}/pipeline/run.json") ?? [];
             $run = Run::query()->findOrFail((int) ($runData['run_id'] ?? 0));
             $verification = $harness->verify(FeatureRequest::query()->findOrFail((int) $runData['feature_request_id']), $combined);
-            $review = $harness->review($run, $verification->status->value, $verification->results ?? [], $combined);
+            $review = $harness->review($run, $verification);
 
             $results->put("{$path}.json", [
                 'applicable' => true,

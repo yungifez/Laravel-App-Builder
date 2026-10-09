@@ -3,15 +3,12 @@
 namespace App\Evaluation;
 
 use App\Actions\Context\AssessPreservation;
-use App\Actions\Context\ClassifyChange;
 use App\Actions\Features\RequestFeature;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Projects\CreateProject;
-use App\Context\ContextPack;
-use App\Context\ProjectContext;
+use App\Actions\Runs\GatherReviewEvidence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
-use App\Features\TestChanges;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
@@ -19,7 +16,6 @@ use App\Models\User;
 use App\Models\Verification;
 use App\Runs\ConstructionDriverManager;
 use App\Runs\Plan;
-use App\Runs\ReviewEvidence;
 use Closure;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
@@ -37,7 +33,7 @@ class PipelineHarness
         protected CreateProject $createProject,
         protected RequestFeature $requestFeature,
         protected RequestVerification $requestVerification,
-        protected ClassifyChange $classifyChange,
+        protected GatherReviewEvidence $gatherReviewEvidence,
         protected AssessPreservation $assessPreservation,
         protected ConstructionDriverManager $drivers,
     ) {}
@@ -105,31 +101,22 @@ class PipelineHarness
     }
 
     /**
-     * Review a verified patch the way the run's review stage does: classify
-     * it by area, ask the reviewer, and assess what should be preserved.
+     * Review a verified change the way the run's review stage does: the
+     * reviewer gets the same evidence, test results, role probes and
+     * security findings included, and the review is assessed for what
+     * should be preserved.
      *
-     * @param  list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>  $verificationResults
      * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>}
      */
-    public function review(Run $run, string $verificationStatus, array $verificationResults, string $patch): array
+    public function review(Run $run, Verification $verification): array
     {
         $plan = $run->plan !== null ? Plan::fromArray($run->plan) : throw new RuntimeException('The run has no plan.');
-        $pack = $run->context !== null ? ContextPack::fromArray($run->context) : null;
-        $projectContext = $pack?->projectContext() ?? new ProjectContext;
-        $classification = $this->classifyChange->handle($projectContext, $pack->targets ?? [], $patch);
-        $names = array_map(fn ($capability) => $capability->name, $projectContext->capabilities);
+        $projectContext = $this->gatherReviewEvidence->projectContext($run);
+        $evidence = $this->gatherReviewEvidence->handle($run, $plan, $verification);
+        $classification = $evidence->classification;
 
-        $review = $this->drivers->driver($run->driver)->review($run, new ReviewEvidence(
-            request: $run->featureRequest->prompt,
-            plan: $plan,
-            patch: $patch,
-            weakenedTests: TestChanges::weakened($patch),
-            verificationStatus: $verificationStatus,
-            verificationResults: $verificationResults,
-            projectContext: $pack->text ?? '',
-            classification: $classification,
-            areaNames: $names,
-        ));
+        $review = $this->drivers->driver($run->driver)->review($run, $evidence)
+            ->withGuardingTestsMinor($verification->evidence['new_tests'] ?? []);
 
         return [
             'approved' => $review->approved,
@@ -137,11 +124,11 @@ class PipelineHarness
             'findings' => $review->findings,
             'changes' => array_map(fn (array $change) => [
                 ...$change,
-                'area_name' => $change['area'] === null ? null : ($names[$change['area']] ?? $change['area']),
+                'area_name' => $change['area'] === null ? null : ($evidence->areaNames[$change['area']] ?? $change['area']),
                 'section' => $classification->sectionFor($change['area']),
             ], $review->changes),
             'classification' => $classification->toArray(),
-            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verificationResults, $review),
+            'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $evidence->verificationResults, $review),
         ];
     }
 

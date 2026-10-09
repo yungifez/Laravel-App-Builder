@@ -6,7 +6,6 @@ use App\Actions\Billing\MeasureUsage;
 use App\Actions\Context\AssessCoverage;
 use App\Actions\Context\AssessPreservation;
 use App\Actions\Context\AssessVerifyItems;
-use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
 use App\Actions\Context\KeepAssumptions;
 use App\Actions\Context\ReadProjectContext;
@@ -20,8 +19,6 @@ use App\Actions\Previews\WarmChangePreview;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Context\Capability;
 use App\Context\ChangeClassification;
-use App\Context\ContextPack;
-use App\Context\ProjectContext;
 use App\Enums\Consequence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
@@ -44,14 +41,12 @@ use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
-use App\Features\TestChanges;
 use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
 use App\Jobs\WriteTestsBeside;
 use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Models\RunEvent;
-use App\Models\TestObservation;
 use App\Models\Verification;
 use App\Models\Workspace;
 use App\Runs\ConstructionDriverManager;
@@ -69,7 +64,6 @@ use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\ReshapedSchema;
 use App\Runs\Review;
-use App\Runs\ReviewEvidence;
 use App\Runs\RunLease;
 use App\Runs\ShapeQuestion;
 use App\Runs\ToolExecutor;
@@ -95,7 +89,7 @@ class ConstructRun
         private FailRun $failRun,
         private DestroyWorkspace $destroyWorkspace,
         private CompileContext $compileContext,
-        private ClassifyChange $classifyChange,
+        private GatherReviewEvidence $gatherReviewEvidence,
         private AssessCoverage $assessCoverage,
         private AssessPreservation $assessPreservation,
         private AssessVerifyItems $assessVerifyItems,
@@ -734,17 +728,6 @@ class ConstructRun
     }
 
     /**
-     * Get the observed map of the project's tests to find the change's
-     * impact: the one made while this change was checked, which knows its
-     * new code, or else the latest one for the project.
-     */
-    protected function testObservation(FeatureRequest $featureRequest, Verification $verification): ?TestObservation
-    {
-        return TestObservation::query()->where('verification_id', $verification->id)->whereNull('error')->first()
-            ?? TestObservation::latestFor($featureRequest->project);
-    }
-
-    /**
      * Have the driver review the verified change from the platform's evidence,
      * check that a test in the change covers each verify item, then complete
      * the run, send it back for a repair, or stop for a decision.
@@ -754,30 +737,11 @@ class ConstructRun
         $featureRequest = $run->featureRequest;
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $plan = $this->planFor($run);
-        $pack = $run->context !== null ? ContextPack::fromArray($run->context) : null;
-        $projectContext = $pack?->projectContext() ?? new ProjectContext;
-        $observation = $this->testObservation($featureRequest, $verification);
-        $classification = $this->classifyChange->handle(
-            $projectContext,
-            $pack->targets ?? [],
-            $featureRequest->patch,
-            array_keys($featureRequest->note_changes ?? []),
-            $observation?->map(),
-            mapIncludesChange: $observation?->verification_id === $verification->id,
-        );
+        $projectContext = $this->gatherReviewEvidence->projectContext($run);
+        $evidence = $this->gatherReviewEvidence->handle($run, $plan, $verification);
+        $classification = $evidence->classification;
 
-        $review = $this->reviewOnce($run, $lease, $verification, fn () => $driver->review($run, new ReviewEvidence(
-            request: $featureRequest->instructions(),
-            plan: $plan,
-            patch: (string) $featureRequest->patch,
-            weakenedTests: TestChanges::weakened($featureRequest->patch),
-            verificationStatus: $verification->status->value,
-            verificationResults: $verification->results ?? [],
-            projectContext: $pack->text ?? '',
-            classification: $classification,
-            areaNames: array_map(fn ($capability) => $capability->name, $projectContext->capabilities),
-            changeEvidence: $verification->evidence ?? [],
-        )));
+        $review = $this->reviewOnce($run, $lease, $verification, fn () => $driver->review($run, $evidence));
 
         // A new test that only guards what the app already did is never a
         // gap while another new test fails without the change, whatever
