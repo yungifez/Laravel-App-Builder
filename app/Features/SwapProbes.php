@@ -47,6 +47,12 @@ use Illuminate\Support\Str;
  * each record. It stops the change only when the lines that load the list
  * are lines the change added; a list that was like this already is a note.
  *
+ * Each page opened with the person's own records is also read for what
+ * the app's models keep hidden: the stored value of each attribute in a
+ * model's $hidden, or of a column named as a secret (a password, a token),
+ * as the database holds it and as the model casts it. A
+ * page whose data holds one sends it to the browser, whatever its key.
+ *
  * @phpstan-type Param array{name: string, model: string|null, field: string|null}
  * @phpstan-type Step array{relation: string, model: string, key: string|null}
  * @phpstan-type Owner array{path: list<Step>, end: string}
@@ -54,11 +60,12 @@ use Illuminate\Support\Str;
  * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
  * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>}
  * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null, raised: list<string>}
- * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null, rows: int|null, shown: int|null}
+ * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null, rows: int|null, shown: int|null, leaked: list<string>|null}
  * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>, status: int, raised: list<string>, children: list<string>, exception: string|null}
  * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
  * @phpstan-type Listed array{probe: Probe, rows: int, status: int, line: string|null, existing: bool}
  * @phpstan-type Lists array{tried: int, findings: list<Listed>, broke: list<Listed>, untried: int}
+ * @phpstan-type Leaks array{read: int, findings: list<array{method: string, uri: string, fields: list<string>}>}
  */
 class SwapProbes
 {
@@ -91,6 +98,11 @@ class SwapProbes
      * A list page, opened with many of the person's own records.
      */
     public const LIST = 'list';
+
+    /**
+     * Columns that hold a secret whether or not the model hides them.
+     */
+    public const SECRETS = ['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes', 'api_token'];
 
     /**
      * The fields that give a person more than the form offers: rights, a
@@ -720,6 +732,8 @@ class SwapProbeTest extends TestCase
      */
     private const ROWS = __ROWS__;
 
+    private const SECRETS = __SECRETS__;
+
     private int $writes = 0;
 
     private bool $listening = false;
@@ -802,6 +816,13 @@ __METHODS__
         $last = count($params) - 1;
         $this->actingAs($me);
         $control = $sent($this->address($uri, $params, fn (int $index) => $mine));
+        $leaked = null;
+
+        if ($method === 'GET' && $mode === 'all') {
+            $this->actingAs($me);
+            $leaked = $this->leaked($this->read($this->address($uri, $params, fn (int $index) => $mine)));
+        }
+
         $policy = $ability !== null && Gate::getPolicyFor($theirs[$leaf]) !== null ? Gate::forUser($me)->allows($ability, $theirs[$leaf]) : null;
         $this->actingAs($me);
         $swap = $sent($this->address($uri, $params, fn (int $index) => $mode === 'all' || $index === $last ? $theirs : $mine));
@@ -813,7 +834,7 @@ __METHODS__
             $guest = $sent($this->address($uri, $params, fn (int $index) => $theirs))['status'];
         }
 
-        return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => $guest, 'policy' => $policy];
+        return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => $guest, 'policy' => $policy, 'leaked' => $leaked];
     }
 
     /**
@@ -973,17 +994,8 @@ __METHODS__
         $class::factory()->count(self::ROWS - 1)->create([$key => $first->getAttribute($key)]);
         $mine = $class::query()->where($key, $first->getAttribute($key))->get()->map(fn (Model $record) => (string) $record->getRouteKey())->all();
         $field = $first->getRouteKeyName();
-        $url = $this->address($uri, $params, fn (int $index) => $records);
-        $inertia = class_exists(\Inertia\Inertia::class);
-
         $this->actingAs($me);
-        $response = $this->get($url, $inertia ? ['X-Inertia' => 'true', 'X-Inertia-Version' => (string) \Inertia\Inertia::getVersion()] : []);
-
-        // The first send tells the assets' version; the second sends it.
-        if ($inertia && $response->getStatusCode() === 409) {
-            $response = $this->get($url, ['X-Inertia' => 'true', 'X-Inertia-Version' => (string) \Inertia\Inertia::getVersion()]);
-        }
-
+        $response = $this->read($this->address($uri, $params, fn (int $index) => $records));
         $data = json_decode((string) $response->getContent(), true);
         $shown = [];
         $walk = function (mixed $value) use (&$walk, &$shown, $field): void {
@@ -997,7 +1009,107 @@ __METHODS__
         };
         $walk($data);
 
-        return ['owners' => true, 'control' => ['status' => $response->getStatusCode(), 'invalid' => false, 'writes' => 0, 'landed' => null, 'raised' => []], 'rows' => count($mine), 'shown' => is_array($data) ? count(array_intersect($mine, array_keys($shown))) : null, 'exception' => $response->exception === null ? null : class_basename($response->exception)];
+        return ['owners' => true, 'control' => ['status' => $response->getStatusCode(), 'invalid' => false, 'writes' => 0, 'landed' => null, 'raised' => []], 'rows' => count($mine), 'shown' => is_array($data) ? count(array_intersect($mine, array_keys($shown))) : null, 'exception' => $response->exception === null ? null : class_basename($response->exception), 'leaked' => $this->leaked($response)];
+    }
+
+    /**
+     * Open a page as the browser would, asking an Inertia app for the
+     * page's props.
+     */
+    private function read(string $url): \Illuminate\Testing\TestResponse
+    {
+        $inertia = class_exists(\Inertia\Inertia::class);
+        $response = $this->get($url, $inertia ? ['X-Inertia' => 'true', 'X-Inertia-Version' => (string) \Inertia\Inertia::getVersion()] : []);
+
+        // The first send tells the assets' version; the second sends it.
+        if ($inertia && $response->getStatusCode() === 409) {
+            $response = $this->get($url, ['X-Inertia' => 'true', 'X-Inertia-Version' => (string) \Inertia\Inertia::getVersion()]);
+        }
+
+        $this->flushSession();
+
+        return $response;
+    }
+
+    /**
+     * Name the hidden attributes whose stored value the page holds: in the
+     * JSON or props it sent, or in the page's text. Null when it did not open.
+     *
+     * @return list<string>|null
+     */
+    private function leaked(\Illuminate\Testing\TestResponse $response): ?array
+    {
+        if ($response->getStatusCode() !== 200) {
+            return null;
+        }
+
+        $secrets = $this->secrets();
+        $content = (string) $response->getContent();
+        $data = json_decode($content, true);
+        $found = [];
+
+        if (is_array($data)) {
+            array_walk_recursive($data, function (mixed $value) use ($secrets, &$found) {
+                if (is_string($value) && isset($secrets[$value])) {
+                    $found[$secrets[$value]] = true;
+                }
+            });
+        } else {
+            $text = html_entity_decode($content, ENT_QUOTES);
+
+            foreach ($secrets as $value => $name) {
+                if (str_contains($text, $value) || str_contains($text, str_replace('/', '\\/', $value))) {
+                    $found[$name] = true;
+                }
+            }
+        }
+
+        return array_slice(array_keys($found), 0, 5);
+    }
+
+    /**
+     * The stored values of what each model keeps hidden, as the database
+     * holds them and as the model casts them, each with its name. A short
+     * value could be anything on a page, so it is left out.
+     *
+     * @return array<string, string>
+     */
+    private function secrets(): array
+    {
+        $secrets = [];
+
+        foreach (glob(app_path('Models/*.php')) ?: [] as $file) {
+            $class = 'App\\Models\\'.basename($file, '.php');
+
+            if (! class_exists($class) || ! is_subclass_of($class, Model::class) || (new \ReflectionClass($class))->isAbstract()) {
+                continue;
+            }
+
+            $model = new $class;
+
+            foreach (array_unique([...$model->getHidden(), ...self::SECRETS]) as $attribute) {
+                try {
+                    if (! Schema::hasColumn($model->getTable(), $attribute)) {
+                        continue;
+                    }
+
+                    $values = [
+                        ...$model->getConnection()->table($model->getTable())->whereNotNull($attribute)->limit(50)->pluck($attribute)->all(),
+                        ...$class::query()->whereNotNull($attribute)->limit(50)->get()->map(fn (Model $record) => $record->getAttribute($attribute))->all(),
+                    ];
+                } catch (Throwable) {
+                    continue;
+                }
+
+                foreach ($values as $value) {
+                    if (is_string($value) && strlen($value) >= 8) {
+                        $secrets[$value] = class_basename($class).'.'.$attribute;
+                    }
+                }
+            }
+        }
+
+        return $secrets;
     }
 
     /**
@@ -1118,6 +1230,7 @@ PHP, [
             '__USER__' => var_export($found['user'], true),
             '__RAISED__' => self::export(self::RAISED),
             '__ROWS__' => (string) max(2, $rows),
+            '__SECRETS__' => self::export(self::SECRETS),
             '__CHILDREN__' => self::export(array_intersect_key($found['children'], array_flip($removed))),
             '__METHODS__' => implode("\n\n", $methods),
             '__REPORT__' => var_export($report, true),
@@ -1161,6 +1274,7 @@ PHP, [
                     'exception' => is_string($data['exception'] ?? null) && preg_match('/^\w+$/', $data['exception']) === 1 ? $data['exception'] : null,
                     'rows' => is_int($data['rows'] ?? null) ? $data['rows'] : null,
                     'shown' => is_int($data['shown'] ?? null) ? $data['shown'] : null,
+                    'leaked' => is_array($data['leaked'] ?? null) ? array_values(array_filter($data['leaked'], fn (mixed $name) => is_string($name) && preg_match('/^\w+\.\w+$/', $name) === 1)) : null,
                 ];
             }
         }
@@ -1295,6 +1409,43 @@ PHP, [
         }
 
         return $lists;
+    }
+
+    /**
+     * Find the pages that sent a hidden attribute's stored value: the
+     * person's own records, at a route of a controller the change touched.
+     *
+     * @param  list<Probe>  $probes
+     * @param  array<int, Observed>  $observed
+     * @return Leaks
+     */
+    public static function leaks(array $probes, array $observed): array
+    {
+        $read = [];
+
+        // A list is read both as a list and by its address: one page.
+        foreach ($probes as $id => $probe) {
+            $leaked = $observed[$id]['leaked'] ?? null;
+
+            if ($leaked !== null) {
+                $page = "{$probe['method']} {$probe['uri']}";
+                $read[$page] = ['method' => $probe['method'], 'uri' => $probe['uri'], 'fields' => array_values(array_unique([...$read[$page]['fields'] ?? [], ...$leaked]))];
+            }
+        }
+
+        return ['read' => count($read), 'findings' => array_values(array_filter($read, fn (array $page) => $page['fields'] !== []))];
+    }
+
+    /**
+     * Say what the pages sent, for the agent that repairs the change.
+     *
+     * @param  Leaks  $leaks
+     */
+    public static function describeLeaks(array $leaks): string
+    {
+        $lines = array_map(fn (array $finding) => "{$finding['method']} {$finding['uri']} sent ".implode(', ', $finding['fields']).' to the browser: the page holds the stored value the model keeps hidden. Send only what the page shows, with an API resource or ->only([...]); DB::table() rows, makeVisible() and toArray() of the whole model bring hidden fields along.', $leaks['findings']);
+
+        return $lines === [] ? "Read {$leaks['read']} pages opened with the person's own records; none held a hidden field." : implode("\n", $lines);
     }
 
     /**

@@ -495,4 +495,37 @@ class AccessProbeVerificationTest extends TestCase
         $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Long lists show a page at a time'));
         $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
     }
+
+    public function test_a_page_that_sends_a_hidden_field_fails_the_checks_and_says_how(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"swap":{"status":403,"invalid":false,"writes":0},"guest":302,"policy":false,"leaked":["User.password"]}'];
+        $this->answer([]);
+        $change = $this->projectChange();
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Pages keep hidden fields to the server');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringStartsWith('GET /projects/{project} sent User.password to the browser', $result['output']);
+        $this->assertSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+    }
+
+    public function test_a_page_with_no_hidden_field_passes_and_one_not_read_adds_no_check(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"swap":{"status":403,"invalid":false,"writes":0},"guest":302,"policy":false,"leaked":[]}'];
+        $this->answer([]);
+        $change = $this->projectChange();
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertSame('passed', collect($change->verifications()->sole()->results)->firstWhere('name', 'Pages keep hidden fields to the server')['outcome']);
+        $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":404,"invalid":false,"writes":0},"swap":{"status":404,"invalid":false,"writes":0},"guest":302,"policy":false,"leaked":null}'];
+        $unread = $this->projectChange();
+
+        app(RequestVerification::class)->handle($unread);
+
+        $this->assertNull(collect($unread->verifications()->sole()->results)->firstWhere('name', 'Pages keep hidden fields to the server'));
+    }
 }

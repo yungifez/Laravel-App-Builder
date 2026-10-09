@@ -4724,6 +4724,20 @@ that is not JSON or Inertia cannot be read, so it proves nothing. On a copy of
 the fixture, a JSON list and an Inertia list that loaded every row were found,
 and a list with `paginate(15)` was not.
 
+Each page that opens with the person's own records is also read for hidden
+fields. The test collects the stored value of each attribute in a model's
+`$hidden`, and of the columns `password`, `remember_token`,
+`two_factor_secret`, `two_factor_recovery_codes` and `api_token`. It takes
+each value as the database holds it and as the model casts it. A value
+shorter than 8 characters, a null or a flag is left out, so an empty password
+field on a form or a "two factor enabled" flag never counts. The JSON or the
+Inertia props are searched for those values whatever their key, and other
+pages are searched as text. A page that holds one fails the check "Pages keep
+hidden fields to the server". The person's own name and email are not hidden,
+so they never count. On a copy of the fixture, a task page that sent
+`DB::table('users')` rows and an Inertia page that sent members with
+`makeVisible(['password'])` were both found, and 12 other pages were not.
+
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
 the like), its own tests run again with the clock stopped. A PHPUnit extension,

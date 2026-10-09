@@ -504,4 +504,57 @@ class SwapProbesTest extends TestCase
         $this->assertSame(['/projects/{project}/page1', '/projects/{project}/page2'], [$plan[0]['uri'], $plan[1]['uri']]);
         $this->assertSame([], SwapProbes::plan($found, [self::CONTROLLER], [], 0)['probes']);
     }
+
+    public function test_a_page_that_held_a_hidden_fields_stored_value_is_a_finding_once_per_page(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['GET'], '/projects/{project}', [['project', 'Project']]),
+            $this->route(['GET'], '/projects/{project}/tasks', [['project', 'Project']], 'index'),
+            $this->route(['GET'], '/notes/{note}', [['note', 'Note']], 'show'),
+        ]));
+        $probes = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'];
+        $ids = array_map(fn (array $probe) => "{$probe['uri']} {$probe['mode']}", $probes);
+        $sent = ['status' => 200, 'invalid' => false, 'writes' => 0];
+        $line = fn (string $probe, mixed $leaked) => json_encode(['id' => array_search($probe, $ids, true), 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'leaked' => $leaked]);
+
+        $leaks = SwapProbes::leaks($probes, SwapProbes::parse(implode("\n", [
+            $line('/projects/{project} all', ['User.password', 'not a name']),
+            // A list is read by its address and as a list: one page.
+            $line('/projects/{project}/tasks all', ['User.remember_token']),
+            $line('/projects/{project}/tasks list', ['User.password', 'User.remember_token']),
+            $line('/notes/{note} all', []),
+        ])));
+
+        $this->assertSame(3, $leaks['read']);
+        $this->assertSame([
+            ['method' => 'GET', 'uri' => '/projects/{project}', 'fields' => ['User.password']],
+            ['method' => 'GET', 'uri' => '/projects/{project}/tasks', 'fields' => ['User.remember_token', 'User.password']],
+        ], $leaks['findings']);
+        $this->assertStringContainsString('GET /projects/{project} sent User.password to the browser: the page holds the stored value the model keeps hidden. Send only what the page shows, with an API resource or ->only([...]);', SwapProbes::describeLeaks($leaks));
+    }
+
+    public function test_a_page_with_no_hidden_field_passes_and_one_that_did_not_open_was_not_read(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['GET'], '/projects/{project}', [['project', 'Project']]),
+            $this->route(['PUT'], '/projects/{project}', [['project', 'Project']], 'update'),
+        ]));
+        $probes = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'];
+        $sent = ['status' => 200, 'invalid' => false, 'writes' => 1];
+
+        // Only a GET reads the page; one that did not open says null.
+        $this->assertSame(['read' => 0, 'findings' => []], SwapProbes::leaks($probes, SwapProbes::parse(implode("\n", [
+            json_encode(['id' => 0, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'leaked' => null]),
+            json_encode(['id' => 1, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => null, 'policy' => null]),
+        ]))));
+
+        $leaks = SwapProbes::leaks($probes, SwapProbes::parse(json_encode(['id' => 0, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'leaked' => []])));
+        $this->assertSame("Read 1 pages opened with the person's own records; none held a hidden field.", SwapProbes::describeLeaks($leaks));
+
+        // The test reads what the models hide, and the secrets they may not.
+        $test = SwapProbes::test($probes, $found, 'swaps.jsonl');
+        $this->assertStringContainsString("private const SECRETS = array ( 0 => 'password', 1 => 'remember_token',", $test);
+        $this->assertStringContainsString('$model->getHidden()', $test);
+        $this->assertStringContainsString('strlen($value) >= 8', $test, 'a null, a flag or a short value is never a secret');
+    }
 }
