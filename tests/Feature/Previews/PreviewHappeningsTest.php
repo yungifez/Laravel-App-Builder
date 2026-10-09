@@ -220,16 +220,46 @@ class PreviewHappeningsTest extends TestCase
                 ->where('happenings.requests.0.page', 'Ran a task: Delete non email verified users')));
     }
 
+    public function test_the_newest_form_the_recorder_kept_can_be_sent_twice()
+    {
+        $this->recorded([
+            ['n' => 0, 'method' => 'POST', 'route' => '/books', 'status' => 302, 'effects' => []],
+            ['n' => 1, 'method' => 'GET', 'route' => '/books', 'status' => 200, 'effects' => []],
+            ['n' => 2, 'method' => 'POST', 'route' => '/books', 'status' => 302, 'effects' => [['kind' => 'query', 'sql' => 'insert into "books" ("title") values (?)']]],
+            ['n' => 3, 'method' => 'POST', 'route' => '/shelves', 'status' => 302, 'effects' => []],
+        ]);
+        $this->driver->files["{$this->workspace->driver_id}:storage/logs/recorder/last-send.json"] = json_encode(['method' => 'POST', 'path' => '/books', 'route' => '/books']);
+
+        // Newest first: the shelf, then the second book send, which is the one kept.
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page
+                ->where('happenings.requests.1.page', 'Sent a form on /books')
+                ->where('happenings.requests.1.id', '3')
+                ->where('happenings.again', '3')));
+    }
+
+    public function test_no_form_can_be_sent_twice_when_none_was_kept()
+    {
+        $this->recorded([
+            ['n' => 0, 'method' => 'POST', 'route' => '/books', 'status' => 302, 'effects' => []],
+        ]);
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page->where('happenings.again', null)));
+    }
+
     public function test_an_app_that_did_nothing_yet_or_does_not_run_has_nothing_to_show()
     {
         $this->actingAs($this->owner)
             ->get(route('projects.show', $this->project))
-            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page->where('happenings', ['fault' => 'none', 'requests' => []])));
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page->where('happenings', ['fault' => 'none', 'again' => null, 'requests' => []])));
 
         $this->preview->delete();
 
         $this->get(route('projects.show', $this->project))
-            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page->where('happenings', ['fault' => 'none', 'requests' => []])));
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('happenings', fn (Assert $page) => $page->where('happenings', ['fault' => 'none', 'again' => null, 'requests' => []])));
     }
 
     public function test_the_owner_makes_the_apps_email_fail_and_lets_it_work_again()

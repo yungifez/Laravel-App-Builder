@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { router, useForm } from '@inertiajs/vue3';
-import { CircleAlert, Footprints } from '@lucide/vue';
-import { computed, watch } from 'vue';
+import { router, useForm, useHttp } from '@inertiajs/vue3';
+import { CircleAlert, Copy, Footprints, LoaderCircle } from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import PreviewFaultController from '@/actions/App/Http/Controllers/PreviewFaultController';
+import PreviewTwiceController from '@/actions/App/Http/Controllers/PreviewTwiceController';
 import { faults } from '@/lib/appFaults';
 import type { AppHappenings, AppFault } from '@/types';
 
@@ -54,6 +55,33 @@ const pretending = computed(
     () => props.happenings?.fault && props.happenings.fault !== 'none',
 );
 const chosen = computed(() => faults.find((item) => item.key === form.fault));
+
+// The newest form sent again twice at the same moment, as a double click
+// or two people at once would. What came of it stays under that form.
+const twice = useHttp({});
+const twiceWords = ref<{ words: string; broke: boolean } | null>(null);
+
+async function sendTwice(): Promise<void> {
+    twiceWords.value = null;
+
+    try {
+        const { words, broke } = (await twice.post(
+            PreviewTwiceController.store.url(props.projectId, {
+                query: { copy: props.copy },
+            }),
+        )) as { words: string; broke: boolean };
+
+        twiceWords.value = { words, broke };
+        router.reload({ only: ['happenings'] });
+    } catch {
+        const errors = twice.errors as Record<string, string | undefined>;
+
+        toast.error(
+            errors.app ??
+                'Your app could not be sent the form twice. This is our fault. Try again.',
+        );
+    }
+}
 </script>
 
 <template>
@@ -129,7 +157,7 @@ const chosen = computed(() => faults.find((item) => item.key === form.fault));
             data-test="app-happenings-list"
         >
             <li
-                v-for="request in happenings.requests"
+                v-for="(request, place) in happenings.requests"
                 :key="request.id"
                 class="border-b px-3 py-3"
                 :data-test="`app-happening-${request.id}`"
@@ -179,6 +207,38 @@ const chosen = computed(() => faults.find((item) => item.key === form.fault));
                 </ul>
                 <p v-else class="mt-1 text-sm text-muted-foreground">
                     Only showed the page
+                </p>
+                <div
+                    v-if="request.id === happenings.again"
+                    class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"
+                >
+                    <button
+                        type="button"
+                        class="inline-flex min-h-9 items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline disabled:opacity-60"
+                        :disabled="twice.processing"
+                        title="Send this form again twice, at the same moment, as a double click or two people at once would"
+                        data-test="app-happening-twice"
+                        @click="sendTwice"
+                    >
+                        <LoaderCircle
+                            v-if="twice.processing"
+                            class="size-3.5 animate-spin"
+                        />
+                        <Copy v-else class="size-3.5" />
+                        What if this is sent twice at once?
+                    </button>
+                </div>
+                <p
+                    v-if="twiceWords && place === 0"
+                    :class="[
+                        'mt-2 text-sm',
+                        twiceWords.broke
+                            ? 'text-destructive'
+                            : 'text-muted-foreground',
+                    ]"
+                    data-test="app-happening-twice-words"
+                >
+                    Sent twice at once: {{ twiceWords.words }}
                 </p>
             </li>
         </ol>

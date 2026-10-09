@@ -644,6 +644,8 @@ export type AppFault =
 /** What the app on show did behind its last pages, newest first. */
 export type AppHappenings = {
     fault: AppFault;
+    /** The newest form the owner can send twice at once, by its id. */
+    again: string | null;
     requests: {
         id: string;
         page: string;

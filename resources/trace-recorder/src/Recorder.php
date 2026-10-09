@@ -903,6 +903,7 @@ class Recorder
 
         $this->operation['route'] = $this->route($request, response: $response);
         $this->operation['status'] = $status;
+        $this->keepSend($request, $status);
         $this->operation['refused'] = $status >= 400 || $this->invalid($request);
         $this->operation['blind'] = $this->fakes->hiding($this->hidden);
 
@@ -916,6 +917,39 @@ class Recorder
             if ($status < 500 && $this->quiet()) {
                 $this->operation['quiet'] = true;
             }
+        } catch (Throwable) {
+            //
+        }
+    }
+
+    /**
+     * Keep the last form the app on show took, so the owner can send it
+     * twice at once (see SendPreviewTwice). Only a send that went through
+     * is kept, and never in tests. Passwords stay out, and a form with a
+     * file is not kept: it cannot be sent again as it was.
+     */
+    protected function keepSend($request, int $status): void
+    {
+        try {
+            if ($this->app->runningUnitTests() || in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'], true) || $status >= 400
+                || $request->allFiles() !== [] || ! $request->hasSession() || str_contains((string) $this->operation['route'], '#')) {
+                return;
+            }
+
+            $input = array_filter(
+                $request->except(['_token', '_method']),
+                fn ($key) => ! str_contains(strtolower((string) $key), 'password'),
+                ARRAY_FILTER_USE_KEY,
+            );
+
+            file_put_contents(rtrim($this->directory, '/').'/last-send.json', json_encode([
+                'method' => $request->method(),
+                'path' => $request->getRequestUri(),
+                'route' => $this->operation['route'],
+                'input' => $input,
+                'session' => $request->session()->getId(),
+                'token' => $request->session()->token(),
+            ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), LOCK_EX);
         } catch (Throwable) {
             //
         }

@@ -70,6 +70,7 @@ use App\Http\Controllers\PreviewProblemFixController;
 use App\Http\Controllers\PreviewRowController;
 use App\Http\Controllers\PreviewScheduledTaskRunController;
 use App\Http\Controllers\PreviewSignInController;
+use App\Http\Controllers\PreviewTwiceController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\ProjectCarefulAreaController;
 use App\Http\Controllers\ProjectCompatibilityController;
@@ -174,6 +175,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'store'])->name('preview-sign-ins.store');
     Route::delete('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'destroy'])->name('preview-sign-ins.destroy');
     Route::post('projects/{project}/preview-people', [PreviewPersonController::class, 'store'])->name('preview-people.store');
+    Route::post('projects/{project}/preview-twice', [PreviewTwiceController::class, 'store'])->name('preview-twice.store');
     Route::post('projects/{project}/own-tool', [ProjectOwnToolController::class, 'store'])->name('projects.own-tool.store');
     Route::delete('projects/{project}/own-tool', [ProjectOwnToolController::class, 'destroy'])->name('projects.own-tool.destroy');
     Route::delete('projects/{project}/preview-emails', [PreviewEmailController::class, 'destroy'])->name('preview-emails.destroy');

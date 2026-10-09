@@ -53,7 +53,10 @@ class ReadPreviewHappenings
      * plain words: what it saved, sent, stored and asked. And which kind of
      * thing the owner has made fail, if any.
      *
-     * @return array{fault: string, requests: list<array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}>}
+     * "again" names the newest form the owner can send twice at once (see
+     * SendPreviewTwice), when the recorder kept it.
+     *
+     * @return array{fault: string, again: string|null, requests: list<array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}>}
      */
     public function handle(Project $project): array
     {
@@ -61,7 +64,7 @@ class ReadPreviewHappenings
         $workspace = $preview?->workspace;
 
         if ($preview === null || $workspace === null || ! Config::boolean('builder.preview.recorder.enabled')) {
-            return ['fault' => 'none', 'requests' => []];
+            return ['fault' => 'none', 'again' => null, 'requests' => []];
         }
 
         $directory = rtrim(Config::string('builder.preview.recorder.directory'), '/');
@@ -74,6 +77,9 @@ class ReadPreviewHappenings
             report: false,
         ));
         $fault = json_decode((string) rescue(fn () => $driver->readFile($id, "{$directory}/fault.json"), '', report: false), true);
+        $kept = json_decode((string) rescue(fn () => $driver->readFile($id, "{$directory}/last-send.json"), '', report: false), true);
+        $kept = is_array($kept) && is_string($kept['route'] ?? null) ? $kept['route'] : null;
+        $again = null;
 
         $lines = array_values(array_filter(explode("\n", $trace), fn (string $line) => str_starts_with($line, '{')));
         $requests = [];
@@ -93,11 +99,13 @@ class ReadPreviewHappenings
 
             $request = $this->request($operation, count($lines) - $at);
             $last = array_key_last($requests);
+            $sent = $kept !== null && ($operation['route'] ?? null) === $kept && ! in_array(strtoupper((string) ($operation['method'] ?? 'GET')), ['GET', 'HEAD'], true);
 
             // The same page doing the same again is counted, not listed
             // again, so one reload loop does not hide what came before it.
             if ($last !== null && $this->same($requests[$last], $request)) {
                 $requests[$last]['times']++;
+                $again ??= $sent ? $requests[$last]['id'] : null;
 
                 continue;
             }
@@ -107,10 +115,12 @@ class ReadPreviewHappenings
             }
 
             $requests[] = $request;
+            $again ??= $sent ? $request['id'] : null;
         }
 
         return [
             'fault' => is_array($fault) && isset(self::FAULTS[$fault['kind'] ?? '']) ? $fault['kind'] : 'none',
+            'again' => $again,
             'requests' => $requests,
         ];
     }
@@ -124,6 +134,17 @@ class ReadPreviewHappenings
     protected function same(array $one, array $other): bool
     {
         return [$one['page'], $one['status'], $one['did']] === [$other['page'], $other['status'], $other['did']];
+    }
+
+    /**
+     * Say one request the recorder wrote as the owner reads it.
+     *
+     * @param  array<string, mixed>  $operation
+     * @return array{id: string, page: string, status: int, outcome: string|null, did: list<array{text: string, failed: bool}>, times: int}
+     */
+    public function describe(array $operation, int $number): array
+    {
+        return $this->request([...$operation, 'status' => (int) ($operation['status'] ?? 0)], $number);
     }
 
     /**

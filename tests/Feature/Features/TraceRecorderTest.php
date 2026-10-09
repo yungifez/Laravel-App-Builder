@@ -10,9 +10,11 @@ use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Exceptions\Handler;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Context;
@@ -470,6 +472,43 @@ class TraceRecorderTest extends TestCase
         // A file that says nothing, or nonsense, moves nothing either.
         File::put("{$this->directory}/clock.json", json_encode(['ahead' => 'soon']));
         $this->assertSame('2031-05-04', $this->get('/_clock')->getContent());
+    }
+
+    public function test_the_last_form_the_app_on_show_took_is_kept_without_passwords_to_send_again()
+    {
+        Route::middleware('web')->post('/_twice/books', fn () => redirect('/'));
+        Route::middleware('web')->post('/_twice/refused', fn () => abort(422));
+        Route::middleware('web')->get('/_twice/books', fn () => 'list');
+        $this->record();
+        // In use, as the app on show runs; its forms carry their token there.
+        $this->app['env'] = 'local';
+        $this->withoutMiddleware(PreventRequestForgery::class);
+        $kept = fn () => json_decode((string) @file_get_contents("{$this->directory}/last-send.json"), true);
+
+        $this->post('/_twice/books?shelf=2', ['title' => 'Dune', 'password' => 'secret', 'password_confirmation' => 'secret'])->assertRedirect('/');
+
+        $send = $kept();
+        $this->assertSame(['POST', '/_twice/books?shelf=2', '/_twice/books'], [$send['method'], $send['path'], $send['route']]);
+        // Passwords never reach the disk; the rest is sent again as it was.
+        $this->assertSame(['title' => 'Dune', 'shelf' => '2'], $send['input']);
+        $this->assertSame(session()->getId(), $send['session']);
+        $this->assertSame(session()->token(), $send['token']);
+
+        // A page read, a send the app turned down, or one with a file leaves the kept one alone.
+        $this->get('/_twice/books')->assertOk();
+        $this->post('/_twice/refused', ['title' => 'Emma'])->assertStatus(422);
+        $this->post('/_twice/books', ['title' => 'Emma', 'cover' => UploadedFile::fake()->create('cover.jpg')])->assertRedirect('/');
+        $this->assertSame(['title' => 'Dune', 'shelf' => '2'], $kept()['input']);
+    }
+
+    public function test_no_form_is_kept_while_the_apps_own_tests_run()
+    {
+        Route::middleware('web')->post('/_twice/books', fn () => redirect('/'));
+        $this->record();
+
+        $this->post('/_twice/books', ['title' => 'Dune'])->assertRedirect('/');
+
+        $this->assertFileDoesNotExist("{$this->directory}/last-send.json");
     }
 
     public function test_a_failure_made_up_for_the_owner_points_at_their_app_and_never_at_our_recorder()
