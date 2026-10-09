@@ -7,6 +7,7 @@ import {
     CircleCheck,
     MessageCircleQuestion,
     MessageSquare,
+    ShieldAlert,
 } from '@lucide/vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import NotificationController from '@/actions/App/Http/Controllers/NotificationController';
@@ -39,6 +40,7 @@ const icons = {
     answered: { icon: MessageSquare, class: 'text-muted-foreground' },
     question: { icon: MessageCircleQuestion, class: 'text-amber-600' },
     failed: { icon: CircleAlert, class: 'text-destructive' },
+    packages: { icon: ShieldAlert, class: 'text-amber-600' },
 };
 
 // The browser can tell the owner while they are in another tab or app,

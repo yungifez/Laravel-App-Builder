@@ -7,7 +7,6 @@ use App\Enums\FeatureRequestStatus;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\User;
-use App\Projects\ProjectRepository;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -17,26 +16,27 @@ use Illuminate\Validation\ValidationException;
  */
 class RequestHealthFix
 {
-    public function __construct(private RequestFeature $requestFeature, private ProjectRepository $repository) {}
+    public function __construct(private RequestFeature $requestFeature, private ReadAppHealth $readAppHealth) {}
 
     /**
-     * Ask for a fix of the latest check's failures, or get the fix already
-     * asked for, so a second click does not pay for the same work twice.
+     * Ask for a fix of what the current version's checks found, the owner's
+     * and the scheduler's together, or get the fix already asked for, so a
+     * second click does not pay for the same work twice.
      *
      * @throws ValidationException when the latest check of the current version found nothing to fix.
      */
     public function handle(Project $project, User $requester): FeatureRequest
     {
-        $latest = $project->healthChecks()->latest('id')->first();
         // A check of an earlier version may be about code that changed since.
-        $failures = $latest !== null && $latest->commit_sha === $this->repository->head($project) ? $latest->failures() : [];
+        $health = $this->readAppHealth->handle($project);
+        $failures = $health === null ? [] : $health['check']->failures();
 
-        if ($latest === null || $failures === []) {
+        if ($health === null || $failures === []) {
             throw ValidationException::withMessages(['fix' => __('The last check found nothing to fix. Check your app again to see where it stands.')]);
         }
 
         $asked = $project->featureRequests()
-            ->where('failed_checks->health_check_id', $latest->id)
+            ->where('failed_checks->health_check_id', $health['id'])
             ->whereNull('dismissed_at')
             ->whereNotIn('status', [FeatureRequestStatus::Failed, FeatureRequestStatus::Cancelled])
             ->latest('id')
@@ -52,7 +52,7 @@ class RequestHealthFix
             $requester,
             __('Fix what the check of my app found.'),
             experiment: null,
-            failedChecks: ['health_check_id' => $latest->id, 'checks' => $failures],
+            failedChecks: ['health_check_id' => $health['id'], 'checks' => $failures],
         );
     }
 }

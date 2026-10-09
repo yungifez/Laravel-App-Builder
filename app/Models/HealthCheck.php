@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\HealthCheckScope;
 use App\Enums\HealthCheckStatus;
 use Carbon\CarbonImmutable;
 use Database\Factories\HealthCheckFactory;
@@ -11,12 +12,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One full check of a project's current version, asked for from the quick
- * check: the setup, every check and the package lookups, with no change.
+ * One check of a project's current version, with no change: the full one
+ * the owner asks for from the quick check (the setup, every check and the
+ * package lookups), or the package lookups alone, which the scheduler runs
+ * now and then.
  *
  * @property int $id
  * @property int $project_id
  * @property string $commit_sha
+ * @property HealthCheckScope $scope
  * @property HealthCheckStatus $status
  * @property list<array{name: string, kind: 'setup'|'check'|'packages', passed: bool, output?: string, packages?: list<string>|null}>|null $results What a failed step said is for the builder, never the owner
  * @property string|null $error
@@ -24,7 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['commit_sha', 'status', 'results', 'error', 'finished_at'])]
+#[Fillable(['commit_sha', 'scope', 'status', 'results', 'error', 'finished_at'])]
 class HealthCheck extends Model
 {
     /** @use HasFactory<HealthCheckFactory> */
@@ -38,6 +42,7 @@ class HealthCheck extends Model
     protected function casts(): array
     {
         return [
+            'scope' => HealthCheckScope::class,
             'status' => HealthCheckStatus::class,
             'results' => 'array',
             'finished_at' => 'datetime',
@@ -129,6 +134,25 @@ class HealthCheck extends Model
         }
 
         return $failures;
+    }
+
+    /**
+     * Get the packages its lookups found known problems in. Null when no
+     * lookup could be read, so nothing is known.
+     *
+     * @return list<string>|null
+     */
+    public function problemPackages(): ?array
+    {
+        $packages = null;
+
+        foreach ($this->results ?? [] as $result) {
+            if ($result['kind'] === 'packages' && isset($result['packages'])) {
+                $packages = [...$packages ?? [], ...$result['packages']];
+            }
+        }
+
+        return $packages === null ? null : array_values(array_unique($packages));
     }
 
     /**

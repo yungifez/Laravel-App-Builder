@@ -1058,7 +1058,7 @@ export type Exploration = {
 /** Something that needs the owner, such as a change that is ready to try. */
 export type OwnerNotification = {
     id: string;
-    kind: 'ready' | 'answered' | 'question' | 'failed';
+    kind: 'ready' | 'answered' | 'question' | 'failed' | 'packages';
     title: string;
     body: string;
     // Why a change did not work and what to do; null otherwise.

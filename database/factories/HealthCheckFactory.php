@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\HealthCheckScope;
 use App\Enums\HealthCheckStatus;
 use App\Models\HealthCheck;
 use App\Models\Project;
@@ -22,6 +23,7 @@ class HealthCheckFactory extends Factory
         return [
             'project_id' => Project::factory(),
             'commit_sha' => str_repeat('a', 40),
+            'scope' => HealthCheckScope::Full,
             'status' => HealthCheckStatus::Queued,
         ];
     }

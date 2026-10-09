@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DeveloperReview;
 use App\Models\FeatureRequest;
+use App\Models\HealthCheck;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -40,6 +41,14 @@ class NotificationController extends Controller
 
         if ($review !== null) {
             return to_route('projects.developers.index', $review->project);
+        }
+
+        // The scheduled package lookup found a new problem, fixed from what
+        // the app is.
+        $healthCheck = HealthCheck::query()->with('project')->whereKey($notification->data['health_check_id'] ?? null)->first();
+
+        if ($healthCheck !== null) {
+            return to_route('projects.understanding.show', $healthCheck->project);
         }
 
         $featureRequest = FeatureRequest::query()->whereKey($notification->data['feature_request_id'] ?? null)->first();

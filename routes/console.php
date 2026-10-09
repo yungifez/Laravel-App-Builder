@@ -24,3 +24,5 @@ Schedule::command('model:prune', ['--model' => [BoxCommand::class, ModelGatewayG
 // stays connected. Until then they still tie a live refresh token to its
 // client, so the client is not pruned under it.
 Schedule::command('passport:purge', ['--expired', '--hours' => (int) config('builder.agents.workers.project_days') * 24])->daily();
+// Only the package lookups run unasked; the full checks stay on request.
+Schedule::command('health:look-up-packages')->daily()->withoutOverlapping()->onOneServer()->when(fn () => (bool) config('builder.verification.security.enabled'));

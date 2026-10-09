@@ -6,10 +6,12 @@ use App\Actions\Workspaces\CheckStepNeeds;
 use App\Actions\Workspaces\DestroyWorkspace;
 use App\Actions\Workspaces\ProvisionWorkspace;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Enums\HealthCheckScope;
 use App\Enums\HealthCheckStatus;
 use App\Models\HealthCheck;
 use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
+use App\Notifications\PackagesNeedYou;
 use App\Projects\ProjectRepository;
 use App\Support\Secrets;
 use App\Workspaces\WorkspaceManager;
@@ -41,7 +43,8 @@ class CheckProjectHealth implements ShouldQueue
 
     /**
      * Run the setup, every check and the package lookups on the app's
-     * version as it is, in a fresh workspace, as publishing would. Nothing
+     * version as it is, in a fresh workspace, as publishing would; or only
+     * the lookups, which read the lock files and need no installs. Nothing
      * in the app changes. Each result is kept as it finishes.
      */
     public function handle(
@@ -66,10 +69,19 @@ class CheckProjectHealth implements ShouldQueue
 
             $passed = $this->passes($runWorkspaceCommand, $workspace);
 
+            // Lookups alone that could not be read found nothing to tell.
+            if ($passed === null) {
+                $this->finishErrored();
+
+                return;
+            }
+
             $this->healthCheck->update([
                 'status' => $passed ? HealthCheckStatus::Passed : HealthCheckStatus::Failed,
                 'finished_at' => now(),
             ]);
+
+            $this->tellAboutNewProblems();
         } catch (Throwable $exception) {
             report($exception);
 
@@ -103,12 +115,43 @@ class CheckProjectHealth implements ShouldQueue
     }
 
     /**
+     * Tell the owner once when the scheduled lookups find a package problem
+     * the app's previous check did not know of. The owner asked for a full
+     * check and is watching it, so that one says nothing here.
+     */
+    protected function tellAboutNewProblems(): void
+    {
+        $found = $this->healthCheck->problemPackages() ?? [];
+
+        if ($this->healthCheck->scope !== HealthCheckScope::Packages || $found === []) {
+            return;
+        }
+
+        $known = $this->healthCheck->project->healthChecks()
+            ->whereKeyNot($this->healthCheck->id)
+            ->whereIn('status', [HealthCheckStatus::Passed, HealthCheckStatus::Failed])
+            ->latest('id')
+            ->get()
+            ->first(fn (HealthCheck $check) => $check->problemPackages() !== null)
+            ?->problemPackages() ?? [];
+
+        $new = array_values(array_diff($found, $known));
+
+        if ($new !== []) {
+            $this->healthCheck->project->owner->notify(new PackagesNeedYou($this->healthCheck, $new));
+        }
+    }
+
+    /**
      * Run the setup steps, stopping at the first failure, then every check,
      * then the package lookups. A step the app has no use for (no
-     * package.json, say) is left out.
+     * package.json, say) is left out. A scheduled check runs only the
+     * lookups and keeps only those it could read: null when none could be.
      */
-    protected function passes(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): bool
+    protected function passes(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace): ?bool
     {
+        $lookupsOnly = $this->healthCheck->scope === HealthCheckScope::Packages;
+
         /** @var list<array{name: string, command: list<string>, timeout: int, needs?: string}> $setup */
         $setup = config('builder.verification.setup', []);
 
@@ -122,8 +165,9 @@ class CheckProjectHealth implements ShouldQueue
         // as vendor/bin/phpstan, is there only after the installs.
         $needs = app(CheckStepNeeds::class);
         $passed = true;
+        $unread = false;
 
-        foreach ($setup as $step) {
+        foreach ($lookupsOnly ? [] : $setup as $step) {
             if (! $needs->met($workspace, $step)) {
                 continue;
             }
@@ -136,7 +180,7 @@ class CheckProjectHealth implements ShouldQueue
             }
         }
 
-        foreach ($checks as $step) {
+        foreach ($lookupsOnly ? [] : $checks as $step) {
             if (! $needs->met($workspace, $step)) {
                 continue;
             }
@@ -155,6 +199,12 @@ class CheckProjectHealth implements ShouldQueue
             $output = (string) $command->output;
             $problems = $command->timed_out ? null : VerifyFeatureRequest::knownProblems($step['report'], $output);
 
+            if ($lookupsOnly && $problems === null) {
+                $unread = true;
+
+                continue;
+            }
+
             // Null packages: the lookup itself failed, so nothing is known.
             $this->keep([
                 'name' => $step['name'],
@@ -165,7 +215,7 @@ class CheckProjectHealth implements ShouldQueue
             $passed = $passed && $problems === 0;
         }
 
-        return $passed;
+        return $unread && $this->healthCheck->results === null ? null : $passed;
     }
 
     /**

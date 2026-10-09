@@ -1416,6 +1416,11 @@ return [
         // online.
         'security' => [
             'enabled' => (bool) env('BUILDER_SECURITY_AUDIT', true),
+            // An app nobody changes never hears of a new advisory, so the
+            // scheduler looks up its packages again once its last check is
+            // this many days old (health:look-up-packages). Only the lookups
+            // run then; the full checks stay on request.
+            'lookup_days' => (int) env('BUILDER_PACKAGE_LOOKUP_DAYS', 7),
             'steps' => [
                 ['name' => 'PHP packages', 'report' => 'composer', 'command' => ['composer', 'audit', '--locked', '--no-interaction', '--format=json', '--abandoned=ignore', '--ignore-severity=low', '--ignore-severity=medium'], 'timeout' => 120, 'needs' => 'composer.json'],
                 ['name' => 'JavaScript packages', 'report' => 'npm', 'command' => ['sh', '-c', 'if [ -f package-lock.json ] || [ ! -f node_modules/.package-lock.json ]; then exec npm audit --package-lock-only --omit=dev --json; fi; d=$(mktemp -d) && cp package.json "$d/" && cp node_modules/.package-lock.json "$d/package-lock.json" && { [ ! -f .npmrc ] || cp .npmrc "$d/"; } && cd "$d" && exec npm audit --package-lock-only --omit=dev --json'], 'timeout' => 120, 'needs' => 'package.json'],

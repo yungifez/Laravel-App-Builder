@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Context\CheckProjectNotes;
 use App\Actions\Context\EstimateExploration;
 use App\Actions\Context\ListGuidanceHistory;
+use App\Actions\Context\ReadAppHealth;
 use App\Actions\Context\ReadProjectContext;
 use App\Actions\Context\RecordDecision;
 use App\Actions\Context\UpdateProjectNotes;
@@ -38,7 +39,7 @@ class ProjectUnderstandingController extends Controller
      * for, how things work, what must always be true, what is connected, and
      * what changed. The quick check runs on request.
      */
-    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes, DescribeAskedFor $describeAskedFor, TallyKeptProof $tallyKeptProof, ListDecisions $listDecisions, EstimateExploration $estimateExploration): Response
+    public function show(Project $project, ProjectRepository $repository, ProjectNotes $projectNotes, ReadProjectContext $readProjectContext, CheckProjectNotes $checkProjectNotes, DescribeAskedFor $describeAskedFor, TallyKeptProof $tallyKeptProof, ListDecisions $listDecisions, EstimateExploration $estimateExploration, ReadAppHealth $readAppHealth): Response
     {
         Gate::authorize('view', $project);
 
@@ -159,10 +160,11 @@ class ProjectUnderstandingController extends Controller
             'check' => Inertia::optional(fn () => $revision === null ? [] : $checkProjectNotes->handle($project)),
             // The full checks the owner asked for with the quick check, while
             // they run and once done. One on an earlier version is out of date.
-            'health' => function () use ($project, $repository, $revision) {
-                $healthCheck = $revision === null ? null : $project->healthChecks()->latest('id')->first();
+            // A scheduled package lookup adds what it found since.
+            'health' => function () use ($project, $readAppHealth, $revision) {
+                $healthCheck = $revision === null ? null : $readAppHealth->handle($project)['check'] ?? null;
 
-                if ($healthCheck === null || (! $healthCheck->status->active() && $healthCheck->commit_sha !== $repository->head($project))) {
+                if ($healthCheck === null) {
                     return null;
                 }
 

@@ -4455,6 +4455,18 @@ agent-maintained notes of §26.3 from rotting. Everything else waits for owners
 to be using the product, since a review of software nobody has built yet proves
 nothing.
 
+**Only the package lookups run on a schedule.** An app nobody changes never
+learns about a new advisory. So Laravel's scheduler runs
+`health:look-up-packages` daily. It looks up the packages of each app with code
+whose last check is older than `BUILDER_PACKAGE_LOOKUP_DAYS` (default 7). The
+lookups read the committed lock files, so they need no installs. The full suite
+and static analysis cost an install and every test, so they stay on request.
+A newer lookup replaces the full check's lookup of the same name, and never
+hides a failing test that check found. Its findings show on the Understanding
+page with "Fix it". When it finds a problem that the previous check did not
+know of, the owner's inbox gets one line. A lookup that cannot be read shows
+nothing and tells nothing.
+
 ### 26.11 Laravel-native active testing (versions 13–14, later stage)
 
 Direction 14: **exploit framework determinism before spending model
