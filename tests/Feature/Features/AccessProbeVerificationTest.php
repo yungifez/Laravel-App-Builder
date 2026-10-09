@@ -556,4 +556,27 @@ class AccessProbeVerificationTest extends TestCase
 
         $this->assertNull(collect($unread->verifications()->sole()->results)->firstWhere('name', 'Pages keep hidden fields to the server'));
     }
+
+    public function test_a_page_the_change_made_remove_rows_when_opened_fails_and_an_older_one_is_a_note(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":1},"swap":{"status":403,"invalid":false,"writes":0},"guest":302,"policy":false,"removed":["projects"]}'];
+        $this->answer([]);
+        $change = $this->projectChange();
+        $this->withBody('// Projects');
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Opening a page removes nothing');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringStartsWith('Opening GET /projects/{project} removed rows from projects.', $result['output']);
+        $this->assertSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+
+        $older = $this->projectChange();
+        $this->withBody('$project->delete();');
+
+        app(RequestVerification::class)->handle($older);
+
+        $this->assertSame('passed', collect($older->verifications()->sole()->results)->firstWhere('name', 'Opening a page removes nothing')['outcome']);
+        $this->assertNotSame(VerificationStatus::Failed, $older->verifications()->sole()->status);
+    }
 }

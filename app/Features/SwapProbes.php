@@ -55,20 +55,27 @@ use Illuminate\Support\Str;
  * stops the change when the change added a line to that page's action, or
  * to the model whose field it sent; a page that sent it before is a note.
  *
+ * Opening such a page must not remove anything: a link is followed by
+ * prefetching on hover, by crawlers and by link previews. A page that
+ * deleted rows of the app's own tables when it was opened, or set their
+ * deleted_at, is held to the same rule as a leak.
+ *
  * @phpstan-type Param array{name: string, model: string|null, field: string|null}
  * @phpstan-type Step array{relation: string, model: string, key: string|null}
  * @phpstan-type Owner array{path: list<Step>, end: string}
  * @phpstan-type Tenant array{relation: string, column: string|null, role: string|null}
- * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>, body: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
+ * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>, body: list<string>, signed: bool}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
  * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>}
  * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null, raised: list<string>}
- * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null, rows: int|null, shown: int|null, leaked: list<string>|null}
+ * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null, rows: int|null, shown: int|null, leaked: list<string>|null, removed: list<string>|null}
  * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>, status: int, raised: list<string>, children: list<string>, exception: string|null}
  * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
  * @phpstan-type Listed array{probe: Probe, rows: int, status: int, line: string|null, existing: bool}
  * @phpstan-type Lists array{tried: int, findings: list<Listed>, broke: list<Listed>, untried: int}
  * @phpstan-type Leak array{method: string, uri: string, fields: list<string>}
  * @phpstan-type Leaks array{read: int, findings: list<Leak>, existing: list<Leak>}
+ * @phpstan-type Removal array{method: string, uri: string, tables: list<string>}
+ * @phpstan-type Removals array{opened: int, findings: list<Removal>, existing: list<Removal>}
  */
 class SwapProbes
 {
@@ -313,6 +320,7 @@ foreach (app('router')->getRoutes() as $route) {
         'named' => $named,
         'loads' => $loads,
         'body' => $lines,
+        'signed' => array_filter($route->gatherMiddleware(), fn (mixed $name) => is_string($name) && (str_starts_with($name, 'signed') || str_contains($name, 'ValidateSignature'))) !== [],
     ];
 }
 
@@ -405,6 +413,7 @@ PHP;
                 'params' => $params,
                 'named' => array_values(array_intersect(self::RAISED, is_array($route['named'] ?? null) ? $route['named'] : [])),
                 'loads' => array_values(array_filter(is_array($route['loads'] ?? null) ? $route['loads'] : [], fn (mixed $line) => is_string($line) && strlen($line) <= 200 && preg_match('/[\x00-\x1f]/', $line) !== 1)),
+                'signed' => ($route['signed'] ?? false) === true,
                 'body' => array_values(array_filter(is_array($route['body'] ?? null) ? $route['body'] : [], fn (mixed $line) => is_string($line) && strlen($line) <= 200 && preg_match('/[\x00-\x1f]/', $line) !== 1)),
             ];
         }
@@ -623,7 +632,7 @@ PHP;
      * reach their owner through a link of their own, so many can be made
      * for one owner, and each record in the address must be on that way.
      *
-     * @param  array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>, body: list<string>}  $route
+     * @param  array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>, body: list<string>, signed: bool}  $route
      * @param  Found  $found
      * @return list<Probe>
      */
@@ -745,6 +754,13 @@ class SwapProbeTest extends TestCase
 
     private int $writes = 0;
 
+    /**
+     * The tables rows were removed from, since it was last emptied.
+     *
+     * @var array<string, true>
+     */
+    private array $removed = [];
+
     private bool $listening = false;
 
 __METHODS__
@@ -824,10 +840,14 @@ __METHODS__
 
         $last = count($params) - 1;
         $this->actingAs($me);
+        $this->removed = [];
         $control = $sent($this->address($uri, $params, fn (int $index) => $mine));
         $leaked = null;
+        $removed = null;
 
+        // What opening the page removed, the first time it was opened.
         if ($method === 'GET' && $mode === 'all') {
+            $removed = $control['status'] < 400 ? array_slice(array_keys($this->removed), 0, 5) : null;
             $this->actingAs($me);
             $leaked = $this->leaked($this->read($this->address($uri, $params, fn (int $index) => $mine)));
         }
@@ -843,7 +863,7 @@ __METHODS__
             $guest = $sent($this->address($uri, $params, fn (int $index) => $theirs))['status'];
         }
 
-        return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => $guest, 'policy' => $policy, 'leaked' => $leaked];
+        return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => $guest, 'policy' => $policy, 'leaked' => $leaked, 'removed' => $removed];
     }
 
     /**
@@ -1228,6 +1248,11 @@ __METHODS__
         DB::listen(function ($query) {
             if (preg_match('/^\s*(insert|update|delete)\b/i', $query->sql) === 1 && preg_match('/\b(sessions|cache|cache_locks|jobs|job_batches|failed_jobs|password_reset_tokens)\b/', $query->sql) !== 1) {
                 $this->writes++;
+
+                // Removed outright, or kept with soft deletes.
+                if (preg_match('/^\s*delete\s+from\s+[`"\[]?(\w+)/i', $query->sql, $table) === 1 || preg_match('/^\s*update\s+[`"\[]?(\w+)[`"\]]?\s+set\s.*[`"\[]?deleted_at[`"\]]?\s*=/i', $query->sql, $table) === 1) {
+                    $this->removed[$table[1]] = true;
+                }
             }
         });
     }
@@ -1284,6 +1309,7 @@ PHP, [
                     'rows' => is_int($data['rows'] ?? null) ? $data['rows'] : null,
                     'shown' => is_int($data['shown'] ?? null) ? $data['shown'] : null,
                     'leaked' => is_array($data['leaked'] ?? null) ? array_values(array_filter($data['leaked'], fn (mixed $name) => is_string($name) && preg_match('/^\w+\.\w+$/', $name) === 1)) : null,
+                    'removed' => is_array($data['removed'] ?? null) ? array_values(array_filter($data['removed'], fn (mixed $name) => is_string($name) && preg_match('/^\w+$/', $name) === 1)) : null,
                 ];
             }
         }
@@ -1449,13 +1475,10 @@ PHP, [
         $leaks = ['read' => count($read), 'findings' => [], 'existing' => []];
 
         foreach (array_filter($read, fn (array $page) => $page['fields'] !== []) as $page) {
-            $route = collect($found['routes'])->first(fn (array $route) => $route['uri'] === $page['uri'] && in_array($page['method'], $route['methods'], true));
-            $controller = $changed[self::path($route['controller'] ?? null) ?? ''] ?? null;
             $models = array_map(fn (string $field) => 'app/Models/'.Str::before($field, '.').'.php', $page['fields']);
-            $wrote = $controller !== null && ($controller['new'] || array_intersect(array_map(trim(...), $controller['lines']), $route['body'] ?? []) !== []);
             $hid = array_filter($models, fn (string $model) => ($changed[$model]['lines'] ?? []) !== []) !== [];
 
-            $leaks[$wrote || $hid ? 'findings' : 'existing'][] = $page;
+            $leaks[$hid || self::wrote($page['method'], $page['uri'], $found, $changed) ? 'findings' : 'existing'][] = $page;
         }
 
         return $leaks;
@@ -1474,6 +1497,73 @@ PHP, [
         ];
 
         return $lines === [] ? "Read {$leaks['read']} pages opened with the person's own records; none held a hidden field." : implode("\n", $lines);
+    }
+
+    /**
+     * Find the pages that removed rows when the person opened them with
+     * their own records. Held to the leaks' rule: the change's when it
+     * wrote in the page's action or made its controller, unless the route
+     * takes only signed links.
+     *
+     * @param  list<Probe>  $probes
+     * @param  array<int, Observed>  $observed
+     * @param  Found  $found
+     * @param  array<string, array{new: bool, lines: list<string>}>  $changed  Lines the change added, by path
+     * @return Removals
+     */
+    public static function removals(array $probes, array $observed, array $found, array $changed): array
+    {
+        $removals = ['opened' => 0, 'findings' => [], 'existing' => []];
+
+        foreach ($probes as $id => $probe) {
+            $removed = $observed[$id]['removed'] ?? null;
+
+            if ($removed === null) {
+                continue;
+            }
+
+            $removals['opened']++;
+
+            // A signed link, as an email's "unsubscribe" is, acts on GET by
+            // design, and no crawler can forge its signature.
+            $signed = collect($found['routes'])->contains(fn (array $route) => $route['uri'] === $probe['uri'] && $route['signed']);
+
+            if ($removed !== []) {
+                $removals[! $signed && self::wrote($probe['method'], $probe['uri'], $found, $changed) ? 'findings' : 'existing'][] = ['method' => $probe['method'], 'uri' => $probe['uri'], 'tables' => $removed];
+            }
+        }
+
+        return $removals;
+    }
+
+    /**
+     * Say what the pages removed, for the agent that repairs the change.
+     *
+     * @param  Removals  $removals
+     */
+    public static function describeRemovals(array $removals): string
+    {
+        $lines = [
+            ...array_map(fn (array $finding) => "Opening {$finding['method']} {$finding['uri']} removed rows from ".implode(', ', $finding['tables']).'. A link is opened by prefetching on hover, by crawlers and by link previews, so it removes them without anyone asking. Remove with a DELETE route sent from a button or a form, never from a GET.', $removals['findings']),
+            ...array_map(fn (array $page) => "Note, not a failure: opening {$page['method']} {$page['uri']} removed rows from ".implode(', ', $page['tables']).', as it did before this change.', $removals['existing']),
+        ];
+
+        return $lines === [] ? "Opened {$removals['opened']} pages with the person's own records; none removed anything." : implode("\n", $lines);
+    }
+
+    /**
+     * Determine if the change wrote the action of a route: it added a line
+     * of that action, or made its controller.
+     *
+     * @param  Found  $found
+     * @param  array<string, array{new: bool, lines: list<string>}>  $changed
+     */
+    protected static function wrote(string $method, string $uri, array $found, array $changed): bool
+    {
+        $route = collect($found['routes'])->first(fn (array $route) => $route['uri'] === $uri && in_array($method, $route['methods'], true));
+        $controller = $changed[self::path($route['controller'] ?? null) ?? ''] ?? null;
+
+        return $controller !== null && ($controller['new'] || array_intersect(array_map(trim(...), $controller['lines']), $route['body'] ?? []) !== []);
     }
 
     /**

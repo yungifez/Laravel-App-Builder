@@ -564,4 +564,52 @@ class SwapProbesTest extends TestCase
         $this->assertStringContainsString('$model->getHidden()', $test);
         $this->assertStringContainsString('strlen($value) >= 8', $test, 'a null, a flag or a short value is never a secret');
     }
+
+    public function test_a_page_that_removed_rows_when_opened_is_the_changes_only_when_it_wrote_that_action(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            [...$this->route(['GET'], '/projects/{project}/remove', [['project', 'Project']], 'remove'), 'body' => ['$project->delete();']],
+            [...$this->route(['GET'], '/projects/{project}/archive', [['project', 'Project']], 'archive'), 'body' => ['$project->tasks()->delete();']],
+            // An email's link, signed so no crawler can follow it.
+            [...$this->route(['GET'], '/projects/{project}/leave', [['project', 'Project']], 'leave'), 'body' => ['$project->members()->detach();'], 'signed' => true],
+        ]));
+        $probes = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'];
+        $sent = ['status' => 200, 'invalid' => false, 'writes' => 1];
+        $line = fn (int $id, mixed $removed) => json_encode(['id' => $id, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'removed' => $removed]);
+        $changed = ['app/Http/Controllers/ProjectController.php' => ['new' => false, 'lines' => ['        $project->delete();', '        $project->members()->detach();']]];
+
+        $removals = SwapProbes::removals($probes, SwapProbes::parse(implode("\n", [$line(0, ['projects', 'bad name']), $line(1, ['tasks']), $line(2, ['project_user'])])), $found, $changed);
+
+        $this->assertSame(3, $removals['opened']);
+        $this->assertSame([['method' => 'GET', 'uri' => '/projects/{project}/remove', 'tables' => ['projects']]], $removals['findings']);
+        $this->assertSame(['/projects/{project}/archive', '/projects/{project}/leave'], array_column($removals['existing'], 'uri'));
+        $described = SwapProbes::describeRemovals($removals);
+        $this->assertStringContainsString('Opening GET /projects/{project}/remove removed rows from projects. A link is opened by prefetching on hover, by crawlers and by link previews, so it removes them without anyone asking. Remove with a DELETE route sent from a button or a form, never from a GET.', $described);
+        $this->assertStringContainsString('Note, not a failure: opening GET /projects/{project}/leave removed rows from project_user, as it did before this change.', $described);
+    }
+
+    public function test_a_page_that_removed_nothing_passes_and_one_that_did_not_open_was_not_counted(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['GET'], '/projects/{project}', [['project', 'Project']]),
+            $this->route(['GET'], '/projects/{project}/tasks/{task}', [['project', 'Project'], ['task', 'Task']]),
+        ]));
+        $probes = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'];
+        $sent = ['status' => 200, 'invalid' => false, 'writes' => 0];
+        $ids = array_keys(array_filter($probes, fn (array $probe) => $probe['mode'] === SwapProbes::ALL));
+
+        $removals = SwapProbes::removals($probes, SwapProbes::parse(implode("\n", [
+            json_encode(['id' => $ids[0], 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'removed' => []]),
+            // Turned away before the action ran, as an unsigned link is.
+            json_encode(['id' => $ids[1], 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'removed' => null]),
+        ])), $found, []);
+
+        $this->assertSame(['opened' => 1, 'findings' => [], 'existing' => []], $removals);
+        $this->assertSame("Opened 1 pages with the person's own records; none removed anything.", SwapProbes::describeRemovals($removals));
+
+        // The framework's own tables never count, and soft deletes do.
+        $test = SwapProbes::test($probes, $found, 'swaps.jsonl');
+        $this->assertStringContainsString('sessions|cache|cache_locks|jobs|job_batches|failed_jobs|password_reset_tokens', $test);
+        $this->assertStringContainsString('deleted_at', $test);
+    }
 }

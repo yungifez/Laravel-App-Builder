@@ -4740,6 +4740,17 @@ email are not hidden, so they never count. On a copy of the fixture, a task
 page that sent `DB::table('users')` rows and an Inertia page that sent members
 with `makeVisible(['password'])` were both found, and 12 other pages were not.
 
+Opening such a page must not remove anything. Inertia prefetches links on
+hover, and crawlers and link previews follow them too. The test notes each
+table that rows were deleted from, or whose `deleted_at` was set, the first
+time the person opens the page. The framework's own tables (sessions, cache,
+jobs, password reset tokens) are left out. A page that removed rows fails the
+check "Opening a page removes nothing" under the same rule as a leak. A route
+behind the `signed` middleware, such as an email's unsubscribe link, acts on
+GET by design, so it is a note. A page that did not open is not counted. On a
+copy of the fixture, a GET link that removed a task was found, both when it
+deleted the row and when it set `deleted_at`. A signed link was not counted.
+
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
 the like), its own tests run again with the clock stopped. A PHPUnit extension,
