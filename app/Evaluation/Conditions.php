@@ -39,7 +39,7 @@ class Conditions
         $status = $failing === [] ? 'passed' : 'failed';
 
         $generic = Handoff::within(['condition' => 'v2'], fn () => $this->genericReview($request, $requirements, $results, $patch));
-        $aware = Handoff::within(['condition' => 'v3'], fn () => $this->harness->review($run, $this->checked($run, $status, $results, $patch)));
+        $aware = Handoff::within(['condition' => 'v3'], fn () => $this->harness->judge($run, $this->checked($run, $status, $results, $patch)));
 
         return [
             'checks' => $checks,
@@ -62,6 +62,7 @@ class Conditions
     /**
      * Stand the checks in for a verification of the patch. Every condition
      * judges the same results, so v3 gets nothing more from running the app.
+     * v3 then asks only the reviewer: the platform's own checks are not compared.
      *
      * @param  list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>  $results
      */

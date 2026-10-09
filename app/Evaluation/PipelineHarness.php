@@ -6,6 +6,7 @@ use App\Actions\Context\AssessPreservation;
 use App\Actions\Features\RequestFeature;
 use App\Actions\Features\RequestVerification;
 use App\Actions\Projects\CreateProject;
+use App\Actions\Runs\CheckReviewedChange;
 use App\Actions\Runs\GatherReviewEvidence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
@@ -34,6 +35,7 @@ class PipelineHarness
         protected RequestFeature $requestFeature,
         protected RequestVerification $requestVerification,
         protected GatherReviewEvidence $gatherReviewEvidence,
+        protected CheckReviewedChange $checkReviewedChange,
         protected AssessPreservation $assessPreservation,
         protected ConstructionDriverManager $drivers,
     ) {}
@@ -103,20 +105,44 @@ class PipelineHarness
     /**
      * Review a verified change the way the run's review stage does: the
      * reviewer gets the same evidence, test results, role probes and
-     * security findings included, and the review is assessed for what
-     * should be preserved.
+     * security findings included, the platform's own checks block what they
+     * block there, and the review is assessed for what should be preserved.
      *
-     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>}
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>}
      */
     public function review(Run $run, Verification $verification): array
+    {
+        return $this->reviewed($run, $verification, checked: true);
+    }
+
+    /**
+     * Get only the reviewer's judgement of a change, without the platform's
+     * own checks, for comparing reviewers on the same evidence.
+     *
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>}
+     */
+    public function judge(Run $run, Verification $verification): array
+    {
+        return $this->reviewed($run, $verification, checked: false);
+    }
+
+    /**
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array<string, mixed>>, classification: array<string, mixed>, preserved: list<array<string, mixed>>, verified: list<array<string, mixed>>}
+     */
+    protected function reviewed(Run $run, Verification $verification, bool $checked): array
     {
         $plan = $run->plan !== null ? Plan::fromArray($run->plan) : throw new RuntimeException('The run has no plan.');
         $projectContext = $this->gatherReviewEvidence->projectContext($run);
         $evidence = $this->gatherReviewEvidence->handle($run, $plan, $verification);
         $classification = $evidence->classification;
+        $driver = $this->drivers->driver($run->driver);
 
-        $review = $this->drivers->driver($run->driver)->review($run, $evidence)
-            ->withGuardingTestsMinor($verification->evidence['new_tests'] ?? []);
+        $review = $driver->review($run, $evidence)->withGuardingTestsMinor($verification->evidence['new_tests'] ?? []);
+        $verified = [];
+
+        if ($checked) {
+            ['review' => $review, 'verified' => $verified] = $this->checkReviewedChange->handle($review, $plan, $verification, $driver->canRepair());
+        }
 
         return [
             'approved' => $review->approved,
@@ -129,6 +155,7 @@ class PipelineHarness
             ], $review->changes),
             'classification' => $classification->toArray(),
             'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $evidence->verificationResults, $review),
+            'verified' => $verified,
         ];
     }
 

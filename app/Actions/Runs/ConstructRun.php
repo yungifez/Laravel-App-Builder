@@ -5,7 +5,6 @@ namespace App\Actions\Runs;
 use App\Actions\Billing\MeasureUsage;
 use App\Actions\Context\AssessCoverage;
 use App\Actions\Context\AssessPreservation;
-use App\Actions\Context\AssessVerifyItems;
 use App\Actions\Context\CompileContext;
 use App\Actions\Context\KeepAssumptions;
 use App\Actions\Context\ReadProjectContext;
@@ -30,19 +29,13 @@ use App\Features\AppFaults;
 use App\Features\AppRoutes;
 use App\Features\BoundaryCode;
 use App\Features\Exceptions\CannotGenerateFeature;
-use App\Features\InventedColours;
 use App\Features\MigrationChecks;
 use App\Features\NarrowedFormats;
-use App\Features\NewTests;
-use App\Features\NodeInPhpTests;
 use App\Features\OwnedRecords;
-use App\Features\OwnFormatChecks;
 use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
 use App\Features\ScreenCheck;
-use App\Features\UndescribedImages;
-use App\Features\UnsafeCode;
 use App\Jobs\WriteTestsBeside;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -92,7 +85,7 @@ class ConstructRun
         private GatherReviewEvidence $gatherReviewEvidence,
         private AssessCoverage $assessCoverage,
         private AssessPreservation $assessPreservation,
-        private AssessVerifyItems $assessVerifyItems,
+        private CheckReviewedChange $checkReviewedChange,
         private FormatChange $formatChange,
         private RequestPreview $requestPreview,
         private WarmChangePreview $warmChangePreview,
@@ -748,66 +741,9 @@ class ConstructRun
         // the reviewer called it.
         $review = $review->withGuardingTestsMinor($verification->evidence['new_tests'] ?? []);
 
-        $verified = $this->assessVerifyItems->handle($plan, $review, (string) $featureRequest->patch, $verification->results ?? [], $verification->evidence ?? []);
-
-        if ($driver->canRepair() && config('builder.verification.require_verify_tests')) {
-            $findings = [];
-
-            foreach ($verified as $item) {
-                $finding = match ($item['evidence']) {
-                    'no_test' => __('No test in the change checks: :criterion', ['criterion' => $item['case']]),
-                    // What the recording saw, not what the test says: an
-                    // exception case is checked by a request the app refused.
-                    'no_request' => __('The test ":name" for ":case" sends your app nothing, so no refusal could be seen. Make it send the request, or run the command, that the app must refuse, and assert the refusal.', ['name' => $item['test_name'] ?? '', 'case' => $item['case']]),
-                    'not_refused' => __('The app let every request of the test ":name" through, but ":case" says it must refuse. Make the app refuse it, or make the test try that case.', ['name' => $item['test_name'] ?? '', 'case' => $item['case']]),
-                    'not_run_by_checks' => Capability::runBySuite((string) $item['test_file'])
-                        ? __('The test ":name" for ":criterion" did not run in the test suite (:file). It is missing, skipped or named differently. Name a test that exists and runs.', [
-                            'name' => $item['test_name'] ?? '',
-                            'criterion' => $item['case'],
-                            'file' => $item['test_file'],
-                        ])
-                        : __('The test for ":criterion" (:file) is not run by the test suite. Check it in a test under :paths.', [
-                            'criterion' => $item['case'],
-                            'file' => $item['test_file'],
-                            'paths' => Capability::suiteLocation(),
-                        ]),
-                    default => null,
-                };
-
-                if (is_string($finding)) {
-                    $findings[] = $finding;
-                }
-            }
-
-            // A test for what was already true guards it, but at least one
-            // new test must fail without the change, or nothing shows it works.
-            $measured = $verification->evidence['new_tests'] ?? [];
-
-            if (NewTests::ending($measured, NewTests::PASSED, $featureRequest->patch) !== [] && NewTests::ending($measured, NewTests::FAILED, $featureRequest->patch) === []) {
-                $findings[] = __('Every test the change added passes without it too, so nothing shows that the change works. Add a test that fails without the change and passes with it. Tests of what was already true can stay.');
-            }
-
-            $review = $review->withBlockingFindings($findings);
-        }
-
-        if ($driver->canRepair() && config('builder.verification.safety_scan')) {
-            $review = $review->withBlockingFindings(array_map(UnsafeCode::finding(...), UnsafeCode::found($featureRequest->patch)));
-        }
-
-        if ($driver->canRepair() && config('builder.verification.design_scan')) {
-            $review = $review->withBlockingFindings(array_map(InventedColours::finding(...), InventedColours::found($featureRequest->patch)));
-            $review = $review->withBlockingFindings(array_map(UndescribedImages::finding(...), UndescribedImages::found($featureRequest->patch)));
-        }
-
-        // A format is decided once (§9): a check of its own on a formatted
-        // field sends the change back.
-        if ($driver->canRepair()) {
-            $review = $review->withBlockingFindings(array_map(OwnFormatChecks::finding(...), OwnFormatChecks::found($featureRequest->patch, $plan->dataShape)));
-        }
-
-        if ($driver->canRepair() && config('builder.verification.test_scan')) {
-            $review = $review->withBlockingFindings(array_map(NodeInPhpTests::finding(...), NodeInPhpTests::found($featureRequest->patch)));
-        }
+        // The platform's own checks of the change block it whatever the
+        // reviewer said.
+        ['review' => $review, 'verified' => $verified] = $this->checkReviewedChange->handle($review, $plan, $verification, $driver->canRepair());
 
         // The gate (direction 33): what a test run proves the change's own
         // code did where Laravel expects nothing to change, and what a

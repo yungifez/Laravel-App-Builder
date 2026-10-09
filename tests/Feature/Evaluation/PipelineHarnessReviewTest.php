@@ -23,7 +23,8 @@ use Tests\TestCase;
 /*
 | The evaluation reviews a change the way the run's review stage does, so
 | it measures the review that ships: the reviewer gets the same evidence,
-| test results, role probes and security findings included.
+| test results, role probes and security findings included, and the
+| platform's own checks block what they block there.
 */
 class PipelineHarnessReviewTest extends TestCase
 {
@@ -33,6 +34,8 @@ class PipelineHarnessReviewTest extends TestCase
     protected array $asked = [];
 
     protected Review $answer;
+
+    public bool $canRepair = true;
 
     protected function setUp(): void
     {
@@ -67,7 +70,7 @@ class PipelineHarnessReviewTest extends TestCase
 
             public function canRepair(): bool
             {
-                return true;
+                return $this->test->canRepair;
             }
         });
     }
@@ -147,6 +150,46 @@ class PipelineHarnessReviewTest extends TestCase
         $this->assertSame("diff --git a/b b/b\n", $this->asked[0]->patch);
     }
 
+    public function test_the_platforms_own_checks_block_the_change_as_in_the_run_review()
+    {
+        [$run, $verification] = $this->verified([], unsafe: true, untested: true);
+
+        $review = app(PipelineHarness::class)->review($run, $verification);
+
+        $this->assertFalse($review['approved']);
+        $blocking = array_column(array_filter($review['findings'], fn (array $finding) => $finding['severity'] === 'blocking'), 'summary');
+        $this->assertContains('No test in the change checks: Only the owner may remove people. (exception case: An admin is refused.)', $blocking);
+        $this->assertCount(1, array_filter($blocking, fn (string $summary) => str_contains($summary, 'resources/views/team.blade.php')));
+        $this->assertSame('no_test', $review['verified'][0]['evidence']);
+
+        // Comparing reviewers asks only the reviewer.
+        $judged = app(PipelineHarness::class)->judge($run, $verification);
+        $this->assertTrue($judged['approved']);
+        $this->assertSame([], $judged['verified']);
+    }
+
+    public function test_a_coder_that_cannot_repair_is_not_sent_findings_as_in_the_run_review()
+    {
+        $this->canRepair = false;
+        [$run, $verification] = $this->verified([], unsafe: true, untested: true);
+
+        $review = app(PipelineHarness::class)->review($run, $verification);
+
+        $this->assertTrue($review['approved']);
+        $this->assertSame('no_test', $review['verified'][0]['evidence']);
+    }
+
+    public function test_checks_turned_off_block_nothing()
+    {
+        config(['builder.verification.require_verify_tests' => false, 'builder.verification.safety_scan' => false]);
+        [$run, $verification] = $this->verified([], unsafe: true, untested: true);
+
+        $review = app(PipelineHarness::class)->review($run, $verification);
+
+        $this->assertTrue($review['approved']);
+        $this->assertSame([], $review['findings']);
+    }
+
     /**
      * Make a planned run and a finished verification of a copy of its change,
      * as the evaluation verifies a sabotaged patch.
@@ -154,16 +197,22 @@ class PipelineHarnessReviewTest extends TestCase
      * @param  array<string, mixed>  $evidence
      * @return array{Run, Verification}
      */
-    protected function verified(array $evidence): array
+    protected function verified(array $evidence, bool $unsafe = false, bool $untested = false): array
     {
+        $patch = "diff --git a/config/teams.php b/config/teams.php\n";
+
+        if ($unsafe) {
+            $patch .= "diff --git a/resources/views/team.blade.php b/resources/views/team.blade.php\nnew file mode 100644\n--- /dev/null\n+++ b/resources/views/team.blade.php\n@@ -0,0 +1 @@\n".'+<p>{!! $team->name !!}</p>'."\n";
+        }
+
         $original = FeatureRequest::factory()->create(['prompt' => 'Only the owner may remove people.', 'note_changes' => []]);
-        $run = Run::factory()->for($original)->create(['driver' => 'test', 'plan' => (new Plan('Only the owner removes people.', acceptanceCriteria: ['Only the owner may remove people.']))->toArray()]);
+        $run = Run::factory()->for($original)->create(['driver' => 'test', 'plan' => (new Plan('Only the owner removes people.', acceptanceCriteria: ['Only the owner may remove people.'], cases: $untested ? [['criterion' => 1, 'kind' => 'exception', 'says' => 'An admin is refused.']] : []))->toArray()]);
         $copy = $original->project->featureRequests()->create([
             'user_id' => $original->user_id,
             'prompt' => $original->prompt,
             'status' => FeatureRequestStatus::Generated,
             'generator' => $original->generator,
-            'patch' => "diff --git a/config/teams.php b/config/teams.php\n",
+            'patch' => $patch,
         ]);
         $verification = Verification::factory()->for($copy)->create([
             'status' => VerificationStatus::Failed,
