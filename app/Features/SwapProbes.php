@@ -51,13 +51,15 @@ use Illuminate\Support\Str;
  * the app's models keep hidden: the stored value of each attribute in a
  * model's $hidden, or of a column named as a secret (a password, a token),
  * as the database holds it and as the model casts it. A
- * page whose data holds one sends it to the browser, whatever its key.
+ * page whose data holds one sends it to the browser, whatever its key. It
+ * stops the change when the change added a line to that page's action, or
+ * to the model whose field it sent; a page that sent it before is a note.
  *
  * @phpstan-type Param array{name: string, model: string|null, field: string|null}
  * @phpstan-type Step array{relation: string, model: string, key: string|null}
  * @phpstan-type Owner array{path: list<Step>, end: string}
  * @phpstan-type Tenant array{relation: string, column: string|null, role: string|null}
- * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
+ * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>, body: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
  * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>}
  * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null, raised: list<string>}
  * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null, rows: int|null, shown: int|null, leaked: list<string>|null}
@@ -65,7 +67,8 @@ use Illuminate\Support\Str;
  * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
  * @phpstan-type Listed array{probe: Probe, rows: int, status: int, line: string|null, existing: bool}
  * @phpstan-type Lists array{tried: int, findings: list<Listed>, broke: list<Listed>, untried: int}
- * @phpstan-type Leaks array{read: int, findings: list<array{method: string, uri: string, fields: list<string>}>}
+ * @phpstan-type Leak array{method: string, uri: string, fields: list<string>}
+ * @phpstan-type Leaks array{read: int, findings: list<Leak>, existing: list<Leak>}
  */
 class SwapProbes
 {
@@ -278,6 +281,10 @@ foreach (app('router')->getRoutes() as $route) {
 
     $named = array_values(array_filter($raised, fn (string $field) => preg_match('/[\'"]'.$field.'[\'".]/', $source) === 1));
 
+    // The action's own lines, to tell whether the change wrote in it. A
+    // line of only brackets is in every action, so it tells nothing.
+    $lines = in_array('GET', $route->methods(), true) ? array_slice(array_values(array_filter(array_map('trim', preg_split('/\R/', $body) ?: []), fn (string $text) => preg_match('/\w/', $text) === 1 && strlen($text) <= 200)), 0, 80) : [];
+
     // The lines of a list's action that load every row: get(), all(), or
     // the relation of that name loaded whole.
     $loads = [];
@@ -305,6 +312,7 @@ foreach (app('router')->getRoutes() as $route) {
         'params' => $params,
         'named' => $named,
         'loads' => $loads,
+        'body' => $lines,
     ];
 }
 
@@ -397,6 +405,7 @@ PHP;
                 'params' => $params,
                 'named' => array_values(array_intersect(self::RAISED, is_array($route['named'] ?? null) ? $route['named'] : [])),
                 'loads' => array_values(array_filter(is_array($route['loads'] ?? null) ? $route['loads'] : [], fn (mixed $line) => is_string($line) && strlen($line) <= 200 && preg_match('/[\x00-\x1f]/', $line) !== 1)),
+                'body' => array_values(array_filter(is_array($route['body'] ?? null) ? $route['body'] : [], fn (mixed $line) => is_string($line) && strlen($line) <= 200 && preg_match('/[\x00-\x1f]/', $line) !== 1)),
             ];
         }
 
@@ -614,7 +623,7 @@ PHP;
      * reach their owner through a link of their own, so many can be made
      * for one owner, and each record in the address must be on that way.
      *
-     * @param  array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>}  $route
+     * @param  array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>, body: list<string>}  $route
      * @param  Found  $found
      * @return list<Probe>
      */
@@ -1400,8 +1409,7 @@ PHP, [
             }
 
             $route = collect($found['routes'])->first(fn (array $route) => $route['uri'] === $probe['uri'] && in_array('GET', $route['methods'], true));
-            $controller = $route['controller'] ?? null;
-            $path = is_string($controller) && str_starts_with($controller, 'App\\') ? 'app/'.str_replace('\\', '/', substr($controller, 4)).'.php' : null;
+            $path = self::path($route['controller'] ?? null);
             $added = array_map(trim(...), $path === null ? [] : ($changed[$path]['lines'] ?? []));
             $line = collect($route['loads'] ?? [])->first(fn (string $load) => in_array($load, $added, true));
 
@@ -1414,12 +1422,17 @@ PHP, [
     /**
      * Find the pages that sent a hidden attribute's stored value: the
      * person's own records, at a route of a controller the change touched.
+     * A page is the change's when the change added a line to its action,
+     * made its controller, or added a line to the model whose field it
+     * sent. Otherwise it sent it before, and it is a note.
      *
      * @param  list<Probe>  $probes
      * @param  array<int, Observed>  $observed
+     * @param  Found  $found
+     * @param  array<string, array{new: bool, lines: list<string>}>  $changed  Lines the change added, by path
      * @return Leaks
      */
-    public static function leaks(array $probes, array $observed): array
+    public static function leaks(array $probes, array $observed, array $found, array $changed): array
     {
         $read = [];
 
@@ -1433,7 +1446,19 @@ PHP, [
             }
         }
 
-        return ['read' => count($read), 'findings' => array_values(array_filter($read, fn (array $page) => $page['fields'] !== []))];
+        $leaks = ['read' => count($read), 'findings' => [], 'existing' => []];
+
+        foreach (array_filter($read, fn (array $page) => $page['fields'] !== []) as $page) {
+            $route = collect($found['routes'])->first(fn (array $route) => $route['uri'] === $page['uri'] && in_array($page['method'], $route['methods'], true));
+            $controller = $changed[self::path($route['controller'] ?? null) ?? ''] ?? null;
+            $models = array_map(fn (string $field) => 'app/Models/'.Str::before($field, '.').'.php', $page['fields']);
+            $wrote = $controller !== null && ($controller['new'] || array_intersect(array_map(trim(...), $controller['lines']), $route['body'] ?? []) !== []);
+            $hid = array_filter($models, fn (string $model) => ($changed[$model]['lines'] ?? []) !== []) !== [];
+
+            $leaks[$wrote || $hid ? 'findings' : 'existing'][] = $page;
+        }
+
+        return $leaks;
     }
 
     /**
@@ -1443,9 +1468,20 @@ PHP, [
      */
     public static function describeLeaks(array $leaks): string
     {
-        $lines = array_map(fn (array $finding) => "{$finding['method']} {$finding['uri']} sent ".implode(', ', $finding['fields']).' to the browser: the page holds the stored value the model keeps hidden. Send only what the page shows, with an API resource or ->only([...]); DB::table() rows, makeVisible() and toArray() of the whole model bring hidden fields along.', $leaks['findings']);
+        $lines = [
+            ...array_map(fn (array $finding) => "{$finding['method']} {$finding['uri']} sent ".implode(', ', $finding['fields']).' to the browser: the page holds the stored value the model keeps hidden. Send only what the page shows, with an API resource or ->only([...]); DB::table() rows, makeVisible() and toArray() of the whole model bring hidden fields along.', $leaks['findings']),
+            ...array_map(fn (array $page) => "Note, not a failure: {$page['method']} {$page['uri']} sent ".implode(', ', $page['fields']).' to the browser, as it did before this change.', $leaks['existing']),
+        ];
 
         return $lines === [] ? "Read {$leaks['read']} pages opened with the person's own records; none held a hidden field." : implode("\n", $lines);
+    }
+
+    /**
+     * Where an app class is kept, or null for a class outside the app.
+     */
+    protected static function path(?string $class): ?string
+    {
+        return is_string($class) && str_starts_with($class, 'App\\') ? 'app/'.str_replace('\\', '/', substr($class, 4)).'.php' : null;
     }
 
     /**

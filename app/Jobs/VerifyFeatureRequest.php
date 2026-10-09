@@ -1620,7 +1620,7 @@ class VerifyFeatureRequest implements ShouldQueue
 
             $swapped = ['tried' => 0, 'refused' => 0, 'shared' => 0, 'findings' => [], 'untried' => 0];
             $lists = ['tried' => 0, 'findings' => [], 'broke' => [], 'untried' => 0];
-            $leaks = ['read' => 0, 'findings' => []];
+            $leaks = ['read' => 0, 'findings' => [], 'existing' => []];
 
             if ($swaps['probes'] !== [] && $found !== null) {
                 $driver->writeFile((string) $workspace->driver_id, $config['swaps']['test'], SwapProbes::test($swaps['probes'], $found, $config['swaps']['report'], $config['swaps']['rows']));
@@ -1634,8 +1634,9 @@ class VerifyFeatureRequest implements ShouldQueue
                 $durationMs += (int) $command->duration_ms;
                 $observed = SwapProbes::parse($read($config['swaps']['report']));
                 $swapped = SwapProbes::measure($swaps['probes'], $observed);
-                $leaks = SwapProbes::leaks($swaps['probes'], $observed);
-                $lists = SwapProbes::measureLists($swaps['probes'], $observed, $found, InputProbes::changed(array_map(fn (FeatureRequest $request) => $request->patch, $featureRequest->lineage())));
+                $changed = InputProbes::changed(array_map(fn (FeatureRequest $request) => $request->patch, $featureRequest->lineage()));
+                $leaks = SwapProbes::leaks($swaps['probes'], $observed, $found, $changed);
+                $lists = SwapProbes::measureLists($swaps['probes'], $observed, $found, $changed);
             }
 
             // Only lists the change loaded whole stop it.

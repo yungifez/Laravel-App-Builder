@@ -4733,10 +4733,12 @@ shorter than 8 characters, a null or a flag is left out, so an empty password
 field on a form or a "two factor enabled" flag never counts. The JSON or the
 Inertia props are searched for those values whatever their key, and other
 pages are searched as text. A page that holds one fails the check "Pages keep
-hidden fields to the server". The person's own name and email are not hidden,
-so they never count. On a copy of the fixture, a task page that sent
-`DB::table('users')` rows and an Inertia page that sent members with
-`makeVisible(['password'])` were both found, and 12 other pages were not.
+hidden fields to the server" when the change added a line to that page's
+action, made its controller, or added a line to the model whose field it sent.
+A page that sent it before the change is a note. The person's own name and
+email are not hidden, so they never count. On a copy of the fixture, a task
+page that sent `DB::table('users')` rows and an Inertia page that sent members
+with `makeVisible(['password'])` were both found, and 12 other pages were not.
 
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and

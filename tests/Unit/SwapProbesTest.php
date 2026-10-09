@@ -508,8 +508,8 @@ class SwapProbesTest extends TestCase
     public function test_a_page_that_held_a_hidden_fields_stored_value_is_a_finding_once_per_page(): void
     {
         $found = (array) SwapProbes::found($this->printed([
-            $this->route(['GET'], '/projects/{project}', [['project', 'Project']]),
-            $this->route(['GET'], '/projects/{project}/tasks', [['project', 'Project']], 'index'),
+            [...$this->route(['GET'], '/projects/{project}', [['project', 'Project']]), 'body' => ['return $project->load(\'owner\');']],
+            [...$this->route(['GET'], '/projects/{project}/tasks', [['project', 'Project']], 'index'), 'body' => ['return DB::table(\'users\')->get();']],
             $this->route(['GET'], '/notes/{note}', [['note', 'Note']], 'show'),
         ]));
         $probes = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'];
@@ -523,14 +523,21 @@ class SwapProbesTest extends TestCase
             $line('/projects/{project}/tasks all', ['User.remember_token']),
             $line('/projects/{project}/tasks list', ['User.password', 'User.remember_token']),
             $line('/notes/{note} all', []),
-        ])));
+        ])), $found, ['app/Http/Controllers/ProjectController.php' => ['new' => false, 'lines' => ['        return DB::table(\'users\')->get();']]]);
 
         $this->assertSame(3, $leaks['read']);
-        $this->assertSame([
-            ['method' => 'GET', 'uri' => '/projects/{project}', 'fields' => ['User.password']],
-            ['method' => 'GET', 'uri' => '/projects/{project}/tasks', 'fields' => ['User.remember_token', 'User.password']],
-        ], $leaks['findings']);
-        $this->assertStringContainsString('GET /projects/{project} sent User.password to the browser: the page holds the stored value the model keeps hidden. Send only what the page shows, with an API resource or ->only([...]);', SwapProbes::describeLeaks($leaks));
+        // The change wrote in the list's action; the page was like this before.
+        $this->assertSame([['method' => 'GET', 'uri' => '/projects/{project}/tasks', 'fields' => ['User.remember_token', 'User.password']]], $leaks['findings']);
+        $this->assertSame([['method' => 'GET', 'uri' => '/projects/{project}', 'fields' => ['User.password']]], $leaks['existing']);
+        $described = SwapProbes::describeLeaks($leaks);
+        $this->assertStringContainsString('GET /projects/{project}/tasks sent User.remember_token, User.password to the browser: the page holds the stored value the model keeps hidden. Send only what the page shows, with an API resource or ->only([...]);', $described);
+        $this->assertStringContainsString('Note, not a failure: GET /projects/{project} sent User.password to the browser, as it did before this change.', $described);
+
+        // A new controller, or a change to the model that hides the field, is the change's.
+        $observed = SwapProbes::parse($line('/projects/{project} all', ['User.password']));
+        $this->assertCount(1, SwapProbes::leaks($probes, $observed, $found, ['app/Http/Controllers/ProjectController.php' => ['new' => true, 'lines' => ['<?php']]])['findings']);
+        $this->assertCount(1, SwapProbes::leaks($probes, $observed, $found, ['app/Models/User.php' => ['new' => false, 'lines' => ['    protected $hidden = [];']]])['findings']);
+        $this->assertCount(1, SwapProbes::leaks($probes, $observed, $found, ['app/Models/Team.php' => ['new' => false, 'lines' => ['// Teams']]])['existing']);
     }
 
     public function test_a_page_with_no_hidden_field_passes_and_one_that_did_not_open_was_not_read(): void
@@ -543,12 +550,12 @@ class SwapProbesTest extends TestCase
         $sent = ['status' => 200, 'invalid' => false, 'writes' => 1];
 
         // Only a GET reads the page; one that did not open says null.
-        $this->assertSame(['read' => 0, 'findings' => []], SwapProbes::leaks($probes, SwapProbes::parse(implode("\n", [
+        $this->assertSame(['read' => 0, 'findings' => [], 'existing' => []], SwapProbes::leaks($probes, SwapProbes::parse(implode("\n", [
             json_encode(['id' => 0, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'leaked' => null]),
             json_encode(['id' => 1, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => null, 'policy' => null]),
-        ]))));
+        ])), $found, []));
 
-        $leaks = SwapProbes::leaks($probes, SwapProbes::parse(json_encode(['id' => 0, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'leaked' => []])));
+        $leaks = SwapProbes::leaks($probes, SwapProbes::parse(json_encode(['id' => 0, 'owners' => true, 'control' => $sent, 'swap' => $sent, 'guest' => 302, 'policy' => null, 'leaked' => []])), $found, []);
         $this->assertSame("Read 1 pages opened with the person's own records; none held a hidden field.", SwapProbes::describeLeaks($leaks));
 
         // The test reads what the models hide, and the secrets they may not.

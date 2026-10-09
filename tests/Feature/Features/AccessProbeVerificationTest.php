@@ -8,6 +8,7 @@ use App\Models\FeatureRequest;
 use App\Models\Run;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Fakes\FakeWorkspaceDriver;
 use Tests\TestCase;
@@ -501,6 +502,7 @@ class AccessProbeVerificationTest extends TestCase
         $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"swap":{"status":403,"invalid":false,"writes":0},"guest":302,"policy":false,"leaked":["User.password"]}'];
         $this->answer([]);
         $change = $this->projectChange();
+        $this->withBody('// Projects');
 
         app(RequestVerification::class)->handle($change);
 
@@ -508,6 +510,32 @@ class AccessProbeVerificationTest extends TestCase
         $this->assertSame('failed', $result['outcome']);
         $this->assertStringStartsWith('GET /projects/{project} sent User.password to the browser', $result['output']);
         $this->assertSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+    }
+
+    public function test_a_page_that_sent_a_hidden_field_before_the_change_is_a_note(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"swap":{"status":403,"invalid":false,"writes":0},"guest":302,"policy":false,"leaked":["User.password"]}'];
+        $this->answer([]);
+        // The change wrote elsewhere in the controller, not in the page's action.
+        $change = $this->projectChange();
+        $this->withBody('return DB::table(\'users\')->first();');
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Pages keep hidden fields to the server');
+        $this->assertSame('passed', $result['outcome']);
+        $this->assertSame('Note, not a failure: GET /projects/{project} sent User.password to the browser, as it did before this change.', $result['output']);
+        $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+    }
+
+    /**
+     * Give the projects page's action one line of its own.
+     */
+    protected function withBody(string $line): void
+    {
+        $data = (array) json_decode(Str::after($this->bindings, "\n"), true);
+        $data['routes'][0]['body'] = [$line];
+        $this->bindings = "Booting.\n".json_encode($data);
     }
 
     public function test_a_page_with_no_hidden_field_passes_and_one_not_read_adds_no_check(): void
