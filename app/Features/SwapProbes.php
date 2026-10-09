@@ -32,15 +32,24 @@ use Illuminate\Support\Str;
  * the extra fields did not save it too. A field the route's code names is
  * one the form asks for, such as an admin's own "change role" form.
  *
+ * A route that removes a record is also sent for a record of the person's
+ * own that other records hang off: one of each of its children, made by
+ * their factories with the key that links them. A bare record of theirs is
+ * removed first, to show the route works. When that worked and the one
+ * with children broke the page, the live app breaks on the first record
+ * that has any. A record kept with soft deletes never meets the database's
+ * links, and links the database does not enforce prove nothing, so
+ * neither is tried.
+ *
  * @phpstan-type Param array{name: string, model: string|null, field: string|null}
  * @phpstan-type Step array{relation: string, model: string, key: string|null}
  * @phpstan-type Owner array{path: list<Step>, end: string}
  * @phpstan-type Tenant array{relation: string, column: string|null, role: string|null}
- * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>}
+ * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
  * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>}
  * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null, raised: list<string>}
- * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null}
- * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>, status: int, raised: list<string>}
+ * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null}
+ * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>, status: int, raised: list<string>, children: list<string>, exception: string|null}
  * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
  */
 class SwapProbes
@@ -64,6 +73,11 @@ class SwapProbes
      * The person's own record, with extra fields the form does not ask for.
      */
     public const RAISE = 'raise';
+
+    /**
+     * The person's own record, removed while other records hang off it.
+     */
+    public const CHILDREN = 'children';
 
     /**
      * The fields that give a person more than the form offers: rights, a
@@ -252,7 +266,21 @@ foreach (app('router')->getRoutes() as $route) {
     ];
 }
 
-echo json_encode(['user' => class_basename($user), 'routes' => $routes, 'owners' => $owners, 'tenants' => $tenants]), "\n";
+// What hangs off each model: its hasMany and hasOne children, by the key
+// that links them. A morph link names no table of its own, so it is left out.
+$children = [];
+
+foreach ($models as $name => $class) {
+    foreach ([...$relations($class, Illuminate\Database\Eloquent\Relations\HasMany::class), ...$relations($class, Illuminate\Database\Eloquent\Relations\HasOne::class)] as $method => $relation) {
+        $related = get_class($relation->getRelated());
+
+        if (in_array($related, $models, true) && count($children[$name] ?? []) < 4) {
+            $children[$name][] = ['relation' => $method, 'model' => class_basename($related), 'key' => $relation->getForeignKeyName()];
+        }
+    }
+}
+
+echo json_encode(['user' => class_basename($user), 'routes' => $routes, 'owners' => $owners, 'tenants' => $tenants, 'children' => $children]), "\n";
 
 PHP;
     }
@@ -329,7 +357,17 @@ PHP;
             ];
         }
 
-        return ['user' => $data['user'], 'routes' => $routes, 'owners' => $owners, 'tenants' => $tenants];
+        $children = [];
+
+        foreach (is_array($data['children'] ?? null) ? $data['children'] : [] as $name => $links) {
+            foreach (is_array($links) && $word($name) ? $links : [] as $link) {
+                if (is_array($link) && $word($link['relation'] ?? null) && $word($link['model'] ?? null) && $word($link['key'] ?? null)) {
+                    $children[(string) $name][] = ['relation' => $link['relation'], 'model' => $link['model'], 'key' => $link['key']];
+                }
+            }
+        }
+
+        return ['user' => $data['user'], 'routes' => $routes, 'owners' => $owners, 'tenants' => $tenants, 'children' => $children];
     }
 
     /**
@@ -350,6 +388,7 @@ PHP;
         $probes = [];
         $fields = [];
         $raises = [];
+        $removals = [];
         $skipped = 0;
 
         foreach ($found['routes'] as $route) {
@@ -404,11 +443,15 @@ PHP;
 
                     $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $leaf, 'payload' => $payload, 'mode' => $mode, 'ability' => $ability, 'team' => $team, 'key' => null, 'target' => null, 'named' => []];
                 }
+
+                if ($method === 'DELETE' && ($found['children'][$leaf] ?? []) !== []) {
+                    $removals[] = ['method' => $method, 'uri' => $route['uri'], 'action' => 'delete', 'params' => $params, 'leaf' => $leaf, 'payload' => null, 'mode' => self::CHILDREN, 'ability' => null, 'team' => $team, 'key' => null, 'target' => null, 'named' => []];
+                }
             }
         }
 
         // After the addresses, so the limit keeps those first.
-        return ['probes' => array_slice([...$probes, ...$fields, ...$raises], 0, $limit), 'skipped' => $skipped];
+        return ['probes' => array_slice([...$probes, ...$fields, ...$raises, ...$removals], 0, $limit), 'skipped' => $skipped];
     }
 
     /**
@@ -536,6 +579,7 @@ PHP;
         }
 
         $leaves = array_values(array_unique(array_column($probes, 'leaf')));
+        $removed = array_values(array_unique(array_column(array_filter($probes, fn (array $probe) => $probe['mode'] === self::CHILDREN), 'leaf')));
 
         return strtr(<<<'PHP'
 <?php
@@ -570,6 +614,11 @@ class SwapProbeTest extends TestCase
 
     private const RAISED = __RAISED__;
 
+    /**
+     * What hangs off each record the removals use.
+     */
+    private const CHILDREN = __CHILDREN__;
+
     private int $writes = 0;
 
     private bool $listening = false;
@@ -586,7 +635,11 @@ __METHODS__
     private function probe(int $id, string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability, ?string $key, ?string $target, array $named): void
     {
         try {
-            $seen = $mode === 'raise' ? $this->raise($method, $uri, $params, (string) $payload, $named) : $this->exchange($method, $uri, $params, $payload, $mode, $ability, $key, $target);
+            $seen = match ($mode) {
+                'raise' => $this->raise($method, $uri, $params, (string) $payload, $named),
+                'children' => $this->removal($method, $uri, $params),
+                default => $this->exchange($method, $uri, $params, $payload, $mode, $ability, $key, $target),
+            };
         } catch (Throwable) {
             $seen = ['broke' => true];
         }
@@ -727,6 +780,76 @@ __METHODS__
     }
 
     /**
+     * Remove two of the person's own records: a bare one, then one with a
+     * child of each kind that hangs off it, linked by a key the database
+     * enforces. Only links the database checks are made: a link with no
+     * foreign key, or one SQLite does not enforce, proves nothing.
+     *
+     * @param  list<array{name: string, model: string, field: string|null}>  $params
+     * @return array<string, mixed>
+     */
+    private function removal(string $method, string $uri, array $params): array
+    {
+        $this->listen();
+        $leaf = $params[count($params) - 1]['model'];
+        [$bare, $me] = $this->world($leaf);
+        [$full, $them] = $this->world($leaf);
+
+        if ($me === null || $them === null) {
+            return ['owners' => false];
+        }
+
+        // Soft deletes keep the row, so the links never come into it.
+        if (method_exists($full[$leaf], 'trashed')) {
+            return ['owners' => true, 'none' => true];
+        }
+
+        $connection = $full[$leaf]->getConnection();
+
+        if ($connection->getDriverName() === 'sqlite' && (int) ($connection->selectOne('PRAGMA foreign_keys')->foreign_keys ?? 0) !== 1) {
+            return ['owners' => false];
+        }
+
+        $made = [];
+
+        foreach (self::CHILDREN[$leaf] ?? [] as $child) {
+            $class = 'App\\Models\\'.$child['model'];
+            // A link that removes or clears its children cannot block.
+            $linked = array_filter(Schema::getForeignKeys((new $class)->getTable()), fn (array $link) => $link['columns'] === [$child['key']] && $link['foreign_table'] === $full[$leaf]->getTable() && ! in_array(strtolower((string) $link['on_delete']), ['cascade', 'set null'], true));
+
+            if ($linked === [] || ! method_exists($class, 'factory')) {
+                continue;
+            }
+
+            try {
+                $class::factory()->create([$child['key'] => $full[$leaf]->getKey()]);
+                $made[] = $child['relation'];
+            } catch (Throwable) {
+            }
+        }
+
+        if ($made === []) {
+            return ['owners' => true, 'none' => true];
+        }
+
+        $sent = function (string $url) use ($method): array {
+            $this->writes = 0;
+            $response = $this->call($method, $url);
+            $seen = ['status' => $response->getStatusCode(), 'invalid' => $response->getStatusCode() === 422 || session()->has('errors'), 'writes' => $this->writes, 'landed' => null, 'raised' => []];
+            $this->flushSession();
+
+            return [$seen, $response->exception === null ? null : class_basename($response->exception)];
+        };
+
+        $this->actingAs($me);
+        [$control] = $sent($this->address($uri, $params, fn (int $index) => $bare));
+        $this->actingAs($them);
+        [$swap, $exception] = $sent($this->address($uri, $params, fn (int $index) => $full));
+
+        return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => null, 'policy' => null, 'children' => $made, 'exception' => $exception];
+    }
+
+    /**
      * A valid form for a record, from the app's factory: no keys, no
      * records, and none of the extra fields.
      *
@@ -843,6 +966,7 @@ PHP, [
             '__TENANTS__' => self::export($found['tenants']),
             '__USER__' => var_export($found['user'], true),
             '__RAISED__' => self::export(self::RAISED),
+            '__CHILDREN__' => self::export(array_intersect_key($found['children'], array_flip($removed))),
             '__METHODS__' => implode("\n\n", $methods),
             '__REPORT__' => var_export($report, true),
         ]);
@@ -881,6 +1005,8 @@ PHP, [
                     'swap' => $sent($data['swap'] ?? null),
                     'guest' => is_int($data['guest'] ?? null) ? $data['guest'] : null,
                     'policy' => is_bool($data['policy'] ?? null) ? $data['policy'] : null,
+                    'children' => array_values(array_filter(is_array($data['children'] ?? null) ? $data['children'] : [], fn (mixed $name) => is_string($name) && preg_match('/^\w+$/', $name) === 1)),
+                    'exception' => is_string($data['exception'] ?? null) && preg_match('/^\w+$/', $data['exception']) === 1 ? $data['exception'] : null,
                 ];
             }
         }
@@ -926,7 +1052,7 @@ PHP, [
             // Only a refusal of the swap can be judged from it then.
             $taken = ! $reading && $control !== null && $swap !== null && $control['status'] < 400 && ! $control['invalid'] && in_array($swap['status'], [403, 404], true);
 
-            if ($seen === null || $control === null || $swap === null || (! $worked($control) && ! $taken) || $swap['status'] >= 500) {
+            if ($seen === null || $control === null || $swap === null || (! $worked($control) && ! $taken) || ($swap['status'] >= 500 && $probe['mode'] !== self::CHILDREN)) {
                 $untried++;
 
                 continue;
@@ -947,9 +1073,11 @@ PHP, [
             if (match ($probe['mode']) {
                 self::FIELD => $swap['status'] < 400 && ! $swap['invalid'] && ($swap['landed'] ?? 0) > 0,
                 self::RAISE => $swap['status'] < 400 && ! $swap['invalid'] && $raised !== [],
+                // Removed, or turned down with a message, are both answers.
+                self::CHILDREN => $swap['status'] >= 500,
                 default => $worked($swap),
             }) {
-                $findings[] = [...$probe, 'status' => $swap['status'], 'raised' => $raised];
+                $findings[] = [...$probe, 'status' => $swap['status'], 'raised' => $raised, 'children' => $seen['children'], 'exception' => $seen['exception']];
             } else {
                 $refused++;
             }
@@ -977,6 +1105,12 @@ PHP, [
 
             if ($finding['mode'] === self::RAISE) {
                 $lines[] = self::raised($finding);
+
+                continue;
+            }
+
+            if ($finding['mode'] === self::CHILDREN) {
+                $lines[] = self::removed($finding);
 
                 continue;
             }
@@ -1064,5 +1198,19 @@ PHP, [
         };
 
         return "A signed-in person could {$gives} {$whose} by adding {$fields} to the form: {$finding['method']} {$finding['uri']} saved it. Save only the validated fields (\$request->validated()), and keep {$fields} out of the model's fillable attributes.";
+    }
+
+    /**
+     * Say what broke when a record with children was removed.
+     *
+     * @param  Finding  $finding
+     */
+    protected static function removed(array $finding): string
+    {
+        $noun = AccessProbes::words($finding['leaf']);
+        $children = implode(' or ', array_map(fn (string $relation) => AccessProbes::words(Str::singular($relation)), $finding['children']));
+        $broke = $finding['exception'] === null ? '' : " ({$finding['exception']})";
+
+        return "Removing a {$noun} that has a {$children} broke the page{$broke}: {$finding['method']} {$finding['uri']} answered {$finding['status']}, while one without them was removed. Decide what happens to them: remove them with it (cascadeOnDelete() on their foreign key, or delete them first in the same transaction), or turn the removal down with a message.";
     }
 }

@@ -4692,6 +4692,19 @@ last, within the same limit. On a copy of the fixture with `is_admin` made
 fillable and the profile form saving `$request->all()`, it was found. The
 plain starter kits gave no finding.
 
+A route that removes a record is also sent a record that other records hang
+off. For each `hasMany` and `hasOne` child whose foreign key the database
+enforces, and does not cascade or set to null, the child's factory makes one
+linked to the record. A bare record is removed first, to show that the route
+works. It is a finding only when that worked and the removal with children
+broke the page. A removal that is turned down with a message, or that removes
+the children too, is an answer. A model with soft deletes never meets the
+foreign keys, so it is not tried. On SQLite with foreign keys off
+(`DB_FOREIGN_KEYS=false`) a removal proves nothing, so it cannot be judged. On
+a copy of the fixture whose tasks link to a project with no cascade, removing
+a project was found; a team removal that refused while it had projects was
+not.
+
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
 the like), its own tests run again with the clock stopped. A PHPUnit extension,

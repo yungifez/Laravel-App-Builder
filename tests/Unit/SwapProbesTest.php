@@ -14,8 +14,9 @@ class SwapProbesTest extends TestCase
      * whose notes belong to a person, and whose tags belong to nobody.
      *
      * @param  list<array<string, mixed>>  $routes
+     * @param  array<string, list<array<string, string>>>  $children
      */
-    protected function printed(array $routes): string
+    protected function printed(array $routes, array $children = []): string
     {
         return "Booting.\n".json_encode([
             'user' => 'User',
@@ -28,6 +29,7 @@ class SwapProbesTest extends TestCase
                 'User' => [['path' => [], 'end' => 'user']],
             ],
             'tenants' => ['Team' => ['relation' => 'members', 'column' => 'role', 'role' => 'owner']],
+            'children' => $children,
         ]);
     }
 
@@ -339,6 +341,71 @@ class SwapProbesTest extends TestCase
             // Wrote nothing as it is, or was turned down: the saved field proves nothing.
             json_encode(['id' => 0, 'owners' => true, 'control' => $sent(302, 0), 'swap' => $sent(302, 1, ['role'])]),
             json_encode(['id' => 1, 'owners' => true, 'control' => $sent(302, 1, [], true), 'swap' => $sent(302, 1, ['credits'])]),
+        ])));
+
+        $this->assertSame([0, 2, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
+    }
+
+    public function test_each_removal_of_a_record_with_children_is_sent_with_one_of_each(): void
+    {
+        $children = [
+            'Project' => [['relation' => 'tasks', 'model' => 'Task', 'key' => 'project_id'], ['relation' => 'brief', 'model' => 'Brief', 'key' => 'project_id']],
+            // A name that is not a word is not read.
+            'Note' => [['relation' => 'bad name', 'model' => 'Pin', 'key' => 'note_id']],
+        ];
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['DELETE'], '/projects/{project}', [['project', 'Project']], 'destroy'),
+            // A record nothing hangs off, and a route that does not remove.
+            $this->route(['DELETE'], '/projects/{project}/tasks/{task}', [['project', 'Project'], ['task', 'Task']], 'destroy'),
+            $this->route(['PUT'], '/projects/{project}', [['project', 'Project']], 'update'),
+        ], $children));
+        $removals = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::CHILDREN));
+
+        $this->assertSame(['Project' => $children['Project']], $found['children']);
+        $this->assertSame(['DELETE /projects/{project} Project'], array_map(fn (array $probe) => "{$probe['method']} {$probe['uri']} {$probe['leaf']}", $removals));
+        $test = SwapProbes::test($removals, $found, 'swaps.jsonl');
+        $this->assertStringContainsString("'children'", $test);
+        $this->assertStringContainsString("'relation' => 'tasks', 'model' => 'Task', 'key' => 'project_id'", $test);
+        $this->assertStringContainsString("method_exists(\$full[\$leaf], 'trashed')", $test, 'soft deletes never meet the links');
+        $this->assertStringContainsString('PRAGMA foreign_keys', $test, 'links SQLite does not enforce prove nothing');
+    }
+
+    public function test_a_removal_that_broke_with_children_is_a_finding_and_one_removed_or_turned_down_is_not(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['DELETE'], '/projects/{project}', [['project', 'Project']], 'destroy'),
+        ], ['Project' => [['relation' => 'tasks', 'model' => 'Task', 'key' => 'project_id']]]));
+        $probe = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::CHILDREN))[0];
+        $sent = fn (int $status, int $writes = 1) => ['status' => $status, 'invalid' => false, 'writes' => $writes, 'landed' => null, 'raised' => []];
+        $line = fn (int $id, array $swap, ?string $exception = null) => json_encode(['id' => $id, 'owners' => true, 'control' => $sent(302), 'swap' => $swap, 'guest' => null, 'policy' => null, 'children' => ['tasks'], 'exception' => $exception]);
+
+        $measured = SwapProbes::measure([$probe, $probe, $probe], SwapProbes::parse(implode("\n", [
+            $line(0, $sent(500, 0), 'QueryException'),
+            // Removed with its tasks, or turned down with a message.
+            $line(1, $sent(302, 2)),
+            $line(2, $sent(409, 0)),
+        ])));
+
+        $this->assertSame([3, 2, 0], [$measured['tried'], $measured['refused'], $measured['untried']]);
+        $this->assertSame([['DELETE', ['tasks'], 'QueryException']], array_map(fn (array $finding) => [$finding['method'], $finding['children'], $finding['exception']], $measured['findings']));
+        $this->assertStringContainsString('Removing a project that has a task broke the page (QueryException): DELETE /projects/{project} answered 500, while one without them was removed.', SwapProbes::describe($measured, 0));
+    }
+
+    public function test_a_removal_proves_nothing_when_the_bare_one_failed_or_the_links_are_not_enforced(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['DELETE'], '/projects/{project}', [['project', 'Project']], 'destroy'),
+        ], ['Project' => [['relation' => 'tasks', 'model' => 'Task', 'key' => 'project_id']]]));
+        $probe = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::CHILDREN))[0];
+        $sent = fn (int $status, int $writes = 1) => ['status' => $status, 'invalid' => false, 'writes' => $writes, 'landed' => null, 'raised' => []];
+
+        $measured = SwapProbes::measure([$probe, $probe, $probe], SwapProbes::parse(implode("\n", [
+            // The bare one broke too: the route breaks for everyone.
+            json_encode(['id' => 0, 'owners' => true, 'control' => $sent(500, 0), 'swap' => $sent(500, 0)]),
+            // SQLite with its links off, or no record could be made.
+            json_encode(['id' => 1, 'owners' => false]),
+            // Soft deletes, or no child had a link the database checks.
+            json_encode(['id' => 2, 'owners' => true, 'none' => true]),
         ])));
 
         $this->assertSame([0, 2, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
