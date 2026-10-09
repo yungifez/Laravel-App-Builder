@@ -73,7 +73,11 @@ class SendPreviewTwice
             curl_multi_add_handle($multi, $handles[$i]);
         }
         do { $status = curl_multi_exec($multi, $running); if ($running) { curl_multi_select($multi); } } while ($running && $status === CURLM_OK);
-        $statuses = array_map(fn ($handle) => (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE), $handles);
+        // A send the app answers by asking the person to sign in was turned
+        // away, though the answer is a redirect.
+        $login = Illuminate\Support\Facades\Route::has('login') ? route('login', [], false) : null;
+        $statuses = array_map(fn ($handle) => ($code = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE)) >= 300 && $code < 400 && $login !== null
+            && parse_url((string) curl_getinfo($handle, CURLINFO_REDIRECT_URL), PHP_URL_PATH) === $login ? 401 : $code, $handles);
         // The recorder writes each trace once its answer has gone.
         $sends = [];
         for ($wait = 0; $wait < 40 && count($sends) < 2; $wait++) {
