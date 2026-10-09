@@ -33,6 +33,17 @@ class AgentInstructionsTest extends TestCase
         $this->assertStringContainsString('goes against a point under "Engineering direction"', $instructions);
     }
 
+    public function test_the_planner_gives_roles_with_spatie_unless_the_app_has_its_own_way()
+    {
+        $instructions = (string) (new FeaturePlanner)->instructions();
+
+        // An app with no roles gets the package the role probes understand, teams included.
+        $this->assertStringContainsString('has no way to do that yet, plan it with spatie/laravel-permission', $instructions);
+        $this->assertStringContainsString('When roles belong to a team, turn on its teams option.', $instructions);
+        // An app that already gives roles keeps its own way.
+        $this->assertStringContainsString('When the app already gives roles another way, keep that way.', $instructions);
+    }
+
     /**
      * @return array<string, array{class-string}>
      */
