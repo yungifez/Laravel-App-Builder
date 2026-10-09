@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router, useHttp } from '@inertiajs/vue3';
-import { LoaderCircle, UserRound, UserRoundPlus } from '@lucide/vue';
+import { LoaderCircle, LogOut, UserRound, UserRoundPlus } from '@lucide/vue';
 import { ref } from 'vue';
 import { toast } from 'vue-sonner';
 import PreviewPersonController from '@/actions/App/Http/Controllers/PreviewPersonController';
@@ -65,6 +65,36 @@ async function signInAs(person: PreviewPerson): Promise<void> {
             errors.app ??
                 errors.person ??
                 'Your app could not sign them in. This is our fault. Try again.',
+        );
+    } finally {
+        signingIn.value = null;
+    }
+}
+
+// The page as a visitor sees it, with nobody signed in: the quickest way
+// to see what someone outside the app can open.
+const visit = useHttp({ to: '/' });
+
+async function asVisitor(): Promise<void> {
+    visit.to = props.path;
+    signingIn.value = 'visitor';
+
+    try {
+        const { url } = (await visit.delete(
+            PreviewSignInController.destroy.url(props.projectId, {
+                query: { copy: props.copy },
+            }),
+        )) as { url: string };
+
+        emit('open', url);
+        toast('You are a visitor now, signed out');
+    } catch {
+        const errors = visit.errors as Record<string, string | undefined>;
+
+        toast.error(
+            errors.app ??
+                errors.person ??
+                'Your app could not be opened signed out. This is our fault. Try again.',
         );
     } finally {
         signingIn.value = null;
@@ -155,6 +185,14 @@ async function makePerson(): Promise<void> {
             </template>
             <template v-if="people !== undefined">
                 <DropdownMenuSeparator />
+                <DropdownMenuItem
+                    :disabled="signingIn !== null"
+                    data-test="sign-in-as-visitor"
+                    @select="asVisitor"
+                >
+                    <LogOut class="size-4" />
+                    A visitor, signed out
+                </DropdownMenuItem>
                 <DropdownMenuItem
                     :disabled="signingIn !== null"
                     data-test="sign-in-as-new"

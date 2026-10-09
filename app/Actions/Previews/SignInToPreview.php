@@ -32,6 +32,17 @@ class SignInToPreview
         echo json_encode(['name' => $name, 'value' => $value, 'minutes' => (int) config('session.lifetime')]);
         PHP;
 
+    /**
+     * Print the name of the app's session cookie, so a visitor's view can
+     * drop it.
+     */
+    protected const COOKIE_NAME = <<<'PHP'
+        require 'vendor/autoload.php';
+        $app = require 'bootstrap/app.php';
+        $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+        echo json_encode(['name' => config('session.cookie')]);
+        PHP;
+
     public function __construct(private ReadPreviewLog $readPreviewLog, private RunPreviewCommand $runPreviewCommand, private GrantPreviewAccess $grantPreviewAccess) {}
 
     /**
@@ -46,6 +57,33 @@ class SignInToPreview
             ?? throw ValidationException::withMessages(['person' => __('Your app is not running. Start it and try again.')]);
 
         return $this->grantPreviewAccess->handle($preview, $path, $this->cookie($preview, $person));
+    }
+
+    /**
+     * Open the app on show signed out, on the page given, as a visitor sees
+     * it. The app's session cookie comes back already expired, so the
+     * browser drops it; whoever was signed in stays signed in elsewhere.
+     *
+     * @throws ValidationException when the app does not run or its cookie cannot be read.
+     */
+    public function visitor(Project $project, ?string $path = null): string
+    {
+        $preview = $this->readPreviewLog->preview($project)
+            ?? throw ValidationException::withMessages(['person' => __('Your app is not running. Start it and try again.')]);
+
+        $output = $this->runPreviewCommand->handle(
+            $preview,
+            ['php', '-r', self::COOKIE_NAME],
+            60,
+            __('Your app could not be opened signed out. This is our fault. Try again.'),
+        );
+        $name = json_decode((string) collect(explode("\n", $output))->last(fn (string $line) => str_starts_with(trim($line), '{')), true)['name'] ?? null;
+
+        if (! is_string($name) || $name === '') {
+            throw ValidationException::withMessages(['person' => __('Your app could not be opened signed out. This is our fault. Try again.')]);
+        }
+
+        return $this->grantPreviewAccess->handle($preview, $path, ['name' => $name, 'value' => '', 'minutes' => -60]);
     }
 
     /**

@@ -95,6 +95,61 @@ class PreviewSignInTest extends TestCase
         $this->assertNull(collect($this->get((string) $again)->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === 'acme-session'));
     }
 
+    public function test_the_owner_opens_the_page_as_a_signed_out_visitor()
+    {
+        $this->driver->onExec = fn (string $workspaceId, array $command) => new CommandResult(
+            exitCode: 0,
+            output: "Some notice\n".json_encode(['name' => 'acme-session']),
+            errorOutput: '',
+            durationMs: 5,
+        );
+
+        $url = $this->actingAs($this->owner)
+            ->deleteJson(route('preview-sign-ins.destroy', $this->project), ['to' => '/teams/3'])
+            ->assertOk()
+            ->json('url');
+
+        // Only the cookie's name is read from the app; nobody is signed in or out there.
+        $this->assertSame(['php', '-r'], array_slice($this->driver->executed[0]['command'], 0, 2));
+        $this->assertCount(3, $this->driver->executed[0]['command']);
+
+        $exchange = $this->get($url);
+        $exchange->assertRedirect('/teams/3');
+        $cookie = collect($exchange->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === 'acme-session');
+        $this->assertNotNull($cookie);
+        // Sent back already expired, so the browser drops the app's session.
+        $this->assertTrue($cookie->isCleared());
+        $this->assertTrue($cookie->isPartitioned());
+    }
+
+    public function test_an_app_whose_cookie_cannot_be_read_is_not_opened_as_a_visitor()
+    {
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 0, output: 'Class "App\\Missing" not found', errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->deleteJson(route('preview-sign-ins.destroy', $this->project))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['person' => 'This is our fault']);
+
+        $this->preview->update(['status' => 'stopped']);
+        $this->actingAs($this->owner)
+            ->deleteJson(route('preview-sign-ins.destroy', $this->project))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['person' => 'Your app is not running.']);
+    }
+
+    public function test_only_people_who_can_change_the_app_open_it_as_a_visitor_and_only_its_own_pages()
+    {
+        $this->actingAs(User::factory()->create())
+            ->deleteJson(route('preview-sign-ins.destroy', $this->project))
+            ->assertForbidden();
+
+        $this->actingAs($this->owner)
+            ->deleteJson(route('preview-sign-ins.destroy', $this->project), ['to' => '//evil.test/'])
+            ->assertJsonValidationErrors('to');
+        $this->assertSame([], $this->driver->executed);
+    }
+
     public function test_a_person_the_app_cannot_sign_in_is_explained()
     {
         $this->driver->onExec = fn () => new CommandResult(exitCode: 4, output: '', errorOutput: '', durationMs: 5);

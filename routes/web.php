@@ -172,6 +172,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('projects/{project}/deployment-checks', [DeploymentCheckController::class, 'store'])->name('deployment-checks.store');
     Route::post('projects/{project}/preview-problem-fixes', [PreviewProblemFixController::class, 'store'])->name('preview-problem-fixes.store');
     Route::post('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'store'])->name('preview-sign-ins.store');
+    Route::delete('projects/{project}/preview-sign-ins', [PreviewSignInController::class, 'destroy'])->name('preview-sign-ins.destroy');
     Route::post('projects/{project}/preview-people', [PreviewPersonController::class, 'store'])->name('preview-people.store');
     Route::post('projects/{project}/own-tool', [ProjectOwnToolController::class, 'store'])->name('projects.own-tool.store');
     Route::delete('projects/{project}/own-tool', [ProjectOwnToolController::class, 'destroy'])->name('projects.own-tool.destroy');
