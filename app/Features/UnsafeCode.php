@@ -10,10 +10,9 @@ use Illuminate\Support\Str;
  * text shown on a page without escaping it, database queries built from
  * values, records open to every field of a form, secret settings or keys
  * kept in the app's history, secret settings sent to the browser, and
- * redirects or files whose address comes from the request. Only added
- * lines count, so code the app
- * already had (a starter kit's own QR code, say) is never held against a
- * change.
+ * redirects, files, shell commands or outside addresses taken from the
+ * request. Only added lines count, so code the app already had (a starter
+ * kit's own QR code, say) is never held against a change.
  *
  * A line is let through when it, or the line above it, carries a comment
  * that says why it is safe: a reason a person can read and question. A
@@ -121,6 +120,30 @@ class UnsafeCode
             'pattern' => '/(?J)\b(?:Storage::(?:disk\([^)]*\)->)?(?:download|get|response|path|readStream|delete|url)|response\(\)->(?:download|file)|file_get_contents|readfile|fopen|unlink|File::(?:get|delete))\(\s*(?:(?:storage|public|base|resource)_path\(\s*)?(?:[^;()]*?\.\s*|"[^"]*?\{?)?'.self::FROM_REQUEST.'/',
             'problem' => 'reads or removes a file whose path comes from the request, so people could reach any file, such as .env',
             'fix' => 'Find the file through a record the person may reach (its stored path), wrap the name in basename(), or allow only known names with an in: rule.',
+            'always' => true,
+            'choices' => true,
+        ],
+        // A shell command with a value from the request in its text, or a
+        // program named by the request. The arguments of a command given as
+        // an array run without a shell, and a value in escapeshellarg()
+        // stays one argument, so neither is matched.
+        'command_from_request' => [
+            'files' => '/^(?!tests\/).*\.php$/',
+            'pattern' => '/(?J)(?:(?<![\w$>:\\\\])(?:shell_exec|exec|system|passthru|proc_open|popen)|Process::(?:[^;]*?->)?(?:run|start|command))\(\s*(?:\[\s*|[^;\[(]*?\.\s*|"[^"]*?\{?)?'.self::FROM_REQUEST.'/',
+            'problem' => 'runs a shell command with a value from the request in it, so people could run any command on the server',
+            'fix' => 'Give Process::run() the command as an array of arguments, wrap the value in escapeshellarg(), or allow only known values with an in: rule.',
+            'always' => true,
+            'choices' => true,
+        ],
+        // An outside address the server calls, taken from the request. An
+        // address that starts with a fixed host only reaches that host, so
+        // it is never matched. Calling the person's own address can be the
+        // feature (a "test my webhook" button), so the fix says how.
+        'url_from_request' => [
+            'files' => '/^(?!tests\/).*\.php$/',
+            'pattern' => '/(?J)\b(?:Http::(?:[^;]*?->)?(?:get|post|put|patch|delete|head)|curl_init)\(\s*(?:[\'"](?:https?:)?\/\/[\'"]\s*\.\s*|"(?:https?:)?\/\/\{?)?'.self::FROM_REQUEST.'/',
+            'problem' => 'calls an address taken from the request, so people could make the server reach its own network or cloud settings',
+            'fix' => 'Call a fixed host and put only the path or query from the request after it, or allow only known addresses with an in: rule. When calling the person\'s own address is the feature, allow only https and refuse private and loopback addresses after resolving the host.',
             'always' => true,
             'choices' => true,
         ],

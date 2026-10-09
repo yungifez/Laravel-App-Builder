@@ -2111,6 +2111,18 @@ fixed path such as `'/search?q='` (not just `https://` or `//`), a name wrapped 
 the change's own lines allow only known values for, with an `in:` rule or
 `Rule::in()`.
 
+The same holds for a shell command or an outside address taken from the
+request. A command with such a value in its text (`exec()`, `shell_exec()`,
+`Process::run()` and the like) lets people run any command on the server. It
+passes when it is an array of arguments, which runs without a shell, unless the
+program itself comes from the request. A value in `escapeshellarg()` also
+passes. An address the server calls (`Http::get()` and the other verbs,
+`curl_init()`) lets people reach the server's own network or cloud settings. It
+passes when it starts with a fixed host. Calling the person's own address can
+be the feature, such as a "test my webhook" button, so it is still found, and
+the fix tells the coder to allow only https and refuse private and loopback
+addresses after resolving the host.
+
 **Shortcuts in PHP code are found by an analyser, on added lines only.**
 When a change touches the app's PHP code (not its tests), verification runs
 the Sloppy analyser (`heyosseus/sloppy`, a pinned PHAR in the box image,

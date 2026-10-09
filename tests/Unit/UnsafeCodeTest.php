@@ -227,4 +227,63 @@ class UnsafeCodeTest extends TestCase
             $this->adding('tests/Feature/DownloadTest.php', ['        $this->get(\'/go?next=\'.urlencode(\'https://x.test\'));', '        Storage::download($request->path);']),
         ])));
     }
+
+    public function test_a_shell_command_or_an_outside_address_from_the_request_is_found_whatever_its_comment_says()
+    {
+        $found = UnsafeCode::found(implode("\n", [
+            $this->adding('app/Http/Controllers/PingController.php', [
+                '        // Safe: only admins reach this page.',
+                '        $output = shell_exec(\'ping -c 1 \'.$request->input(\'host\'));',
+            ]),
+            $this->adding('app/Actions/Convert.php', ['        Process::run("convert {$request->file_name} out.pdf");']),
+            $this->adding('app/Actions/RunTool.php', ['        Process::timeout(30)->run([$request->tool, \'--version\']);']),
+            $this->adding('app/Actions/CheckSite.php', ['        $response = Http::timeout(5)->get($request->input(\'url\'));']),
+            $this->adding('app/Actions/Fetch.php', ['        $handle = curl_init("https://{$request->host}/status");']),
+        ]));
+
+        $this->assertSame([
+            ['rule' => 'command_from_request', 'path' => 'app/Http/Controllers/PingController.php', 'line' => 4],
+            ['rule' => 'command_from_request', 'path' => 'app/Actions/Convert.php', 'line' => 3],
+            ['rule' => 'command_from_request', 'path' => 'app/Actions/RunTool.php', 'line' => 3],
+            ['rule' => 'url_from_request', 'path' => 'app/Actions/CheckSite.php', 'line' => 3],
+            ['rule' => 'url_from_request', 'path' => 'app/Actions/Fetch.php', 'line' => 3],
+        ], $found);
+        $this->assertStringEndsWith('When calling the person\'s own address is the feature, allow only https and refuse private and loopback addresses after resolving the host.', UnsafeCode::finding($found[3]));
+    }
+
+    public function test_arguments_without_a_shell_an_escaped_value_a_fixed_host_and_allowed_values_are_not_found()
+    {
+        $this->assertSame([], UnsafeCode::found(implode("\n", [
+            $this->adding('app/Actions/Convert.php', [
+                '        Process::run([\'convert\', $request->file_name, \'out.pdf\']);',
+                '        Process::run(\'git log \'.escapeshellarg($request->input(\'branch\')));',
+                '        $pdo->exec($request->sql_note);',
+                '        Process::run(\'npm run \'.$request->input(\'script\'));',
+            ]),
+            $this->adding('app/Actions/Fetch.php', [
+                '        Http::get(\'https://api.github.com/repos/\'.$request->repo);',
+                '        Http::withToken($request->bearerToken())->get(\'https://api.example.com/me\');',
+                '        Http::post($request->validated(\'hook\'));',
+            ]),
+            $this->adding('app/Http/Requests/RunRequest.php', [
+                '            \'script\' => [\'required\', Rule::in([\'build\', \'test\'])],',
+                '            \'hook\' => \'required|in:https://hooks.example.com/a\',',
+            ]),
+        ])));
+    }
+
+    public function test_a_command_or_outside_address_the_app_had_or_in_a_test_is_not_found()
+    {
+        $this->assertSame([], UnsafeCode::found(implode("\n", [
+            'diff --git a/app/Actions/Fetch.php b/app/Actions/Fetch.php',
+            '--- a/app/Actions/Fetch.php',
+            '+++ b/app/Actions/Fetch.php',
+            '@@ -1,3 +1,2 @@',
+            ' first',
+            '-        Http::get($request->url);',
+            '-        exec(\'ls \'.$request->dir);',
+            '+        Http::get(\'https://api.example.com/status\');',
+            $this->adding('tests/Feature/FetchTest.php', ['        Http::get($request->url);', '        exec(\'ls \'.$request->dir);']),
+        ])));
+    }
 }
