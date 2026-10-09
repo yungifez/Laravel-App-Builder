@@ -94,7 +94,7 @@ class HealthCheck extends Model
         }
 
         if ($unread) {
-            $findings[] = ['title' => __('This is our fault: I could not look up known problems in your app\'s packages this time.'), 'details' => []];
+            $findings[] = ['title' => __('This is our fault: I could not look up known problems in your app\'s packages. Check your app again in a while.'), 'details' => []];
         }
 
         return $findings;

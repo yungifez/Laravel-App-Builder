@@ -134,7 +134,7 @@ class QuickHealthCheckTest extends TestCase
         $health = $this->check();
 
         $this->assertSame(HealthCheckStatus::Failed, HealthCheck::sole()->status);
-        $this->assertSame('This is our fault: I could not look up known problems in your app\'s packages this time.', $health['findings'][0]['title']);
+        $this->assertSame('This is our fault: I could not look up known problems in your app\'s packages. Check your app again in a while.', $health['findings'][0]['title']);
     }
 
     public function test_a_check_that_stops_on_our_side_says_it_is_our_fault()
