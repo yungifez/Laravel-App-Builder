@@ -37,7 +37,7 @@ class ChangeThemeColor
         $revision = $this->formatted->latest($project, $revision);
 
         if (! $preview->editable) {
-            throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);
+            throw ValidationException::withMessages(['edit' => __('I can\'t change this version of your app here. Ask me to change it instead.')]);
         }
 
         // An edit on the app waits in a draft until the owner keeps it.

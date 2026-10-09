@@ -42,7 +42,7 @@ class ChangeVisualMotion
         $revision = $this->formatted->latest($project, $revision);
 
         if (! $preview->editable) {
-            throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);
+            throw ValidationException::withMessages(['edit' => __('I can\'t change this version of your app here. Ask me to change it instead.')]);
         }
 
         $this->designDrafts->open($preview, $owner);
@@ -73,7 +73,7 @@ class ChangeVisualMotion
         try {
             $after = MotionClasses::write($before, $motion);
         } catch (InvalidArgumentException) {
-            throw ValidationException::withMessages(['edit' => __('That value cannot be used here.')]);
+            throw ValidationException::withMessages(['edit' => __('That value does not fit here. Pick another one.')]);
         }
 
         if (TailwindClasses::same($before, $after)) {

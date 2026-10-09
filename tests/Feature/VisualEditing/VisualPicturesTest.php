@@ -3,15 +3,18 @@
 namespace Tests\Feature\VisualEditing;
 
 use App\Actions\Projects\CreateProject;
+use App\Actions\VisualEditing\ChangeVisualPicture;
 use App\Models\Preview;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Projects\ProjectRepository;
 use App\VisualEditing\DesignDrafts;
+use App\VisualEditing\SourceLocation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\FakesWorkspaces;
 use Tests\Concerns\PreparesRuns;
@@ -112,6 +115,21 @@ class VisualPicturesTest extends TestCase
 
         $this->assertSame(self::TEAM, $this->file());
         $this->assertSame(0, $this->project->visualEdits()->count());
+    }
+
+    public function test_a_version_that_cannot_be_changed_here_points_to_asking_instead()
+    {
+        // The request turns such a version away first; this is the last guard.
+        $this->preview->update(['editable' => false]);
+
+        try {
+            app(ChangeVisualPicture::class)->handle($this->preview, $this->owner, SourceLocation::parse(self::FILE.':3:9'), '/images/ada.jpg', UploadedFile::fake()->image('beach.png'), $this->preview->revision);
+            $this->fail('The picture was changed.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(['I can\'t change this version of your app here. Ask me to change it instead.'], $exception->errors()['edit']);
+        }
+
+        $this->assertSame(self::TEAM, $this->file());
     }
 
     public function test_a_picture_changed_since_is_not_overwritten()

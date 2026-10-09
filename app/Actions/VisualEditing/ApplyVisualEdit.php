@@ -50,7 +50,7 @@ class ApplyVisualEdit
         $revision = $this->formatted->latest($project, $revision);
 
         if (! $preview->editable) {
-            throw ValidationException::withMessages(['edit' => __('This preview cannot be edited.')]);
+            throw ValidationException::withMessages(['edit' => __('I can\'t change this version of your app here. Ask me to change it instead.')]);
         }
 
         // An edit on the app waits in a draft until the owner keeps it.
@@ -80,7 +80,7 @@ class ApplyVisualEdit
         try {
             $after = TailwindClasses::write($before, $device, $changes, $this->readAppColors->names($project), $this->readAppTheme->handle($project));
         } catch (InvalidArgumentException) {
-            throw ValidationException::withMessages(['edit' => __('That value cannot be used here.')]);
+            throw ValidationException::withMessages(['edit' => __('That value does not fit here. Pick another one.')]);
         }
 
         if ($after === $before) {
