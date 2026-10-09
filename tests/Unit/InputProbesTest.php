@@ -455,4 +455,76 @@ class InputProbesTest extends TestCase
         $this->assertSame([self::SOURCE => ['new' => false, 'lines' => ["'title' => ['required', 'max:20'],"]]], InputProbes::changed([null, $edited]));
         $this->assertSame([], InputProbes::changed([null]));
     }
+
+    public function test_each_file_field_is_sent_a_web_page_and_an_image_that_runs_a_script(): void
+    {
+        $planned = InputProbes::plan($this->routes(), $this->rules(['notes' => ['nullable', 'file'], 'photo' => ['nullable', 'image']]), 80);
+        $probes = $this->bySays($planned);
+
+        foreach (['notes', 'photo'] as $field) {
+            $this->assertSame(['store', 'html', 'text/html'], [$probes["{$field} as a web page (.html)"]['expect'], $probes["{$field} as a web page (.html)"]['payload'][$field]['@file'], $probes["{$field} as a web page (.html)"]['payload'][$field]['mime']]);
+            $this->assertStringContainsString('<script>', $probes["{$field} as an image that runs a script (.svg)"]['payload'][$field]['content']);
+        }
+
+        $this->assertArrayNotHasKey('title as a web page (.html)', $probes, 'only file fields get files');
+
+        $test = InputProbes::test($this->routes(), $planned, 'inputs.jsonl');
+        $this->assertStringContainsString("UploadedFile::fake()->createWithContent('probe.'.\$value['@file'], \$value['content'])", $test);
+        $this->assertStringContainsString("Storage::disk('public')->path('')", $test);
+        $this->assertNotFalse(token_get_all($test, TOKEN_PARSE));
+    }
+
+    /**
+     * Measure a form with one file field: the whole form came back as
+     * given, and each page file as its line says.
+     *
+     * @param  array<string, array<string, mixed>>  $answers  By what the probe says
+     * @param  array<string, array{new: bool, lines: list<string>}>  $changed
+     * @return array{findings: list<array<string, mixed>>, existing: list<array<string, mixed>>, coverage: list<array{route: int, field: string, reason: string}>, tried: int, forms: int}
+     */
+    protected function measureFiles(array $answers, array $changed): array
+    {
+        $rules = $this->rules(['avatar' => ['nullable', 'file', 'max:2048']]);
+        $planned = InputProbes::plan($this->routes(), $rules, 80);
+        $lines = [json_encode(['kind' => 'form', 'id' => 0, 'status' => 302, 'errors' => [], 'exception' => null, 'reason' => null])];
+
+        foreach ($planned['probes'] as $id => $probe) {
+            $answer = $answers[$probe['says']] ?? ['status' => 302, 'errors' => $probe['expect'] === 'refuse' ? [$probe['field']] : []];
+            $lines[] = json_encode(['kind' => 'probe', 'id' => $id, 'errors' => [], 'exception' => null, 'reason' => null, ...$answer]);
+        }
+
+        return InputProbes::measure($this->routes(), $rules, $planned, InputProbes::parse(implode("\n", $lines)), $changed);
+    }
+
+    public function test_a_page_file_kept_where_anyone_can_open_it_is_a_finding_and_one_turned_down_or_kept_private_is_not(): void
+    {
+        $measured = $this->measureFiles([
+            'avatar as a web page (.html)' => ['status' => 302, 'stored' => ['storage/avatars/Xq9.html']],
+            // Turned down for the avatar, as it should be.
+            'avatar as an image that runs a script (.svg)' => ['status' => 302, 'errors' => ['avatar']],
+        ], [self::SOURCE => ['new' => false, 'lines' => ["            'avatar' => ['nullable', 'file', 'max:2048'],"]]]);
+
+        $this->assertSame([['avatar', 'stored', ['storage/avatars/Xq9.html']]], array_map(fn (array $finding) => [$finding['field'], $finding['outcome'], $finding['stored']], $measured['findings']));
+        $this->assertStringContainsString('POST /bookings kept avatar as a web page (.html) where anyone can open it as a page of the app (storage/avatars/Xq9.html). Allow only the types avatar needs, with a mimes rule such as mimes:jpg,png,pdf or the image rule, and store it on a private disk or under a name with an extension the app picks.', InputProbes::describe($this->routes(), $measured));
+
+        // Taken and kept out of sight, or a path that is not a plain one: nothing anyone can open.
+        $private = $this->measureFiles([
+            'avatar as a web page (.html)' => ['status' => 302],
+            'avatar as an image that runs a script (.svg)' => ['status' => 302, 'stored' => ['../../etc/passwd.svg']],
+        ], [self::SOURCE => ['new' => true, 'lines' => []]]);
+
+        $this->assertSame([], array_filter([...$private['findings'], ...$private['existing']], fn (array $finding) => $finding['outcome'] === 'stored'));
+    }
+
+    public function test_a_page_file_kept_by_a_field_the_change_did_not_add_is_reported_as_existing_and_one_turned_away_is_not_judged(): void
+    {
+        $measured = $this->measureFiles([
+            'avatar as a web page (.html)' => ['status' => 302, 'stored' => ['uploads/probe.html']],
+            'avatar as an image that runs a script (.svg)' => ['status' => 403],
+        ], []);
+
+        $this->assertSame([], $measured['findings']);
+        $this->assertSame([['avatar', 'stored']], array_map(fn (array $finding) => [$finding['field'], $finding['outcome']], $measured['existing']));
+        $this->assertContains(['route' => 0, 'field' => 'avatar', 'reason' => 'turned_away:403'], $measured['coverage']);
+    }
 }

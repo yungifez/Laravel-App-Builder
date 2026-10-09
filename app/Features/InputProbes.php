@@ -23,13 +23,18 @@ use Illuminate\Support\Str;
  * the app already did. Rules written as code, and rules that depend on
  * other fields, are tried only for presence and listed as such.
  *
+ * Each file field is also sent a web page and an image that runs a
+ * script. The test lists the public disk and the public folder before and
+ * after: a copy kept there with a page's extension is a finding, since
+ * anyone the person sends its address to opens it as a page of the app.
+ *
  * @phpstan-type Route array{method: string, uri: string, action: string}
  * @phpstan-type Rules array{id: int, status: int, source: string, fields: array<string, list<string>>, reason: string|null}
  * @phpstan-type Probe array{route: int, field: string, key: string, expect: string, payload: array<string, mixed>, says: string}
  * @phpstan-type Coverage array{route: int, field: string, reason: string}
  * @phpstan-type Planned array{baselines: array<int, array<string, mixed>>, probes: list<Probe>, coverage: list<Coverage>}
- * @phpstan-type Observed array{status: int, errors: list<string>, exception: string|null, reason: string|null}
- * @phpstan-type Finding array{route: string, field: string, says: string, outcome: string, exception: string|null}
+ * @phpstan-type Observed array{status: int, errors: list<string>, exception: string|null, reason: string|null, stored: list<string>}
+ * @phpstan-type Finding array{route: string, field: string, says: string, outcome: string, exception: string|null, stored: list<string>}
  * @phpstan-type Example array{valid: string, invalid: string|null}
  *
  * @phpstan-import-type Record from Scaffold
@@ -337,7 +342,8 @@ PHP);
      */
     private function probe(string $kind, int $id, string $method, string $uri, array $payload, string $field): void
     {
-        $line = ['kind' => $kind, 'id' => $id, 'status' => 0, 'errors' => [], 'exception' => null, 'reason' => null];
+        $line = ['kind' => $kind, 'id' => $id, 'status' => 0, 'errors' => [], 'exception' => null, 'reason' => null, 'stored' => []];
+        $before = $this->published();
 
         try {
             $response = $this->send($method, $uri, $this->fill($payload));
@@ -361,7 +367,43 @@ PHP);
             $line['reason'] = $this->reason($exception);
         }
 
+        // What the send kept where anyone can open it, taken away again.
+        foreach (array_diff_key($this->published(), $before) as $path => $file) {
+            $page = preg_match('/\.(html?|xhtml|shtml|svgz?)$/i', $path) === 1 && (preg_match('/\.svgz?$/i', $path) !== 1 || str_contains(strtolower((string) @file_get_contents($file)), '<script'));
+
+            if ($page && count($line['stored']) < 5) {
+                $line['stored'][] = $path;
+            }
+
+            @unlink($file);
+        }
+
         $this->note($line);
+    }
+
+    /**
+     * List the files anyone can open: the public disk, and the public
+     * folder the web server hands out as it is.
+     *
+     * @return array<string, string> Each file's path, as the person reaches it, to where it is
+     */
+    private function published(): array
+    {
+        $files = [];
+        $roots = ['storage/' => rescue(fn () => Storage::disk('public')->path(''), null, false), '' => public_path()];
+
+        foreach ($roots as $prefix => $root) {
+            if (! is_string($root) || ! is_dir($root)) {
+                continue;
+            }
+
+            // The storage link is the public disk itself, listed above.
+            foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)) as $file) {
+                $files[$prefix.ltrim(substr((string) $file, strlen(rtrim($root, '/'))), '/')] = (string) $file;
+            }
+        }
+
+        return $files;
     }
 
     /**
@@ -372,6 +414,10 @@ PHP);
     {
         if (is_array($value) && isset($value['@date'])) {
             return now()->addDays($value['@date'])->format($value['format']);
+        }
+
+        if (is_array($value) && isset($value['@file'], $value['content'])) {
+            return UploadedFile::fake()->createWithContent('probe.'.$value['@file'], $value['content']);
         }
 
         if (is_array($value) && isset($value['@file'])) {
@@ -414,6 +460,7 @@ PHP);
                 'errors' => is_array($data['errors'] ?? null) ? array_values(array_filter($data['errors'], is_string(...))) : [],
                 'exception' => is_string($data['exception'] ?? null) ? $data['exception'] : null,
                 'reason' => is_string($data['reason'] ?? null) ? $data['reason'] : null,
+                'stored' => array_values(array_filter(is_array($data['stored'] ?? null) ? $data['stored'] : [], fn (mixed $path) => is_string($path) && preg_match('/^[\w.\/-]+$/', $path) === 1 && ! str_contains($path, '..'))),
             ];
         }
 
@@ -470,6 +517,8 @@ PHP);
                 $seen === null => 'not_run',
                 $seen['reason'] !== null => $seen['reason'],
                 $seen['status'] >= 500 => 'broke',
+                $probe['expect'] === 'store' && $seen['stored'] !== [] => 'stored',
+                $probe['expect'] === 'store' && ($named || ($seen['errors'] === [] && $seen['status'] < 400)) => 'held',
                 $probe['expect'] === 'refuse' && $named, $probe['expect'] === 'accept' && $seen['errors'] === [] && $seen['status'] < 400 => 'held',
                 $probe['expect'] === 'accept' && $named => 'refused',
                 $seen['errors'] !== [] => 'other_field',
@@ -477,7 +526,7 @@ PHP);
                 default => 'accepted',
             };
 
-            if (! in_array($outcome, ['held', 'broke', 'refused', 'accepted'], true)) {
+            if (! in_array($outcome, ['held', 'broke', 'refused', 'accepted', 'stored'], true)) {
                 $coverage[] = ['route' => $probe['route'], 'field' => $probe['field'], 'reason' => $outcome];
 
                 continue;
@@ -490,7 +539,7 @@ PHP);
             }
 
             $route = $routes[$probe['route']];
-            $finding = ['route' => "{$route['method']} /".ltrim($route['uri'], '/'), 'field' => $probe['field'], 'says' => $probe['says'], 'outcome' => $outcome, 'exception' => $outcome === 'broke' ? ($seen['exception'] ?? null) : null];
+            $finding = ['route' => "{$route['method']} /".ltrim($route['uri'], '/'), 'field' => $probe['field'], 'says' => $probe['says'], 'outcome' => $outcome, 'exception' => $outcome === 'broke' ? ($seen['exception'] ?? null) : null, 'stored' => $outcome === 'stored' ? $seen['stored'] : []];
             $source = $changed[$rules[$probe['route']]['source'] ?? ''] ?? null;
             $added = $source !== null && ($source['new'] || array_any($source['lines'], fn (string $line) => preg_match('/[\'"]'.preg_quote($probe['key'], '/').'[\'"]/', $line) === 1));
 
@@ -694,6 +743,14 @@ PHP);
 
             if (InputValues::kind($rules) === 'file' && ($file = InputValues::wrongFile($rules)) !== null) {
                 $probes[] = $change($file, 'refuse', "as a file of the wrong type (.{$file['@file']})", 1);
+            }
+
+            // Turned down or kept out of sight are both fine; only a copy
+            // anyone can open is not.
+            if (InputValues::kind($rules) === 'file') {
+                foreach (InputValues::pageFiles() as $says => $page) {
+                    $probes[] = $change($page, 'store', $says, 1);
+                }
             }
 
             if (InputValues::rule($rules, 'exists') !== null) {
@@ -950,6 +1007,7 @@ PHP);
         return match ($finding['outcome']) {
             'accepted' => "{$finding['route']} accepted {$finding['says']}. It should be turned down with a message.",
             'refused' => "{$finding['route']} turned down {$finding['says']}, which its rules allow.",
+            'stored' => "{$finding['route']} kept {$finding['says']} where anyone can open it as a page of the app ({$finding['stored'][0]}). Allow only the types {$finding['field']} needs, with a mimes rule such as mimes:jpg,png,pdf or the image rule, and store it on a private disk or under a name with an extension the app picks.",
             default => "{$finding['route']} broke (".($finding['exception'] ?? '500').") on {$finding['says']}. It should answer with a message.",
         };
     }
@@ -1006,6 +1064,8 @@ use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use FilesystemIterator;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\MessageBag;
 use Illuminate\Support\Str;
 use Illuminate\Support\ViewErrorBag;
@@ -1015,6 +1075,8 @@ use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\RequiredIf;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;

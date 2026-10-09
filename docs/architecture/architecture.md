@@ -4738,6 +4738,21 @@ is `required` or has a `min` or `size`. A file is a fake upload
 file of another type, and on both sides of its size rules in kilobytes. An
 image with `dimensions` cannot be faked this way, so it is not tried.
 
+Each file field is also sent two files that a browser opens as a page: a web
+page (`.html`, as `text/html`) and an image that runs a script (`.svg`, as
+`image/svg+xml`), each holding a script. The test lists the public disk and
+the `public` folder before and after each send. A copy kept there as an
+`.html`, `.htm`, `.xhtml` or `.shtml` file, or as an `.svg` with a script, is a
+finding: anyone the person sends its address to opens it as a page of the app.
+The test removes what the send kept there. A file that is turned down, or kept
+on a private disk, is fine. The served content type is not fetched, because a
+test request never reaches the web server that serves those folders. The
+extension decides what that server sends. The coder is told to allow only the
+types the field needs (`mimes` or `image`) and to store the file privately or
+under an extension the app picks. On a scratch app, a `file` rule stored on
+the public disk was found for both files. An `image` rule, and a file stored
+on the private disk, were not.
+
 **Out of V0:** the rest, including the introspection this relies on, beyond
 what V0's own verification already uses.
 

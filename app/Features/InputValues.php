@@ -196,6 +196,21 @@ class InputValues
     }
 
     /**
+     * Files a browser opens as a page when they are served: a web page,
+     * and an image that runs a script. Each holds a script, so a copy kept
+     * where anyone can open it is a page anyone can be sent to.
+     *
+     * @return array<string, array{'@file': string, mime: string, kb: int, content: string}>
+     */
+    public static function pageFiles(): array
+    {
+        return [
+            'as a web page (.html)' => ['@file' => 'html', 'mime' => 'text/html', 'kb' => 1, 'content' => '<!doctype html><title>Probe</title><script>document.title = "probe"</script>'],
+            'as an image that runs a script (.svg)' => ['@file' => 'svg', 'mime' => 'image/svg+xml', 'kb' => 1, 'content' => '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>document.title = "probe"</script></svg>'],
+        ];
+    }
+
+    /**
      * A placeholder the probe test fills with a column of a row it adds.
      *
      * @param  list<string>  $parameters  The exists rule's table and column
