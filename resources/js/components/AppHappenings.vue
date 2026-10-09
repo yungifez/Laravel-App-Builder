@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { router, useForm, useHttp } from '@inertiajs/vue3';
-import { CircleAlert, Copy, Footprints, LoaderCircle } from '@lucide/vue';
+import {
+    CircleAlert,
+    Copy,
+    Footprints,
+    LoaderCircle,
+    Users,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import PreviewFaultController from '@/actions/App/Http/Controllers/PreviewFaultController';
@@ -57,21 +63,30 @@ const pretending = computed(
 const chosen = computed(() => faults.find((item) => item.key === form.fault));
 
 // The newest form sent again twice at the same moment, as a double click
-// or two people at once would. What came of it stays under that form.
-const twice = useHttp({});
-const twiceWords = ref<{ words: string; broke: boolean } | null>(null);
+// would, or by two people at once. What came of it stays under that form.
+const twice = useHttp({ two_people: false });
+const twiceWords = ref<{ who: string; words: string; broke: boolean } | null>(
+    null,
+);
 
-async function sendTwice(): Promise<void> {
+async function sendTwice(twoPeople: boolean): Promise<void> {
     twiceWords.value = null;
+    twice.two_people = twoPeople;
 
     try {
-        const { words, broke } = (await twice.post(
+        const { words, broke, other } = (await twice.post(
             PreviewTwiceController.store.url(props.projectId, {
                 query: { copy: props.copy },
             }),
-        )) as { words: string; broke: boolean };
+        )) as { words: string; broke: boolean; other: string | null };
 
-        twiceWords.value = { words, broke };
+        const who = !twoPeople
+            ? 'Sent twice at once'
+            : other
+              ? `You and ${other} sent it at once`
+              : 'Two visitors sent it at once';
+
+        twiceWords.value = { who, words, broke };
         router.reload({ only: ['happenings'] });
     } catch {
         const errors = twice.errors as Record<string, string | undefined>;
@@ -216,16 +231,31 @@ async function sendTwice(): Promise<void> {
                         type="button"
                         class="inline-flex min-h-9 items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline disabled:opacity-60"
                         :disabled="twice.processing"
-                        title="Send this form again twice, at the same moment, as a double click or two people at once would"
+                        title="Send this form again twice, at the same moment, as a double click would"
                         data-test="app-happening-twice"
-                        @click="sendTwice"
+                        @click="sendTwice(false)"
                     >
                         <LoaderCircle
-                            v-if="twice.processing"
+                            v-if="twice.processing && !twice.two_people"
                             class="size-3.5 animate-spin"
                         />
                         <Copy v-else class="size-3.5" />
                         What if this is sent twice at once?
+                    </button>
+                    <button
+                        type="button"
+                        class="inline-flex min-h-9 items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline disabled:opacity-60"
+                        :disabled="twice.processing"
+                        title="Send this form again at the same moment as you and as someone else in your app"
+                        data-test="app-happening-two-people"
+                        @click="sendTwice(true)"
+                    >
+                        <LoaderCircle
+                            v-if="twice.processing && twice.two_people"
+                            class="size-3.5 animate-spin"
+                        />
+                        <Users v-else class="size-3.5" />
+                        What if two people send it at once?
                     </button>
                 </div>
                 <p
@@ -238,7 +268,7 @@ async function sendTwice(): Promise<void> {
                     ]"
                     data-test="app-happening-twice-words"
                 >
-                    Sent twice at once: {{ twiceWords.words }}
+                    {{ twiceWords.who }}: {{ twiceWords.words }}
                 </p>
             </li>
         </ol>

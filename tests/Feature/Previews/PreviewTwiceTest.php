@@ -46,11 +46,11 @@ class PreviewTwiceTest extends TestCase
      * @param  list<int>  $statuses
      * @param  list<list<array<string, mixed>>>  $effects
      */
-    protected function answers(array $statuses, array $effects, int $exit = 0): void
+    protected function answers(array $statuses, array $effects, int $exit = 0, ?string $other = null): void
     {
         $sends = array_map(fn (int $status, array $did) => ['method' => 'POST', 'route' => '/books', 'status' => $status, 'effects' => $did], $statuses, $effects);
 
-        $this->driver->onExec = fn () => new CommandResult(exitCode: $exit, output: "A notice\n".json_encode(['statuses' => $statuses, 'sends' => $sends]), errorOutput: '', durationMs: 5);
+        $this->driver->onExec = fn () => new CommandResult(exitCode: $exit, output: "A notice\n".json_encode(['statuses' => $statuses, 'sends' => $sends, 'other' => $other]), errorOutput: '', durationMs: 5);
     }
 
     public function test_the_last_form_sent_twice_at_once_that_saves_twice_says_so()
@@ -63,13 +63,14 @@ class PreviewTwiceTest extends TestCase
             ->assertOk()
             ->assertJsonPath('words', 'Both went through, so it was done twice: saved a new book, two times.')
             ->assertJsonPath('broke', false)
+            ->assertJsonPath('other', null)
             ->assertJsonPath('sends.0.did.0.text', 'Saved a new book')
             ->assertJsonPath('sends.1.status', 302);
 
         // Only the recorder's folder and the app's own address reach the app, as arguments.
         $command = $this->driver->executed[0]['command'];
         $this->assertSame(['php', '-r'], array_slice($command, 0, 2));
-        $this->assertSame(['--', 'storage/logs/recorder', '127.0.0.1:20004'], array_slice($command, 3));
+        $this->assertSame(['--', 'storage/logs/recorder', '127.0.0.1:20004', 'one'], array_slice($command, 3));
     }
 
     public function test_a_second_send_the_app_turns_away_or_saves_nothing_for_is_told_apart()
@@ -103,6 +104,47 @@ class PreviewTwiceTest extends TestCase
         $this->actingAs($this->owner)
             ->postJson(route('preview-twice.store', $this->project))
             ->assertJsonValidationErrors(['app' => 'This is our fault.']);
+    }
+
+    public function test_two_people_sending_at_once_names_the_second_person()
+    {
+        $saved = [['kind' => 'query', 'sql' => 'insert into "bookings" ("slot") values (?)']];
+        $this->answers([302, 302], [$saved, $saved], other: 'Aurelia Kunde');
+
+        $this->actingAs($this->owner)
+            ->postJson(route('preview-twice.store', $this->project), ['two_people' => true])
+            ->assertOk()
+            ->assertJsonPath('other', 'Aurelia Kunde')
+            ->assertJsonPath('words', 'Both went through, so it was done twice: saved a new booking, two times.');
+
+        $this->assertSame('two', last($this->driver->executed[0]['command']));
+    }
+
+    public function test_a_second_visitor_has_no_name_and_bad_choices_are_refused()
+    {
+        // The first send came from someone signed out, so the second is too.
+        $this->answers([302, 302], [[], []], other: '');
+        $this->actingAs($this->owner)
+            ->postJson(route('preview-twice.store', $this->project), ['two_people' => true])
+            ->assertJsonPath('other', null)
+            ->assertJsonPath('words', 'Both went through, and nothing was saved twice.');
+
+        $this->actingAs($this->owner)
+            ->postJson(route('preview-twice.store', $this->project), ['two_people' => 'both'])
+            ->assertJsonValidationErrors('two_people');
+    }
+
+    public function test_an_app_with_no_second_person_or_its_own_sign_in_is_explained()
+    {
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 6, output: '', errorOutput: '', durationMs: 5);
+        $this->actingAs($this->owner)
+            ->postJson(route('preview-twice.store', $this->project), ['two_people' => true])
+            ->assertJsonValidationErrors(['app' => 'Sign up a second person in your app']);
+
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 3, output: '', errorOutput: '', durationMs: 5);
+        $this->actingAs($this->owner)
+            ->postJson(route('preview-twice.store', $this->project), ['two_people' => true])
+            ->assertJsonValidationErrors(['app' => 'cannot send this as someone else']);
     }
 
     public function test_only_people_who_can_change_the_app_send_twice_and_only_while_it_runs()

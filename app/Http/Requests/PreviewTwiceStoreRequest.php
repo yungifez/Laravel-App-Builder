@@ -26,6 +26,8 @@ class PreviewTwiceStoreRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [];
+        return [
+            'two_people' => ['sometimes', 'boolean'],
+        ];
     }
 }
