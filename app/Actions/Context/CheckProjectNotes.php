@@ -25,9 +25,11 @@ class CheckProjectNotes
      * is a fact about the files, with the files it is about as its details.
      *
      * A finding the notes alone can put right also says how: "fix" names
-     * the part of the notes and the items to take out of it.
+     * the part of the notes and the items to take out of it. One only a
+     * change to the app can put right says what to ask for ("ask"), so no
+     * finding is a dead end.
      *
-     * @return list<array{title: string, details: list<string>, fix?: array{part: string, remove: list<string>}, confirm?: array{part: string}}>
+     * @return list<array{title: string, details: list<string>, fix?: array{part: string, remove: list<string>}, confirm?: array{part: string}, ask?: string}>
      */
     public function handle(Project $project): array
     {
@@ -40,15 +42,15 @@ class CheckProjectNotes
 
         // The one safety fact a file list proves on its own, so it is said first.
         if ($secrets !== []) {
-            $findings[] = ['title' => __('Secret settings are saved in the app\'s code, where anyone with the code can read them.'), 'details' => $secrets];
+            $findings[] = ['title' => __('Secret settings are saved in the app\'s code, where anyone with the code can read them.'), 'details' => $secrets, 'ask' => __('Move the secret settings out of my app\'s code and into its settings.')];
         }
 
         if ($context->problems !== []) {
-            $findings[] = ['title' => __('Some notes could not be read, so I cannot use them.'), 'details' => $context->problems];
+            $findings[] = ['title' => __('Some notes could not be read, so I cannot use them.'), 'details' => $context->problems, 'ask' => __('Fix the notes about my app that could not be read.')];
         }
 
         if ($context->project === null) {
-            $findings[] = ['title' => __('There is no description of what your app is for yet.'), 'details' => []];
+            $findings[] = ['title' => __('There is no description of what your app is for yet.'), 'details' => [], 'ask' => __('Write down in the notes what my app is for.')];
         }
 
         foreach ($context->capabilities as $capability) {
@@ -65,7 +67,7 @@ class CheckProjectNotes
             }
 
             if ($capability->testFiles === []) {
-                $findings[] = ['title' => __('Nothing checks ":name" automatically.', ['name' => $capability->name]), 'details' => [__('No test for it runs with the checks.')]];
+                $findings[] = ['title' => __('Nothing checks ":name" automatically.', ['name' => $capability->name]), 'details' => [__('No test for it runs with the checks.')], 'ask' => __('Add tests that check :name works as described', ['name' => $capability->name])];
                 $untested[$capability->key] = true;
             }
         }
@@ -95,7 +97,7 @@ class CheckProjectNotes
             && $context->claiming($path) === []));
 
         if ($unclaimed !== []) {
-            $findings[] = ['title' => __('Some parts of the app are not described in any notes.'), 'details' => $unclaimed];
+            $findings[] = ['title' => __('Some parts of the app are not described in any notes.'), 'details' => $unclaimed, 'ask' => __('Describe the parts of my app that the notes leave out.')];
         }
 
         // Rewriting is the fix, so no fix button: the owner reads the part

@@ -607,6 +607,37 @@ function setCompatibility(keep: boolean | null): void {
                                         </ul>
                                     </CollapsibleContent>
                                 </Collapsible>
+                                <!-- Only a change to the app fixes it: one
+                                     tap asks for that change. -->
+                                <Form
+                                    v-if="finding.ask"
+                                    v-bind="
+                                        FeatureRequestController.store.form(
+                                            project.id,
+                                        )
+                                    "
+                                    v-slot="{ errors, processing }"
+                                    class="mt-1"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="prompt"
+                                        :value="finding.ask"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="ask-fix"
+                                    >
+                                        Fix it
+                                    </Button>
+                                    <InputError
+                                        class="mt-1"
+                                        :message="errors.prompt"
+                                    />
+                                </Form>
                                 <!-- Notes that point at nothing: taking
                                      those lines out is the whole fix. -->
                                 <Form

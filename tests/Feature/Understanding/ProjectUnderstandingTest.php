@@ -4,6 +4,7 @@ namespace Tests\Feature\Understanding;
 
 use App\Actions\Context\RecordDecision;
 use App\Actions\Projects\CreateProject;
+use App\Actions\Runs\StartRun;
 use App\Context\ChangeClassification;
 use App\Context\ProjectNotes;
 use App\Enums\VerificationStatus;
@@ -18,6 +19,7 @@ use App\Runs\Assumption;
 use App\Runs\Plan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use Mockery\MockInterface;
 use Tests\Concerns\PreparesRuns;
 use Tests\TestCase;
 
@@ -540,8 +542,8 @@ class ProjectUnderstandingTest extends TestCase
                 ->where('check', [
                     ['title' => 'The notes on "Plans" point to files that are not in the app.', 'details' => ['app/Billing/*'], 'fix' => ['part' => 'paths:plans', 'remove' => ['app/Billing/*']]],
                     ['title' => '"Plans" says it is connected to something the notes do not describe.', 'details' => ['invoices'], 'fix' => ['part' => 'effects:plans', 'remove' => ['invoices']]],
-                    ['title' => 'Nothing checks "Plans" automatically.', 'details' => ['No test for it runs with the checks.']],
-                    ['title' => 'Some parts of the app are not described in any notes.', 'details' => ['app/Http/Controllers/PlanController.php']],
+                    ['title' => 'Nothing checks "Plans" automatically.', 'details' => ['No test for it runs with the checks.'], 'ask' => 'Add tests that check Plans works as described'],
+                    ['title' => 'Some parts of the app are not described in any notes.', 'details' => ['app/Http/Controllers/PlanController.php'], 'ask' => 'Describe the parts of my app that the notes leave out.'],
                 ])));
     }
 
@@ -556,7 +558,7 @@ class ProjectUnderstandingTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.understanding.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('check', fn (Assert $page) => $page
-                ->where('check.3', ['title' => 'Some parts of the app are not described in any notes.', 'details' => ['app/Http/Controllers/PlanController.php', 'resources/views/livewire/plans.blade.php']])));
+                ->where('check.3', ['title' => 'Some parts of the app are not described in any notes.', 'details' => ['app/Http/Controllers/PlanController.php', 'resources/views/livewire/plans.blade.php'], 'ask' => 'Describe the parts of my app that the notes leave out.'])));
     }
 
     public function test_the_quick_check_says_first_when_secret_settings_are_kept_in_the_app()
@@ -569,7 +571,29 @@ class ProjectUnderstandingTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('projects.understanding.show', $this->project))
             ->assertInertia(fn (Assert $page) => $page->reloadOnly('check', fn (Assert $page) => $page
-                ->where('check.0', ['title' => 'Secret settings are saved in the app\'s code, where anyone with the code can read them.', 'details' => ['.env']])));
+                ->where('check.0', ['title' => 'Secret settings are saved in the app\'s code, where anyone with the code can read them.', 'details' => ['.env'], 'ask' => 'Move the secret settings out of my app\'s code and into its settings.'])));
+    }
+
+    public function test_a_finding_only_a_change_can_fix_asks_for_that_change_in_one_tap()
+    {
+        $this->repository->commitFiles($this->project, $this->repository->head($this->project), [
+            '.env' => "APP_KEY=base64:secret\n",
+        ], 'Add settings', null);
+
+        $ask = 'Move the secret settings out of my app\'s code and into its settings.';
+        $this->actingAs($this->owner)
+            ->get(route('projects.understanding.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->reloadOnly('check', fn (Assert $page) => $page
+                ->where('check.0.ask', $ask)));
+
+        // The button sends the ask as the owner's own request; building it
+        // is not what this test is about.
+        $this->mock(StartRun::class, fn (MockInterface $mock) => $mock->shouldReceive('handle'));
+        $this->actingAs($this->owner)
+            ->post(route('feature-requests.store', $this->project), ['prompt' => $ask])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($ask, $this->project->featureRequests()->sole()->prompt);
     }
 
     /**

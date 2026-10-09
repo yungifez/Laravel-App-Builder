@@ -951,6 +951,8 @@ export type CheckFinding = {
     fix?: { part: string; remove: string[] };
     // Notes that may be out of date: the owner can say they are still right.
     confirm?: { part: string };
+    // What to ask the builder for, when only a change to the app fixes it.
+    ask?: string;
 };
 
 export type DeploymentSummary = {
