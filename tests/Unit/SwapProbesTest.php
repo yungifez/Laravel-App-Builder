@@ -169,6 +169,28 @@ class SwapProbesTest extends TestCase
         $this->assertSame([0, 4, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
     }
 
+    public function test_a_change_that_wrote_nothing_still_judges_a_refusal_but_not_a_swap_that_went_through(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['PUT'], '/current-team/{team}', [['team', 'Team']], 'update', 'App\Http\Controllers\CurrentTeamController'),
+            $this->route(['PATCH'], '/projects/{project}', [['project', 'Project']], 'update'),
+            $this->route(['POST'], '/projects/{project}/archive', [['project', 'Project']], 'archive'),
+        ]));
+        $probes = SwapProbes::plan($found, [self::CONTROLLER, 'App\Http\Controllers\CurrentTeamController'], [], 30)['probes'];
+        $sent = fn (int $status, int $writes = 0, bool $invalid = false) => compact('status', 'invalid', 'writes');
+
+        $measured = SwapProbes::measure($probes, SwapProbes::parse(implode("\n", [
+            // Switching to the team the person is already on writes nothing; another team's is refused.
+            json_encode(['id' => 0, 'owners' => true, 'control' => $sent(302), 'swap' => $sent(403), 'guest' => null, 'policy' => false]),
+            // Nothing written either way: no proof the swap did anything.
+            json_encode(['id' => 1, 'owners' => true, 'control' => $sent(302), 'swap' => $sent(302), 'guest' => null, 'policy' => false]),
+            // The person's own values were turned down, so the refusal may be the values'.
+            json_encode(['id' => 2, 'owners' => true, 'control' => $sent(302, 0, true), 'swap' => $sent(404), 'guest' => null, 'policy' => false]),
+        ])));
+
+        $this->assertSame([1, 1, 2, []], [$measured['tried'], $measured['refused'], $measured['untried'], $measured['findings']]);
+    }
+
     public function test_the_test_makes_each_persons_records_with_the_apps_factories(): void
     {
         $found = (array) SwapProbes::found($this->printed([

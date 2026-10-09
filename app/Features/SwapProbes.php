@@ -666,7 +666,12 @@ PHP, [
                 ? $sent['status'] === 200
                 : $sent['status'] < 400 && ! $sent['invalid'] && $sent['writes'] > 0;
 
-            if ($seen === null || $control === null || $swap === null || ! $worked($control) || $swap['status'] >= 500) {
+            // A change that was taken but wrote nothing, like switching to
+            // the team the person is already on, still opened the route.
+            // Only a refusal of the swap can be judged from it then.
+            $taken = ! $reading && $control !== null && $swap !== null && $control['status'] < 400 && ! $control['invalid'] && in_array($swap['status'], [403, 404], true);
+
+            if ($seen === null || $control === null || $swap === null || (! $worked($control) && ! $taken) || $swap['status'] >= 500) {
                 $untried++;
 
                 continue;
