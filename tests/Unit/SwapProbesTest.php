@@ -482,4 +482,26 @@ class SwapProbesTest extends TestCase
         $this->assertSame([0, 4, []], [$lists['tried'], $lists['untried'], $lists['findings']]);
         $this->assertSame('Note, not a failure: GET /projects broke with 60 projects (QueryException); it answered 500.', SwapProbes::describeLists($lists));
     }
+
+    public function test_the_limit_gives_each_kind_a_turn_so_a_long_kind_cannot_crowd_out_the_others(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            // Fifty pages of a project, then one probe of each other kind.
+            ...array_map(fn (int $index) => $this->route(['GET'], "/projects/{project}/page{$index}", [['project', 'Project']]), range(1, 50)),
+            [...$this->route(['PATCH'], '/settings/profile', [], 'update'), 'named' => []],
+            $this->route(['POST'], '/projects', [], 'store'),
+            $this->route(['GET'], '/projects', [], 'index'),
+            $this->route(['DELETE'], '/projects/{project}', [['project', 'Project']], 'destroy'),
+        ], ['Project' => [['relation' => 'tasks', 'model' => 'Task', 'key' => 'project_id']]]));
+        $modes = fn (int $limit) => array_count_values(array_column(SwapProbes::plan($found, [self::CONTROLLER], [], $limit)['probes'], 'mode'));
+
+        $this->assertSame([SwapProbes::ALL => 6, SwapProbes::FIELD => 1, SwapProbes::RAISE => 2, SwapProbes::LIST => 1, SwapProbes::CHILDREN => 1], $modes(11));
+        $this->assertSame([SwapProbes::ALL => 51, SwapProbes::FIELD => 1, SwapProbes::RAISE => 2, SwapProbes::LIST => 1, SwapProbes::CHILDREN => 1], $modes(100), 'under the limit, every probe is kept');
+
+        // The kinds keep their order, and the addresses keep theirs.
+        $plan = SwapProbes::plan($found, [self::CONTROLLER], [], 11)['probes'];
+        $this->assertSame([SwapProbes::ALL, SwapProbes::ALL, SwapProbes::ALL, SwapProbes::ALL, SwapProbes::ALL, SwapProbes::ALL, SwapProbes::FIELD, SwapProbes::RAISE, SwapProbes::RAISE, SwapProbes::LIST, SwapProbes::CHILDREN], array_column($plan, 'mode'));
+        $this->assertSame(['/projects/{project}/page1', '/projects/{project}/page2'], [$plan[0]['uri'], $plan[1]['uri']]);
+        $this->assertSame([], SwapProbes::plan($found, [self::CONTROLLER], [], 0)['probes']);
+    }
 }

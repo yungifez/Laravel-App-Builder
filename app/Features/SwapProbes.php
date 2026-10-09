@@ -483,8 +483,38 @@ PHP;
             }
         }
 
-        // After the addresses, so the limit keeps those first.
-        return ['probes' => array_slice([...$probes, ...$fields, ...$raises, ...$lists, ...$removals], 0, $limit), 'skipped' => $skipped];
+        return ['probes' => self::share([$probes, $fields, $raises, $lists, $removals], $limit), 'skipped' => $skipped];
+    }
+
+    /**
+     * Keep at most `$limit` probes, giving each kind a turn in each round,
+     * so a long kind cannot crowd the others out. Each kind keeps its own
+     * order, and the kinds keep theirs: addresses first.
+     *
+     * @param  list<list<Probe>>  $kinds
+     * @return list<Probe>
+     */
+    protected static function share(array $kinds, int $limit): array
+    {
+        $taken = array_fill(0, count($kinds), 0);
+        $left = max(0, $limit);
+
+        while ($left > 0) {
+            $before = $left;
+
+            foreach ($kinds as $index => $kind) {
+                if ($left > 0 && $taken[$index] < count($kind)) {
+                    $taken[$index]++;
+                    $left--;
+                }
+            }
+
+            if ($left === $before) {
+                break;
+            }
+        }
+
+        return array_merge(...array_map(fn (array $kind, int $index) => array_slice($kind, 0, $taken[$index]), $kinds, array_keys($kinds)));
     }
 
     /**

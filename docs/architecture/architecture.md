@@ -4665,6 +4665,12 @@ already tries with one record is not tried again. On a copy of the
 fixture with four planted holes, all four were found, and its own team
 routes and a route that checks its policy were refused.
 
+All these probes share one limit (`BUILDER_SWAP_PROBE_LIMIT`, 100). Each kind
+gets one place in turn: address swaps, form keys, extra fields, lists and
+removals. So a long kind cannot crowd out the others. Each kind keeps its
+own order. On a copy of the fixture with nested tasks and notes, 98 probes
+ran in 2.0 seconds, against 1.3 seconds for 30.
+
 A form can also name a record. Each create or update form on those routes
 is also sent with the other person's record in a key that links the saved
 record to its owner (a task's `project_id`), at an address of the person's
@@ -4672,8 +4678,8 @@ own. A POST with no record in the address, such as `/tasks`, is included.
 The swap counts only when a saved row then points at their record: the
 rows linked to it are counted before and after. A form whose app takes the
 key from the address, or ignores it, writes but is refused. A key to the
-user model saves a record in another person's name. These sends come after
-the address swaps, within the same limit.
+user model saves a record in another person's name. These sends share the
+limit with the address swaps.
 
 A form can also save more than it asks for. Each create or update form on
 those routes, and a form with no record in its address that saves the
@@ -4687,8 +4693,7 @@ and the send without the field did not save it too. So a value the row held
 already, or a default every new row gets, is never one. A field the route's
 action or its form request names in quotes is one the form asks for, such as
 an admin's own form for roles, and it is not sent. A send without the fields
-that writes nothing or is turned down cannot be judged. These sends come
-last, within the same limit. On a copy of the fixture with `is_admin` made
+that writes nothing or is turned down cannot be judged. On a copy of the fixture with `is_admin` made
 fillable and the profile form saving `$request->all()`, it was found. The
 plain starter kits gave no finding.
 
