@@ -39,6 +39,7 @@ import { when } from '@/lib/when';
 import { edit as billing } from '@/routes/billing';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show as showProject } from '@/routes/projects';
+import { index as developers } from '@/routes/projects/developers';
 import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     ChangedArea,
@@ -608,6 +609,19 @@ function lineClass(line: string): string {
                     class="font-medium underline underline-offset-4"
                     data-test="run-see-plan"
                     >See your plan</Link
+                >
+                <!-- Some failures are the app's own, which a developer
+                     can look at, as the change thread offers too. -->
+                <Link
+                    v-else
+                    :href="
+                        developers(project.id, {
+                            query: { change: featureRequest.id },
+                        })
+                    "
+                    class="font-medium underline underline-offset-4"
+                    data-test="run-ask-developer"
+                    >Ask one of our developers</Link
                 >
             </AlertDescription>
         </Alert>
