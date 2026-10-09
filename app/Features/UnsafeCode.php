@@ -9,7 +9,9 @@ use Illuminate\Support\Str;
  * Common safety mistakes on the lines a change adds, found by pattern alone:
  * text shown on a page without escaping it, database queries built from
  * values, records open to every field of a form, secret settings or keys
- * kept in the app's history, and secret settings sent to the browser. Only added lines count, so code the app
+ * kept in the app's history, secret settings sent to the browser, and
+ * redirects or files whose address comes from the request. Only added
+ * lines count, so code the app
  * already had (a starter kit's own QR code, say) is never held against a
  * change.
  *
@@ -23,7 +25,7 @@ class UnsafeCode
      * Each rule: the files it reads, the pattern it finds, what is wrong,
      * and the safe way to do it.
      *
-     * @var array<string, array{files: string, pattern: string, problem: string, fix: string, always?: bool, within?: string, named?: bool}>
+     * @var array<string, array{files: string, pattern: string, problem: string, fix: string, always?: bool, within?: string, named?: bool, choices?: bool}>
      */
     protected const RULES = [
         'unescaped_output' => [
@@ -101,7 +103,34 @@ class UnsafeCode
             'within' => '/\bInertia::render\(|\binertia\(/',
             'named' => true,
         ],
+        // A redirect whose address is a value from the request. A route, the
+        // address the person meant (intended()), back() and the previous
+        // address are the app's own, so they are never matched.
+        'open_redirect' => [
+            'files' => '/^(?!tests\/).*\.php$/',
+            'pattern' => '/(?J)\b(?:redirect\(\)->(?:to|away)|redirect|Redirect::(?:to|away)|Inertia::location)\(\s*(?:[\'"](?:https?:)?\/\/[\'"]\s*\.\s*|"(?:https?:)?\/\/\{?)?'.self::FROM_REQUEST.'/',
+            'problem' => 'sends people to an address taken from the request, so a link to the app could send them to any site',
+            'fix' => 'Send them to a route of the app (redirect()->route()), to redirect()->intended() or back(), or allow only known values with an in: rule.',
+            'always' => true,
+            'choices' => true,
+        ],
+        // A file found by a path from the request. A path wrapped in
+        // basename() stays in its folder, so it is never matched.
+        'path_from_request' => [
+            'files' => '/^(?!tests\/).*\.php$/',
+            'pattern' => '/(?J)\b(?:Storage::(?:disk\([^)]*\)->)?(?:download|get|response|path|readStream|delete|url)|response\(\)->(?:download|file)|file_get_contents|readfile|fopen|unlink|File::(?:get|delete))\(\s*(?:(?:storage|public|base|resource)_path\(\s*)?(?:[^;()]*?\.\s*|"[^"]*?\{?)?'.self::FROM_REQUEST.'/',
+            'problem' => 'reads or removes a file whose path comes from the request, so people could reach any file, such as .env',
+            'fix' => 'Find the file through a record the person may reach (its stored path), wrap the name in basename(), or allow only known names with an in: rule.',
+            'always' => true,
+            'choices' => true,
+        ],
     ];
+
+    /**
+     * A value from the request, with the name of its field (key) where the
+     * code names it. Who is signed in, the route and uploads are not.
+     */
+    protected const FROM_REQUEST = '(?:\$request->(?:input|query|get|post|string|str|validated|header)\(\s*[\'"](?<key>[\w.-]+)|\$request->(?!user\b|route\b|file\b|ip\b)(?<key>\w+)\b(?!\s*\()|request\(\s*[\'"](?<key>[\w.-]+)|request\(\)->\w+\(\s*[\'"](?<key>[\w.-]+)|Request::(?:input|query|get)\(\s*[\'"](?<key>[\w.-]+)|\$_(?:GET|POST|REQUEST)\[\s*[\'"](?<key>[\w.-]+))';
 
     /**
      * Reading a secret setting: a service's secret, key, token or password,
@@ -124,6 +153,11 @@ class UnsafeCode
     {
         $found = [];
 
+        // Fields the change allows only some values for, with an in: rule or
+        // Rule::in(), in a form request or a validate() call it added.
+        $everyAdded = implode("\n", array_merge([], ...array_map(fn (array $file) => array_column(PatchSummary::addedLines($file['diff']), 'text'), PatchSummary::files($patch))));
+        $chosen = fn (string $key) => preg_match('/[\'"]'.preg_quote($key, '/').'[\'"]\s*=>.*(?:[\'"|]in:|Rule::in\()/', $everyAdded) === 1;
+
         foreach (PatchSummary::files($patch) as $file) {
             $rules = array_filter(self::RULES, fn (array $rule) => preg_match($rule['files'], $file['path']) === 1);
 
@@ -141,7 +175,7 @@ class UnsafeCode
                         continue;
                     }
 
-                    if (! isset($found[$file['path'].$key]) && preg_match($rule['pattern'], $added['text'], $match) === 1 && ! (($rule['named'] ?? false) && self::forBrowsers($match))) {
+                    if (! isset($found[$file['path'].$key]) && preg_match($rule['pattern'], $added['text'], $match) === 1 && ! (($rule['named'] ?? false) && self::forBrowsers($match)) && ! (($rule['choices'] ?? false) && ($match['key'] ?? '') !== '' && $chosen($match['key']))) {
                         $found[$file['path'].$key] = ['rule' => $key, 'path' => $file['path'], 'line' => $added['line']];
                     }
                 }

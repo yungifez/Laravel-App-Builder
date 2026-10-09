@@ -154,4 +154,77 @@ class UnsafeCodeTest extends TestCase
         $this->assertSame('Line 4 of app/Http/Middleware/HandleInertiaRequests.php puts a secret setting on the page, where anyone who opens it can read it. Keep the secret on the server, and let the page reach what it needs through a route of the app.', UnsafeCode::finding(UnsafeCode::found($commented)[0]));
         $this->assertSame([], UnsafeCode::found($removed."\n".$test));
     }
+
+    public function test_a_redirect_or_a_file_whose_address_comes_from_the_request_is_found_whatever_its_comment_says()
+    {
+        $found = UnsafeCode::found(implode("\n", [
+            $this->adding('app/Http/Controllers/LoginController.php', [
+                '        // Safe: we trust the next page.',
+                '        return redirect($request->input(\'next\', \'/\'));',
+            ]),
+            $this->adding('app/Http/Controllers/GoController.php', ['        return redirect()->away(request(\'to\'));']),
+            $this->adding('app/Http/Controllers/BackController.php', ['        return Inertia::location($request->return_to);']),
+            $this->adding('app/Http/Controllers/TenantController.php', ['        return redirect(\'https://\'.$request->input(\'host\'));']),
+            $this->adding('app/Http/Controllers/HostController.php', ['        return redirect()->to("//{$request->host}/home");']),
+            $this->adding('app/Http/Controllers/DownloadController.php', ['        return Storage::download(\'reports/\'.$request->query(\'file\'));']),
+            $this->adding('app/Http/Controllers/ExportController.php', ['        return response()->download(storage_path("exports/{$request->name}"));']),
+            $this->adding('app/Actions/RemoveUpload.php', ['        Storage::disk(\'public\')->delete($request->path);']),
+        ]));
+
+        $this->assertSame([
+            ['rule' => 'open_redirect', 'path' => 'app/Http/Controllers/LoginController.php', 'line' => 4],
+            ['rule' => 'open_redirect', 'path' => 'app/Http/Controllers/GoController.php', 'line' => 3],
+            ['rule' => 'open_redirect', 'path' => 'app/Http/Controllers/BackController.php', 'line' => 3],
+            ['rule' => 'open_redirect', 'path' => 'app/Http/Controllers/TenantController.php', 'line' => 3],
+            ['rule' => 'open_redirect', 'path' => 'app/Http/Controllers/HostController.php', 'line' => 3],
+            ['rule' => 'path_from_request', 'path' => 'app/Http/Controllers/DownloadController.php', 'line' => 3],
+            ['rule' => 'path_from_request', 'path' => 'app/Http/Controllers/ExportController.php', 'line' => 3],
+            ['rule' => 'path_from_request', 'path' => 'app/Actions/RemoveUpload.php', 'line' => 3],
+        ], $found);
+        $this->assertSame(
+            'Line 4 of app/Http/Controllers/LoginController.php sends people to an address taken from the request, so a link to the app could send them to any site. Send them to a route of the app (redirect()->route()), to redirect()->intended() or back(), or allow only known values with an in: rule.',
+            UnsafeCode::finding($found[0]),
+        );
+    }
+
+    public function test_the_apps_own_addresses_a_basename_and_values_an_in_rule_allows_are_not_found()
+    {
+        $this->assertSame([], UnsafeCode::found(implode("\n", [
+            $this->adding('app/Http/Controllers/LoginController.php', [
+                '        return redirect()->intended(route(\'dashboard\'));',
+                '        return redirect()->route($request->input(\'tab\'));',
+                '        return back();',
+                '        return redirect(url()->previous());',
+                '        return redirect(\'/search?q=\'.$request->q);',
+                '        return redirect(\'https://docs.example.com/\'.$request->page);',
+                '        return redirect($request->user()->homePage());',
+            ]),
+            $this->adding('app/Http/Controllers/DownloadController.php', [
+                '        return Storage::download(\'reports/\'.basename($request->query(\'file\')));',
+                '        return Storage::download($report->path);',
+                '        return response()->download($request->file(\'upload\')->path());',
+                // Only known names: the change's own rule allows them.
+                '        return Storage::download(\'sheets/\'.$request->input(\'sheet\'));',
+                '        return redirect($request->validated(\'next\'));',
+            ]),
+            $this->adding('app/Http/Requests/DownloadRequest.php', [
+                '            \'sheet\' => [\'required\', Rule::in([\'summary.csv\', \'detail.csv\'])],',
+                '            \'next\' => \'required|in:/home,/billing\',',
+            ]),
+        ])));
+    }
+
+    public function test_a_redirect_or_file_path_the_app_had_or_in_a_test_is_not_found()
+    {
+        $this->assertSame([], UnsafeCode::found(implode("\n", [
+            'diff --git a/app/Http/Controllers/GoController.php b/app/Http/Controllers/GoController.php',
+            '--- a/app/Http/Controllers/GoController.php',
+            '+++ b/app/Http/Controllers/GoController.php',
+            '@@ -1,2 +1,2 @@',
+            ' first',
+            '-        return redirect($request->next);',
+            '+        return redirect()->route(\'home\');',
+            $this->adding('tests/Feature/DownloadTest.php', ['        $this->get(\'/go?next=\'.urlencode(\'https://x.test\'));', '        Storage::download($request->path);']),
+        ])));
+    }
 }

@@ -2099,6 +2099,18 @@ lets a secret through. The built files are not searched for the value: the
 verification copy's settings come from `.env.example`, which keeps secrets
 empty, so the search would almost never find one.
 
+The scan also finds a redirect or a file path taken from the request. A
+redirect to such an address (`redirect()`, `->to()`, `->away()`,
+`Inertia::location()`) lets a link to the app send people to any site. A file
+read, served or removed by such a path (`Storage`, `response()->download()`,
+`file_get_contents()` and the like) lets people reach any file, such as `.env`,
+even after a fixed folder (`'reports/'.$name`). Neither has a comment escape.
+Only mechanical forms pass: the app's own addresses (`redirect()->route()`,
+`->intended()`, `back()`, `url()->previous()`), a redirect that starts with a
+fixed path such as `'/search?q='` (not just `https://` or `//`), a name wrapped in `basename()`, and a field
+the change's own lines allow only known values for, with an `in:` rule or
+`Rule::in()`.
+
 **Shortcuts in PHP code are found by an analyser, on added lines only.**
 When a change touches the app's PHP code (not its tests), verification runs
 the Sloppy analyser (`heyosseus/sloppy`, a pinned PHAR in the box image,
