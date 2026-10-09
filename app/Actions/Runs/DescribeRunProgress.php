@@ -26,6 +26,7 @@ class DescribeRunProgress
         'Frontend format and lint' => 'Checking the screens\' code is tidy',
         'TypeScript' => 'Reading the screens\' code for mistakes',
         'Production caches' => 'Checking your app can go online',
+        'Strict models' => 'Checking what the change saves',
     ];
 
     public function __construct(private WorkspaceManager $workspaces) {}

@@ -62,6 +62,8 @@ class VerificationTest extends TestCase
             'builder.verification.security.enabled' => false,
             // Tried in RoleProbeVerificationTest.
             'builder.verification.roles.enabled' => false,
+            // Tried in StrictModelsVerificationTest.
+            'builder.verification.strict.enabled' => false,
         ]);
     }
 

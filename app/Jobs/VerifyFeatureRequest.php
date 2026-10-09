@@ -43,6 +43,7 @@ use App\Features\QueuedWork;
 use App\Features\ReplayProbes;
 use App\Features\RoleProbes;
 use App\Features\ScreenCheck;
+use App\Features\StrictModels;
 use App\Features\SwapProbes;
 use App\Features\TestMap;
 use App\Features\TestRefusals;
@@ -278,6 +279,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 $checksPassed = $this->probeAccess($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->probeRoles($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->shiftTime($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
+                $checksPassed = $this->checkStrictModels($runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->replayForms($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
                 $checksPassed = $this->probeInputs($driver, $runWorkspaceCommand, $workspace, $featureRequest) && $checksPassed;
             }
@@ -2040,6 +2042,46 @@ class VerifyFeatureRequest implements ShouldQueue
         } finally {
             rescue(fn () => $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['bootstrap']], 30), report: false);
         }
+    }
+
+    /**
+     * Run the change's own test files with Laravel's strict model modes on,
+     * and fail the change on a value it silently does not save or an
+     * attribute it reads that its model lacks, where the change's own
+     * code or model did it. A change with no tests, or no PHP of its own,
+     * is not run.
+     */
+    protected function checkStrictModels(RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
+    {
+        /** @var array{enabled: bool, command: list<string>, timeout: int} $config */
+        $config = config('builder.verification.strict');
+        $tests = array_keys(NewTests::files(array_map(fn (FeatureRequest $request) => $request->patch, $featureRequest->lineage())));
+        $code = array_values(array_filter(array_keys($this->touched), fn (string $path) => str_ends_with($path, '.php') && ! str_starts_with($path, 'tests/')));
+
+        if (! $config['enabled'] || $tests === [] || $code === []) {
+            return true;
+        }
+
+        $command = $runWorkspaceCommand->handle($workspace, [...$config['command'], ...$tests], $config['timeout']);
+
+        if ($command->lost) {
+            throw new CommandLost($command->error_output);
+        }
+
+        if ($command->exit_code !== 0) {
+            return true;
+        }
+
+        $violations = StrictModels::theChanges(StrictModels::parse($command->output), array_keys($this->touched));
+        $passed = array_filter($violations, StrictModels::blocks(...)) === [];
+
+        if ($violations !== []) {
+            $this->keepEvidence('strict', $violations);
+        }
+
+        $this->addResult(StrictModels::CHECK, 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $command->duration_ms, output: StrictModels::describe($violations));
+
+        return $passed;
     }
 
     /**

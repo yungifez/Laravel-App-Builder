@@ -30,6 +30,7 @@ class NarrateWork
         'Frontend format and lint' => 'Checked the screens\' code is tidy',
         'TypeScript' => 'Read the screens\' code for mistakes',
         'Production caches' => 'Checked your app can go online',
+        'Strict models' => 'Checked what the change saves',
     ];
 
     /**

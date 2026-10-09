@@ -4,6 +4,7 @@ use App\Enums\Consequence;
 use App\Features\ArchPresets;
 use App\Features\CodeShortcuts;
 use App\Features\ProductionCaches;
+use App\Features\StrictModels;
 use App\Runs\Tools\ApplyPatch;
 use App\Runs\Tools\ListFiles;
 use App\Runs\Tools\ReadFile;
@@ -1253,6 +1254,18 @@ return [
             'command' => ['sh', '-c', 'moment=$1; report=$2; shift 2; rm -f "$report"; TIME_SHIFT_TO="$moment" php artisan test --bootstrap=storage/logs/time/bootstrap.php --extension=TimeShiftExtension --log-junit="$report" "$@" > /dev/null 2>&1 || true', 'sh'],
             'timeout' => 300,
             'report' => 'storage/logs/time/tests.xml',
+        ],
+
+        // The change's own test files run once more with Laravel's strict
+        // model modes on (§12), from a bootstrap in a folder the change can
+        // never carry, removed however the run ends. A value mass
+        // assignment drops, or an attribute the model lacks, sends the
+        // change back; loading one record at a time is only a note. Only
+        // the change's test files run: the whole suite doubled the time.
+        'strict' => [
+            'enabled' => (bool) env('BUILDER_STRICT_MODELS', true),
+            'command' => ['sh', '-c', StrictModels::script(), 'sh'],
+            'timeout' => 300,
         ],
 
         // Evidence about the change itself, measured by running the app

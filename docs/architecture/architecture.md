@@ -1940,6 +1940,18 @@ finding (`AcceptFindings`). Each is on by default and has its own switch.
   When the app could not go online before the change either, the line has
   "Fix it". It asks for the fix as its own change on the app as it is, with
   what the check printed for the builder, and a second tap opens the same one.
+- **Strict models** (`StrictModels`, `BUILDER_STRICT_MODELS`): when the change
+  adds or changes tests and app code, a check runs those tests again with
+  Laravel's strict model modes on. A PHPUnit extension turns them on after each
+  test's setup, with handlers that note each problem instead of throwing. The
+  extension lives in `.builder/strict`, which workspaces never copy and
+  `git apply` skips, and the check removes it however it ends. A value that
+  mass assignment silently drops, or an attribute the model and its table do
+  not have, sends the change back when it happens in a file the change touched
+  or on a model it touched. A relation loaded one record at a time is only a
+  note for the agent: it is about speed, and apps with automatic eager loading
+  do fine. Only the change's tests run, because the whole suite again doubled
+  the time on the fixture.
 
 **Scope by risk, never by diff size.** "Small" is a property of meaning: a
 three-line authorization change is riskier than a 200-line isolated component.
