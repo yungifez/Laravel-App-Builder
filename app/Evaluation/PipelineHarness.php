@@ -142,6 +142,7 @@ class PipelineHarness
 
         if ($checked) {
             ['review' => $review, 'verified' => $verified] = $this->checkReviewedChange->handle($review, $plan, $verification, $driver->canRepair());
+            $review = $this->checkReviewedChange->screens($review, $verification, $driver->canRepair());
         }
 
         return [

@@ -190,16 +190,47 @@ class PipelineHarnessReviewTest extends TestCase
         $this->assertSame([], $review['findings']);
     }
 
+    public function test_a_page_the_change_made_too_wide_blocks_it_as_in_the_run_review()
+    {
+        [$run, $verification] = $this->verified([], screen: 'Teams');
+
+        $review = app(PipelineHarness::class)->review($run, $verification);
+
+        $this->assertFalse($review['approved']);
+        $this->assertSame(['At 390 px wide, /teams (resources/js/pages/Teams.vue) scrolls sideways by 40 px. Make the page fit that width.'], array_column($review['findings'], 'summary'));
+        $this->assertTrue(app(PipelineHarness::class)->judge($run, $verification)['approved']);
+    }
+
+    public function test_a_page_the_change_did_not_touch_blocks_nothing()
+    {
+        [$run, $verification] = $this->verified([], screen: 'Billing');
+
+        $this->assertTrue(app(PipelineHarness::class)->review($run, $verification)['approved']);
+    }
+
+    public function test_the_screen_check_turned_off_blocks_nothing()
+    {
+        config(['builder.verification.screens.enabled' => false]);
+        [$run, $verification] = $this->verified([], screen: 'Teams');
+
+        $this->assertTrue(app(PipelineHarness::class)->review($run, $verification)['approved']);
+    }
+
     /**
      * Make a planned run and a finished verification of a copy of its change,
      * as the evaluation verifies a sabotaged patch.
      *
      * @param  array<string, mixed>  $evidence
+     * @param  string|null  $screen  A measured page that scrolls sideways at 390 px; the change adds Teams.vue
      * @return array{Run, Verification}
      */
-    protected function verified(array $evidence, bool $unsafe = false, bool $untested = false): array
+    protected function verified(array $evidence, bool $unsafe = false, bool $untested = false, ?string $screen = null): array
     {
         $patch = "diff --git a/config/teams.php b/config/teams.php\n";
+
+        if ($screen !== null) {
+            $patch .= "diff --git a/resources/js/pages/Teams.vue b/resources/js/pages/Teams.vue\nnew file mode 100644\n--- /dev/null\n+++ b/resources/js/pages/Teams.vue\n@@ -0,0 +1 @@\n+<template><main /></template>\n";
+        }
 
         if ($unsafe) {
             $patch .= "diff --git a/resources/views/team.blade.php b/resources/views/team.blade.php\nnew file mode 100644\n--- /dev/null\n+++ b/resources/views/team.blade.php\n@@ -0,0 +1 @@\n".'+<p>{!! $team->name !!}</p>'."\n";
@@ -218,6 +249,7 @@ class PipelineHarnessReviewTest extends TestCase
             'status' => VerificationStatus::Failed,
             'results' => [['name' => 'Tests', 'stage' => 'check', 'outcome' => 'failed', 'exit_code' => 1, 'timed_out' => false, 'duration_ms' => 10, 'output' => '1 failed']],
             'evidence' => $evidence,
+            'screens' => $screen === null ? null : ['pages' => [['screen' => $screen, 'path' => '/'.strtolower($screen), 'widths' => [['width' => 390, 'overflow' => 40]]]]],
         ]);
 
         return [$run, $verification];

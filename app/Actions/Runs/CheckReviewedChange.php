@@ -8,6 +8,7 @@ use App\Features\InventedColours;
 use App\Features\NewTests;
 use App\Features\NodeInPhpTests;
 use App\Features\OwnFormatChecks;
+use App\Features\ScreenCheck;
 use App\Features\UndescribedImages;
 use App\Features\UnsafeCode;
 use App\Models\Verification;
@@ -17,7 +18,8 @@ use App\Runs\Review;
 /**
  * Add the platform's own checks of a reviewed change to its review: each
  * verify item needs a test that ran, a new test must fail without the
- * change, and the code scans must find nothing. No model decides them, so
+ * change, and the code scans and the measured pages must find nothing. No
+ * model decides them, so
  * a finding blocks the change whatever the reviewer said. The run's review
  * stage and the evaluation both use it, so the evaluation blocks what ships.
  */
@@ -63,6 +65,20 @@ class CheckReviewedChange
         }
 
         return ['review' => $review, 'verified' => $verified];
+    }
+
+    /**
+     * Block a change whose pages the verification measured cut off, too wide
+     * or too small to tap at some width. The run's review stage adds these
+     * after its gate, so they come last.
+     */
+    public function screens(Review $review, Verification $verification, bool $canRepair): Review
+    {
+        if (! $canRepair || ! config('builder.verification.screens.enabled')) {
+            return $review;
+        }
+
+        return $review->withBlockingFindings(array_map(ScreenCheck::finding(...), ScreenCheck::found($verification->screens, $verification->featureRequest->patch)));
     }
 
     /**

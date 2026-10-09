@@ -35,7 +35,6 @@ use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
 use App\Features\QueuedWork;
-use App\Features\ScreenCheck;
 use App\Jobs\WriteTestsBeside;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -760,9 +759,7 @@ class ConstructRun
         $gate = $this->proposeFindings->keyed($featureRequest, array_values(array_filter($gate, fn (array $finding) => ! in_array($finding['identity'], $pending, true))));
         $review = $review->withBlockingFindings(array_column($gate, 'text'));
 
-        if ($driver->canRepair() && config('builder.verification.screens.enabled')) {
-            $review = $review->withBlockingFindings(array_map(ScreenCheck::finding(...), ScreenCheck::found($verification->screens, $featureRequest->patch)));
-        }
+        $review = $this->checkReviewedChange->screens($review, $verification, $driver->canRepair());
 
         $this->recordEvent($run, $lease, 'review', [
             'approved' => $review->approved,
