@@ -1,0 +1,24 @@
+diff --git a/app/Actions/Teams/RemoveTeamMember.php b/app/Actions/Teams/RemoveTeamMember.php
+--- a/app/Actions/Teams/RemoveTeamMember.php
++++ b/app/Actions/Teams/RemoveTeamMember.php
+@@ -2,7 +2,6 @@
+ 
+ namespace App\Actions\Teams;
+ 
+-use App\Enums\TeamRole;
+ use App\Models\Team;
+ use App\Models\User;
+ use Illuminate\Support\Facades\DB;
+@@ -20,12 +19,6 @@
+      */
+     public function handle(Team $team, User $member): void
+     {
+-        if ($member->teamRole($team) === TeamRole::Owner) {
+-            throw ValidationException::withMessages([
+-                'member' => __('The team owner cannot be removed.'),
+-            ]);
+-        }
+-
+         DB::transaction(function () use ($team, $member) {
+             $team->members()->detach($member->id);
+ 

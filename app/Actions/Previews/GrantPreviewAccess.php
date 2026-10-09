@@ -4,6 +4,7 @@ namespace App\Actions\Previews;
 
 use App\Enums\PreviewStatus;
 use App\Models\Preview;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -11,11 +12,20 @@ class GrantPreviewAccess
 {
     /**
      * Issue a single-use grant for the preview and return the URL that
-     * exchanges it for a session on the preview host.
+     * exchanges it for a session on the preview host, opening the given
+     * page of the app (its front page when none is given). A cookie of the
+     * app's own, such as a session one of its people is signed in with,
+     * is set with the grant.
+     *
+     * A grant for someone the owner shared the app with, or for the owner's
+     * own coding tool, is kept apart, so it never takes the place of the
+     * owner's own grant.
+     *
+     * @param  array{name: string, value: string, minutes: int}|null  $cookie
      *
      * @throws ValidationException when the preview is not running.
      */
-    public function handle(Preview $preview): string
+    public function handle(Preview $preview, ?string $path = null, ?array $cookie = null, bool $shared = false, ?string $shareTokenHash = null): string
     {
         if ($preview->status !== PreviewStatus::Ready) {
             throw ValidationException::withMessages([
@@ -25,11 +35,65 @@ class GrantPreviewAccess
 
         $grant = Str::random(48);
 
+        if ($shared) {
+            Cache::put(self::sharedKey($preview, $grant), [
+                'generation' => Cache::rememberForever(self::sharedGenerationKey($preview), fn () => Str::random(40)),
+                'share_token_hash' => $shareTokenHash,
+            ], now()->addSeconds((int) config('builder.preview.grant_seconds')));
+
+            if ($cookie !== null) {
+                Cache::put(self::cookieKey($preview, $grant), $cookie, now()->addSeconds((int) config('builder.preview.grant_seconds')));
+            }
+
+            return $preview->url('/__builder/session').'?'.http_build_query(array_filter(['grant' => $grant, 'to' => $path]));
+        }
+
         $preview->update([
             'grant_hash' => hash('sha256', $grant),
             'grant_expires_at' => now()->addSeconds((int) config('builder.preview.grant_seconds')),
         ]);
 
-        return $preview->url('/__builder/session').'?'.http_build_query(['grant' => $grant]);
+        // The app can open in two places at once, such as the builder and a
+        // tab of its own. Each opening gets its own grant, so a newer one
+        // never makes an older one, still on its way, fail as expired.
+        Cache::put(self::ownerKey($preview, $grant), true, now()->addSeconds((int) config('builder.preview.grant_seconds')));
+
+        if ($cookie !== null) {
+            Cache::put(self::cookieKey($preview, $grant), $cookie, now()->addSeconds((int) config('builder.preview.grant_seconds')));
+        }
+
+        return $preview->url('/__builder/session').'?'.http_build_query(array_filter(['grant' => $grant, 'to' => $path]));
+    }
+
+    /**
+     * Where the cookie set with a grant waits, for as long as the grant.
+     */
+    public static function cookieKey(Preview $preview, string $grant): string
+    {
+        return "previews:{$preview->id}:grant-cookie:".hash('sha256', $grant);
+    }
+
+    /**
+     * Where each of the owner's grants waits until it is used.
+     */
+    public static function ownerKey(Preview $preview, string $grant): string
+    {
+        return "previews:{$preview->id}:owner-grant:".hash('sha256', $grant);
+    }
+
+    /**
+     * Where a grant for someone the owner shared the app with waits.
+     */
+    public static function sharedKey(Preview $preview, string $grant): string
+    {
+        return "previews:{$preview->id}:shared-grant:".hash('sha256', $grant);
+    }
+
+    /**
+     * The generation changes when the owner ends shared access.
+     */
+    public static function sharedGenerationKey(Preview $preview): string
+    {
+        return "previews:{$preview->id}:shared-generation";
     }
 }

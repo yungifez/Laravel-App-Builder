@@ -43,3 +43,4 @@ yarn-error.log
 /opencode.jsonc
 
 /resources/agent-runner/node_modules
+/tests/Browser/Screenshots

@@ -96,7 +96,7 @@ class ReportWriter
             }
         }
 
-        $assumptions = is_array($plan['assumptions'] ?? null) ? $plan['assumptions'] : [];
+        $assumptions = array_map(fn (array $assumption) => $assumption['text'], is_array($plan['assumptions'] ?? null) ? $plan['assumptions'] : []);
 
         if ($assumptions !== []) {
             array_push($lines, '', '## Decisions made for you', '', '- '.implode("\n- ", $assumptions));

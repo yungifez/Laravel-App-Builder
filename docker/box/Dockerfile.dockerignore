@@ -1,0 +1,11 @@
+*
+!agent-runner/package.json
+!agent-runner/package-lock.json
+!agent-runner/run.mjs
+!box-runner/runner.mjs
+!box-runner/dependency-cache.mjs
+!preview-tools/
+!screen-check/package.json
+!screen-check/package-lock.json
+!screen-check/check.mjs
+!trace-recorder/

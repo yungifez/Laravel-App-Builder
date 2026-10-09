@@ -15,6 +15,7 @@ class ModelOutputTest extends TestCase
         $plan = Plan::fromModelOutput([
             'summary' => 'Invite people.',
             'acceptance_criteria' => ['Owners can invite.'],
+            'cases' => [['base' => 'An owner invites a person by email.', 'alternate' => null, 'no_alternate' => 'Invites are only sent by email.', 'exception' => 'A member who tries to invite is turned away.', 'no_exception' => null]],
             'assumptions' => [],
             'tasks' => ['Add an invitation model.'],
             'steps' => [['key' => 'permission', 'kind' => 'permission', 'label' => 'Who may invite', 'file' => 'app/Policies/TeamPolicy.php', 'symbol' => 'TeamPolicy::invite', 'detail' => 'Owners only.', 'extra' => 'dropped']],
@@ -26,6 +27,132 @@ class ModelOutputTest extends TestCase
         $this->assertEquals($plan, Plan::fromArray($plan->toArray()));
     }
 
+    public function test_follow_up_ideas_are_short_distinct_and_at_most_three()
+    {
+        $plan = Plan::fromModelOutput([
+            'summary' => 'Invite people.',
+            'acceptance_criteria' => ['Owners can invite.'],
+            'cases' => [['base' => 'An owner invites a person by email.', 'alternate' => null, 'no_alternate' => 'Invites are only sent by email.', 'exception' => 'A member who tries to invite is turned away.', 'no_exception' => null]],
+            'assumptions' => [],
+            'tasks' => ['Add an invitation model.'],
+            'steps' => [['key' => 'permission', 'kind' => 'permission', 'label' => 'Who may invite', 'file' => 'app/Policies/TeamPolicy.php', 'symbol' => 'TeamPolicy::invite', 'detail' => 'Owners only.']],
+            'next' => [
+                '  Remind   people who have not answered ',
+                'Remind people who have not answered',
+                '',
+                str_repeat('Too long ', 20),
+                'Let people leave a team',
+                'Show who invited whom',
+                'Limit invitations per day',
+            ],
+        ], []);
+
+        $this->assertSame(['Remind people who have not answered', 'Let people leave a team', 'Show who invited whom'], $plan->next);
+        $this->assertSame([], Plan::fromArray(array_diff_key($plan->toArray(), ['next' => true]))->next, 'A plan saved before ideas existed has none.');
+    }
+
+    public function test_a_plan_says_how_the_change_serves_the_owners_goal()
+    {
+        $output = [
+            'summary' => 'Customers book online.',
+            'acceptance_criteria' => ['Customers can pick a free time.'],
+            'cases' => [['base' => 'A customer picks a free time and it is booked.', 'alternate' => 'A customer changes the time before booking.', 'no_alternate' => null, 'exception' => 'A time already taken cannot be picked.', 'no_exception' => null]],
+            'assumptions' => [],
+            'tasks' => ['Add a booking form.'],
+            'steps' => [['key' => 'form', 'kind' => 'interface', 'label' => 'Booking form', 'file' => 'resources/js/pages/Book.vue', 'symbol' => 'Book', 'detail' => 'Lists free times.']],
+        ];
+
+        $plan = Plan::fromModelOutput([...$output, 'goal' => ' Customers book without calling, so the front desk takes fewer calls. '], []);
+
+        $this->assertSame('Customers book without calling, so the front desk takes fewer calls.', $plan->goal);
+        $this->assertSame($plan->goal, Plan::fromArray($plan->toArray())->goal);
+        // No goal in the notes, or a change that does not bear on it.
+        $this->assertNull(Plan::fromModelOutput([...$output, 'goal' => ''], [])->goal);
+        $this->assertNull(Plan::fromArray(array_diff_key($plan->toArray(), ['goal' => true]))->goal, 'A plan saved before goals existed has none.');
+    }
+
+    public function test_an_area_written_into_a_statement_is_moved_back_to_its_field()
+    {
+        $plan = Plan::fromModelOutput([
+            'summary' => 'Describe teams.',
+            'acceptance_criteria' => ['Owners can describe a team.'],
+            'cases' => [['base' => 'An owner describes a team and sees it.', 'alternate' => 'An owner clears the description.', 'no_alternate' => null, 'exception' => 'A member who tries to describe a team is turned away.', 'no_exception' => null]],
+            'assumptions' => [],
+            'tasks' => ['Add a description.'],
+            'steps' => [['key' => 'field', 'kind' => 'data', 'label' => 'Description', 'file' => 'app/Models/Team.php', 'symbol' => 'Team', 'detail' => 'A new field.']],
+            'preserve' => [
+                ['area' => '', 'statement' => "Only owners and admins can change team settings.','area':'membership"],
+                ['area' => 'teams', 'statement' => 'Renaming still works.", "area": "account'],
+                ['area' => '', 'statement' => "The team's name stays required."],
+                ['area' => '', 'statement' => "Switching teams works as before.','area':null"],
+            ],
+        ], []);
+
+        $this->assertSame([
+            ['area' => 'membership', 'statement' => 'Only owners and admins can change team settings.'],
+            ['area' => 'teams', 'statement' => 'Renaming still works.'],
+            ['area' => null, 'statement' => "The team's name stays required."],
+            ['area' => null, 'statement' => 'Switching teams works as before.'],
+        ], $plan->preserve);
+        $this->assertSame($plan->preserve, Plan::fromArray([...$plan->toArray(), 'preserve' => [
+            ['area' => null, 'statement' => "Only owners and admins can change team settings.','area':'membership"],
+            ['area' => 'teams', 'statement' => 'Renaming still works.'],
+            ['area' => null, 'statement' => "The team's name stays required."],
+            ['area' => null, 'statement' => "Switching teams works as before.','area':null"],
+        ]])->preserve, 'A plan saved before the fix reads back clean.');
+    }
+
+    public function test_each_criterion_is_tried_three_ways_or_says_why_not()
+    {
+        $plan = Plan::fromModelOutput([
+            'summary' => 'Show invoices.',
+            'acceptance_criteria' => ['Owners see their invoices.', 'The total is shown in pounds.'],
+            'cases' => [
+                ['base' => 'An owner with two invoices sees both.', 'alternate' => 'An owner with none sees that there are none yet.', 'no_alternate' => 'ignored', 'exception' => 'Someone else is turned away.', 'no_exception' => ''],
+                ['base' => 'A total of 1250 shows as £12.50.', 'alternate' => '', 'no_alternate' => 'There is only one currency.', 'exception' => '', 'no_exception' => 'Nothing here can be refused.'],
+            ],
+            'assumptions' => [],
+            'tasks' => ['Add an invoices page.'],
+            'steps' => [['key' => 'page', 'kind' => 'interface', 'label' => 'The invoices page', 'file' => 'x', 'symbol' => 'x', 'detail' => 'x']],
+        ], []);
+
+        $this->assertSame(['base', 'alternate', 'exception', 'base', 'alternate', 'exception'], array_column($plan->cases, 'kind'));
+        $this->assertSame([null, null, null, null, 'There is only one currency.', 'Nothing here can be refused.'], array_column($plan->cases, 'none'));
+        $this->assertSame([
+            ['criterion' => 'Owners see their invoices.', 'kind' => 'base', 'text' => 'Owners see their invoices. (base case: An owner with two invoices sees both.)'],
+            ['criterion' => 'Owners see their invoices.', 'kind' => 'alternate', 'text' => 'Owners see their invoices. (alternate case: An owner with none sees that there are none yet.)'],
+            ['criterion' => 'Owners see their invoices.', 'kind' => 'exception', 'text' => 'Owners see their invoices. (exception case: Someone else is turned away.)'],
+            ['criterion' => 'The total is shown in pounds.', 'kind' => 'base', 'text' => 'The total is shown in pounds. (base case: A total of 1250 shows as £12.50.)'],
+        ], $plan->verifyItems());
+        $this->assertEquals($plan, Plan::fromArray($plan->toArray()));
+    }
+
+    public function test_missing_cases_a_case_left_out_without_a_reason_or_cases_out_of_step_are_refused()
+    {
+        $plan = fn (?array $cases) => Plan::fromModelOutput(array_filter([
+            'summary' => 'Show invoices.',
+            'acceptance_criteria' => ['Owners see their invoices.'],
+            'cases' => $cases,
+            'assumptions' => [],
+            'tasks' => ['Add an invoices page.'],
+            'steps' => [['key' => 'page', 'kind' => 'interface', 'label' => 'The invoices page', 'file' => 'x', 'symbol' => 'x', 'detail' => 'x']],
+        ], fn ($value) => $value !== null), []);
+
+        foreach ([
+            null,
+            [['base' => 'Both show.', 'alternate' => '', 'no_alternate' => '', 'exception' => 'Others are turned away.', 'no_exception' => '']],
+            [],
+            [['base' => '', 'alternate' => 'x', 'no_alternate' => null, 'exception' => 'y', 'no_exception' => null]],
+        ] as $cases) {
+            try {
+                $plan($cases);
+                $this->fail('A plan with cases '.json_encode($cases).' was accepted.');
+            } catch (ConstructionFailed) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
     public function test_a_plan_with_unsafe_step_keys_or_missing_tasks_is_refused()
     {
         $this->expectException(ConstructionFailed::class);
@@ -34,6 +161,7 @@ class ModelOutputTest extends TestCase
         Plan::fromModelOutput([
             'summary' => 'Invite people.',
             'acceptance_criteria' => ['Owners can invite.'],
+            'cases' => [['base' => 'An owner invites a person by email.', 'alternate' => null, 'no_alternate' => 'Invites are only sent by email.', 'exception' => 'A member who tries to invite is turned away.', 'no_exception' => null]],
             'assumptions' => [],
             'tasks' => [],
             'steps' => [['key' => '../Permission', 'kind' => 'permission', 'label' => 'x', 'file' => 'x', 'symbol' => 'x', 'detail' => 'x']],
@@ -58,6 +186,17 @@ class ModelOutputTest extends TestCase
         $this->expectException(ConstructionFailed::class);
 
         Review::fromModelOutput(['approved' => 'yes', 'summary' => 'Fine.', 'findings' => [['severity' => 'critical', 'summary' => 'x']]]);
+    }
+
+    public function test_a_review_with_a_sentence_too_long_to_show_is_shortened_not_refused()
+    {
+        $review = Review::fromModelOutput(['approved' => true, 'summary' => 'Fine.', 'findings' => [], 'changes' => [
+            ['area' => 'Teams', 'behavior' => str_repeat('Members see a count. ', 20), 'before' => 'No count.', 'now' => 'A count.'],
+        ]]);
+
+        $this->assertTrue($review->approved);
+        $this->assertSame(200, mb_strlen($review->changes[0]['behavior']));
+        $this->assertStringEndsWith('…', $review->changes[0]['behavior']);
     }
 
     public function test_deleted_and_weakened_tests_are_found()
@@ -93,5 +232,89 @@ class ModelOutputTest extends TestCase
             ['path' => 'tests/Feature/GoneTest.php', 'deleted' => true, 'removed_assertions' => 0],
             ['path' => 'tests/Feature/TeamTest.php', 'deleted' => false, 'removed_assertions' => 2],
         ], TestChanges::weakened($patch));
+    }
+
+    public function test_a_blank_link_in_a_new_record_means_it_links_to_nothing()
+    {
+        $field = ['type' => 'string', 'required' => true, 'choices' => [], 'of' => '', 'label' => ''];
+        $shape = [['name' => 'Booking', 'label' => 'booking', 'access' => null, 'fields' => [
+            ['name' => 'title', ...$field],
+            ['name' => 'customer', ...$field, 'type' => 'belongs_to', 'of' => 'Customer'],
+        ]]];
+
+        $fields = Plan::dataShape($shape)[0]['fields'];
+
+        $this->assertNull($fields[0]['of']);
+        $this->assertSame('Customer', $fields[1]['of']);
+        // A link that names no record cannot be built, so nothing is.
+        $shape[0]['fields'][1]['of'] = '';
+        $this->assertSame([], Plan::dataShape($shape));
+    }
+
+    public function test_a_field_keeps_only_the_format_settings_its_kind_uses()
+    {
+        $empty = ['regions' => [], 'schemes' => [], 'variants' => [], 'currency' => '', 'pattern' => '', 'examples' => []];
+        $field = fn (string $name, string $type, array $format) => ['name' => $name, 'type' => $type, 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => [...$empty, ...$format]];
+        $shape = [['name' => 'Branch', 'label' => 'branch', 'access' => null, 'fields' => [
+            $field('phone', 'phone', ['regions' => ['ca', 'US'], 'currency' => 'USD']),
+            $field('site', 'url', ['schemes' => ['http', 'https']]),
+            $field('book', 'isbn', ['variants' => ['13']]),
+            $field('fee', 'money', ['currency' => 'GBP']),
+            $field('code', 'pattern', ['pattern' => '^BR-\d{3}$', 'examples' => ['BR-001', 'BR-120']]),
+            $field('name', 'string', ['regions' => ['CA']]),
+        ]]];
+
+        $fields = collect(Plan::dataShape($shape)[0]['fields'])->pluck('format', 'name')->all();
+
+        $this->assertSame([
+            'phone' => ['regions' => ['CA', 'US']],
+            'site' => ['schemes' => ['http', 'https']],
+            'book' => ['variants' => [13]],
+            'fee' => ['currency' => 'GBP'],
+            'code' => ['pattern' => '^BR-\d{3}$', 'examples' => ['BR-001', 'BR-120']],
+            'name' => null,
+        ], $fields);
+    }
+
+    public function test_a_format_left_empty_stays_out_so_the_notes_can_fill_it()
+    {
+        $shape = [['name' => 'Order', 'label' => 'order', 'access' => null, 'fields' => [
+            ['name' => 'total', 'type' => 'money', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['regions' => [], 'schemes' => [], 'variants' => [], 'currency' => '', 'pattern' => '', 'examples' => []]],
+            ['name' => 'postcode', 'type' => 'postal_code', 'required' => false, 'choices' => [], 'of' => '', 'label' => ''],
+            ['name' => 'rate', 'type' => 'percentage', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['currency' => 'per_record']],
+        ]]];
+
+        $fields = Plan::dataShape($shape)[0]['fields'];
+
+        $this->assertSame(['money', 'postal_code', 'percentage'], array_column($fields, 'type'));
+        $this->assertSame([], array_filter(array_column($fields, 'format')));
+        $this->assertSame(['currency' => 'per_record'], Plan::dataShape([[...$shape[0], 'fields' => [[...$shape[0]['fields'][0], 'format' => ['currency' => 'per_record']]]]])[0]['fields'][0]['format']);
+    }
+
+    public function test_a_pattern_that_refuses_its_own_examples_or_does_not_compile_is_kept_as_plain_text()
+    {
+        $field = fn (array $format) => [['name' => 'Ticket', 'label' => 'ticket', 'access' => null, 'fields' => [
+            ['name' => 'code', 'type' => 'pattern', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => $format],
+        ]]];
+
+        foreach ([
+            'refuses an example' => ['pattern' => '^[A-Z]{3}$', 'examples' => ['ABC', 'abc']],
+            'does not compile' => ['pattern' => '^[A-Z', 'examples' => ['ABC', 'XYZ']],
+            'one example' => ['pattern' => '^[A-Z]{3}$', 'examples' => ['ABC']],
+            'no pattern' => ['pattern' => '', 'examples' => []],
+        ] as $case => $format) {
+            $kept = Plan::dataShape($field($format))[0]['fields'][0];
+
+            $this->assertSame('string', $kept['type'], $case);
+            $this->assertArrayNotHasKey('format', $kept, $case);
+        }
+
+        // An unknown currency or region is not passed on as if it were one.
+        $money = Plan::dataShape([['name' => 'Fee', 'label' => 'fee', 'access' => null, 'fields' => [
+            ['name' => 'amount', 'type' => 'money', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['currency' => 'dollars']],
+            ['name' => 'phone', 'type' => 'phone', 'required' => true, 'choices' => [], 'of' => '', 'label' => '', 'format' => ['regions' => ['Narnia']]],
+        ]]])[0]['fields'];
+        $this->assertArrayNotHasKey('format', $money[0]);
+        $this->assertSame(['regions' => ['any']], $money[1]['format']);
     }
 }

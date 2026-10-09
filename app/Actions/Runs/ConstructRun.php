@@ -2,19 +2,32 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Billing\MeasureUsage;
+use App\Actions\Context\AssessCoverage;
 use App\Actions\Context\AssessPreservation;
-use App\Actions\Context\ClassifyChange;
 use App\Actions\Context\CompileContext;
+use App\Actions\Context\KeepAssumptions;
+use App\Actions\Context\SelectAreas;
+use App\Actions\Features\AcceptFindings;
+use App\Actions\Features\ProposeFindings;
 use App\Actions\Features\RequestVerification;
+use App\Actions\Operations\SummarizeSpend;
+use App\Actions\Previews\RequestPreview;
+use App\Actions\Previews\WarmChangePreview;
 use App\Actions\Workspaces\DestroyWorkspace;
+use App\Context\Capability;
 use App\Context\ChangeClassification;
-use App\Context\ContextPack;
-use App\Context\ProjectContext;
+use App\Enums\Consequence;
 use App\Enums\FeatureRequestStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Features\Exceptions\CannotGenerateFeature;
-use App\Features\TestChanges;
+use App\Features\PatchSummary;
+use App\Jobs\WriteTestsBeside;
 use App\Models\Run;
+use App\Models\RunEvent;
+use App\Models\Verification;
+use App\Models\Workspace;
 use App\Runs\ConstructionDriverManager;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\BudgetExhausted;
@@ -22,24 +35,27 @@ use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Exceptions\RunCancelled;
+use App\Runs\Exceptions\SpendLimitReached;
+use App\Runs\Exceptions\UsageLimitReached;
+use App\Runs\Exceptions\WaitingForWorker;
+use App\Runs\FieldFormats;
 use App\Runs\Plan;
+use App\Runs\PlanningContext;
+use App\Runs\ReshapedSchema;
 use App\Runs\Review;
-use App\Runs\ReviewEvidence;
 use App\Runs\RunLease;
+use App\Runs\ShapeQuestion;
 use App\Runs\ToolExecutor;
 use App\Runs\ToolSession;
+use App\Runs\WrongWrittenTests;
+use Closure;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 
 class ConstructRun
 {
-    /**
-     * What the owner can do when a run stops for a decision.
-     *
-     * @var list<string>
-     */
-    public const DECISION_CHOICES = ['revise_request', 'use_stronger_model', 'involve_a_person'];
-
     public function __construct(
         private TransitionRun $transitionRun,
         private PrepareRunWorkspace $prepareRunWorkspace,
@@ -52,8 +68,24 @@ class ConstructRun
         private FailRun $failRun,
         private DestroyWorkspace $destroyWorkspace,
         private CompileContext $compileContext,
-        private ClassifyChange $classifyChange,
+        private GatherReviewEvidence $gatherReviewEvidence,
+        private AssessCoverage $assessCoverage,
         private AssessPreservation $assessPreservation,
+        private CheckReviewedChange $checkReviewedChange,
+        private FormatChange $formatChange,
+        private RequestPreview $requestPreview,
+        private WarmChangePreview $warmChangePreview,
+        private SummarizeSpend $summarizeSpend,
+        private MeasureUsage $measureUsage,
+        private AcceptFindings $acceptFindings,
+        private ProposeFindings $proposeFindings,
+        private ScaffoldDataShape $scaffoldDataShape,
+        private KeepAssumptions $keepAssumptions,
+        private WriteTestsFirst $writeTestsFirst,
+        private ShapeQuestion $shapeQuestion,
+        private FieldFormats $fieldFormats,
+        private WrongWrittenTests $wrongWrittenTests,
+        private ReshapedSchema $reshapedSchema,
     ) {}
 
     /**
@@ -71,12 +103,25 @@ class ConstructRun
             $this->cancelRun->finish($run);
         } catch (LeaseLost) {
             // Another worker took the run over and carries on from here.
+        } catch (WaitingForWorker) {
+            // The change is written outside; handing it back runs this again.
         } catch (BudgetExhausted $exception) {
-            $this->stopForDecision($run, $lease, $exception->getMessage(), 'budget_exhausted');
+            // What is left to do is kept so the owner can ask it to keep
+            // trying: whatever it was fixing, and finishing the change.
+            $this->stopForDecision($run, $lease, $exception->getMessage(), StopReason::BudgetExhausted, ['feedback' => [
+                'reason' => StopReason::BudgetExhausted->value,
+                'details' => [...($run->feedback['details'] ?? []), __('You stopped before you finished. Finish the change.')],
+            ]]);
         } catch (ProvidersUnavailable $exception) {
-            $this->stopForDecision($run, $lease, $exception->getMessage(), 'providers_unavailable');
-        } catch (ConstructionFailed|CannotGenerateFeature $exception) {
-            $this->failRun->handle($run, $exception->getMessage(), $lease);
+            $this->stopForDecision($run, $lease, $exception->getMessage(), $exception->reason());
+        } catch (ConstructionFailed $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::ConstructionFailed, $lease);
+        } catch (CannotGenerateFeature $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::CannotGenerate, $lease);
+        } catch (SpendLimitReached $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::SpendLimit, $lease);
+        } catch (UsageLimitReached $exception) {
+            $this->failRun->handle($run, $exception->getMessage(), StopReason::UsageLimit, $lease);
         }
     }
 
@@ -86,10 +131,21 @@ class ConstructRun
      */
     protected function advance(Run $run, RunLease $lease): void
     {
-        $driver = $this->drivers->driver($run->driver);
-
         while (true) {
             $run->refresh();
+
+            // Read for each step: an owner may take a change over to their
+            // own tool while it is still being planned.
+            $driver = $this->drivers->driver($run->driver);
+
+            // A change already built and checked is still reviewed: that
+            // is one small call, and throwing the work away costs more. A
+            // repair after the review goes back through implementing.
+            if (in_array($run->status, [RunStatus::Planning, RunStatus::Implementing], true)) {
+                $this->ensureWithinDailySpend();
+                $this->ensureWithinPlan($run);
+                $this->ensureWithinRunSpend($run);
+            }
 
             switch ($run->status) {
                 case RunStatus::Cancelling:
@@ -104,8 +160,7 @@ class ConstructRun
 
                 case RunStatus::Implementing:
                     $this->implement($run, $lease, $driver);
-
-                    return;
+                    break;
 
                 case RunStatus::Reviewing:
                     $this->review($run, $lease, $driver);
@@ -118,6 +173,143 @@ class ConstructRun
     }
 
     /**
+     * Ask the planner for the plan and, for new records, their shape. Null
+     * when the run now waits for the owner or was only a question.
+     */
+    protected function planned(Run $run, RunLease $lease, ConstructionDriver $driver, PlanningContext $planningContext, Workspace $workspace): ?Plan
+    {
+        // Each AI call waits for the one before it, so the owner may have
+        // cancelled in the meantime: no paid call starts after that.
+        RunCancelled::throwIfCancelling($run);
+        $plan = $driver->plan($run, $planningContext);
+        RunCancelled::throwIfCancelling($run);
+
+        // One product question before building (§7): the run waits for the
+        // owner and plans again with their answer. The gate is the run's
+        // question limit and what a wrong guess would cost, not the model's
+        // wish to ask. Anything cheaper is built on the recommended option
+        // and shown with the change for the owner to review.
+        if ($plan->question !== null && $planningContext->mayAsk) {
+            if ($plan->asksOwner(config('builder.construction.questions.ask_about'))) {
+                $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $plan->question, 'error' => null], [
+                    'reason' => StopReason::Question,
+                    'question' => $plan->question['text'],
+                ]);
+
+                return null;
+            }
+
+            $this->recordEvent($run, $lease, 'question_decided', [
+                'question' => $plan->question['text'],
+                'option' => $plan->question['recommended'],
+                'touches' => $plan->question['touches'] ?? [],
+            ]);
+
+            $plan = $plan->decidedOnRecommendation();
+        }
+
+        if ($plan->answer !== null) {
+            $this->answer($run, $lease, $plan, $workspace);
+
+            return null;
+        }
+
+        // After the questions, so a run that stops for the owner or only
+        // answers asks for no shape; before the shape question, which
+        // asks about it.
+        RunCancelled::throwIfCancelling($run);
+
+        return $driver->shape($run, $plan, $planningContext);
+    }
+
+    /**
+     * Get the plan the run last stopped to ask about the shape of, once
+     * that question is answered. Null when the run stopped for anything
+     * else, as an answer to the planner's own question changes the plan.
+     */
+    protected function planShapeAskedAbout(Run $run): ?Plan
+    {
+        $asked = $run->events()->whereIn('type', ['shape_asked', 'format_asked'])->reorder('sequence', 'desc')->first();
+        $stopped = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::NeedsUserDecision->value)->max('sequence');
+
+        if ($asked === null || $asked->sequence !== $stopped - 1) {
+            return null;
+        }
+
+        $plan = Plan::fromArray($asked->data['plan']);
+
+        $answered = $asked->type === 'format_asked' ? $this->fieldFormats->answered($run->answers ?? []) : $this->shapeQuestion->answered($plan, $run->answers ?? []);
+
+        return $answered === null ? null : $plan;
+    }
+
+    /**
+     * Show the owner a new record's shape that is hard to change later
+     * before it is built (§8), through the same pause as a question. A
+     * shape the owner answered about is built as they said. Null when the
+     * run now waits for the owner.
+     */
+    protected function shaped(Run $run, RunLease $lease, Plan $plan, bool $mayAsk): ?Plan
+    {
+        $question = $this->shapeQuestion->for($plan);
+
+        if ($question === null) {
+            return $plan;
+        }
+
+        $answer = $this->shapeQuestion->answered($plan, $run->answers ?? []);
+
+        if ($answer !== null) {
+            return $this->shapeQuestion->apply($plan, $answer);
+        }
+
+        if (! $mayAsk || ! in_array(Consequence::DataShape->value, config('builder.construction.questions.ask_about'), true)) {
+            return $plan;
+        }
+
+        // Kept so the answer is applied to this plan, not to a new one.
+        $this->recordEvent($run, $lease, 'shape_asked', ['plan' => $plan->toArray()]);
+
+        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $question, 'error' => null], [
+            'reason' => StopReason::Question,
+            'question' => $question['text'],
+        ]);
+
+        return null;
+    }
+
+    /**
+     * Settle each new field's format from the owner's answers and the
+     * notes (§9 Formats). An amount whose currency nobody named is asked
+     * about through the same pause as a question, when the owner can be
+     * asked. Null when the run now waits for the owner.
+     */
+    protected function formatted(Run $run, RunLease $lease, Plan $plan, PlanningContext $planningContext): ?Plan
+    {
+        $areas = $planningContext->areas + array_fill_keys($planningContext->projectContext->known($plan->capabilities), SelectAreas::PLANNER);
+        $settled = $this->fieldFormats->settle($plan, $planningContext->projectContext, array_map(strval(...), array_keys($areas)), $run->answers ?? []);
+        $question = $this->fieldFormats->question($settled);
+
+        if ($question === null) {
+            return $settled;
+        }
+
+        if (! $planningContext->mayAsk || ! in_array(Consequence::Money->value, config('builder.construction.questions.ask_about'), true)) {
+            return $this->fieldFormats->unasked($settled);
+        }
+
+        // The plan before settling is kept, so the answer settles it once.
+        $this->recordEvent($run, $lease, 'format_asked', ['plan' => $plan->toArray()]);
+
+        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['question' => $question, 'error' => null], [
+            'reason' => StopReason::Question,
+            'question' => $question['text'],
+        ]);
+
+        return null;
+    }
+
+    /**
      * Prepare the workspace, have the driver plan the change, compile the
      * project context for the areas the change is about, and save both.
      */
@@ -125,12 +317,20 @@ class ConstructRun
     {
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
         $planningContext = $this->gatherPlanningContext->handle($run, $workspace);
-        $plan = $driver->plan($run, $planningContext);
-        $pack = $this->compileContext->handle($planningContext->projectContext, [...$planningContext->preselectedCapabilities(), ...$plan->capabilities]);
+        $plan = $this->plannedBefore($run, $lease) ?? $this->planAnew($run, $lease, $driver, $planningContext, $workspace);
+
+        if ($plan === null) {
+            return;
+        }
+
+        // The areas come from evidence first; the planner's guess only adds.
+        $chosen = $planningContext->areas + array_fill_keys($planningContext->projectContext->known($plan->capabilities), SelectAreas::PLANNER);
+        $pack = $this->compileContext->handle($planningContext->projectContext, array_map(strval(...), array_keys($chosen)), files: $planningContext->files);
 
         $this->recordEvent($run, $lease, 'context_compiled', [
             'mode' => $pack->mode->value,
             'targets' => $pack->targets,
+            'chosen' => $chosen,
             'included' => $pack->included,
             'tokens' => $pack->tokens(),
             'problems' => $pack->problems,
@@ -144,6 +344,202 @@ class ConstructRun
     }
 
     /**
+     * Plan the change with the paid calls: the plan, the shape of new
+     * records and the tests written first. The finished plan is saved
+     * with what it was made from, so a run that stops on our side before
+     * it builds does not pay for it again. Null when the run now waits for
+     * the owner or was only a question.
+     */
+    protected function planAnew(Run $run, RunLease $lease, ConstructionDriver $driver, PlanningContext $planningContext, Workspace $workspace): ?Plan
+    {
+        // An answer to the shape question changes only the shape, so the
+        // plan it asked about is built on without planning again.
+        $plan = $this->planShapeAskedAbout($run) ?? $this->planned($run, $lease, $driver, $planningContext, $workspace);
+
+        if ($plan === null) {
+            return null;
+        }
+
+        $plan = $this->shaped($run, $lease, $plan, $planningContext->mayAsk);
+
+        if ($plan === null) {
+            return null;
+        }
+
+        $plan = $this->formatted($run, $lease, $plan, $planningContext);
+
+        if ($plan === null) {
+            return null;
+        }
+
+        RunCancelled::throwIfCancelling($run);
+
+        // A first version's tests are written while its coder works, so it
+        // shows sooner; later changes have them first, where they guide the
+        // coder most (§12).
+        if ($this->testsBesideTheCoder($run)) {
+            $this->askForTestsBeside($run, $lease, $plan, $workspace, $planningContext);
+        } else {
+            $plan = $this->writeTestsFirst->handle($run, $plan, $workspace, $planningContext);
+        }
+
+        $this->recordEvent($run, $lease, 'planned', ['key' => $this->planningKey($run), 'plan' => $plan->toArray()]);
+
+        return $plan;
+    }
+
+    /**
+     * Get the plan this run already finished from the same code and the
+     * same answers, when it stopped on our side (a worker restart, a lost
+     * lease) before it started to build. Null when there is none: a new
+     * answer from the owner plans again.
+     */
+    protected function plannedBefore(Run $run, RunLease $lease): ?Plan
+    {
+        $planned = $run->events()->where('type', 'planned')->where('data->key', $this->planningKey($run))->latest('sequence')->first();
+
+        if ($planned === null) {
+            return null;
+        }
+
+        $this->recordEvent($run, $lease, 'plan_reused', ['planned' => $planned->sequence]);
+
+        return Plan::fromArray($planned->data['plan']);
+    }
+
+    /**
+     * Get what a plan is made from that can change between two tries: the
+     * code the change starts from and the owner's answers.
+     */
+    protected function planningKey(Run $run): string
+    {
+        return hash('sha256', (string) json_encode([$run->featureRequest->base_revision, $run->answers ?? [], $run->question_limit]));
+    }
+
+    /**
+     * The owner only asked about the app. Reply from the plan and stop,
+     * rather than spend minutes building, checking and reviewing nothing.
+     */
+    protected function answer(Run $run, RunLease $lease, Plan $plan, Workspace $workspace): void
+    {
+        DB::transaction(function () use ($run, $lease, $plan) {
+            $run->featureRequest->update([
+                'status' => FeatureRequestStatus::Answered,
+                'summary' => $plan->summary,
+                'error' => null,
+            ]);
+
+            $this->transitionRun->handle($run, RunStatus::Completed, $lease, ['plan' => $plan->toArray()], ['reason' => 'answered']);
+        });
+
+        rescue(fn () => $this->destroyWorkspace->handle($workspace));
+    }
+
+    /**
+     * Have each written test that held the change back the same way twice
+     * corrected once before the next try (§12), one request per file, and
+     * tell the coder. The
+     * owner sees each correction in the proof; it is never silent.
+     */
+    protected function correctWrittenTests(Run $run, RunLease $lease, Workspace $workspace, Plan $plan): Plan
+    {
+        /** @var list<string> $details */
+        $details = [];
+
+        foreach ($this->untried($run, $run->feedback['tests'] ?? []) as $tests) {
+            ['plan' => $corrected, 'tests' => $asked] = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $tests);
+
+            foreach ($asked as $test) {
+                $this->recordEvent($run, $lease, $corrected === null ? 'written_test_not_rewritten' : 'written_test_rewritten', ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message']]);
+
+                if ($corrected !== null) {
+                    $details[] = (string) __('The test ":name" in :file, written before you started, was wrong and has been corrected. Its new version is under "Tests already written": build the change so it passes. The problems below are from before it was corrected.', ['name' => $test['name'], 'file' => $test['file']]);
+                }
+            }
+
+            $plan = $corrected ?? $plan;
+        }
+
+        $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+            'plan' => $plan->toArray(),
+            'feedback' => ['reason' => 'verification_failed', 'details' => [...$details, ...(array) ($run->feedback['details'] ?? [])]],
+        ], ['reason' => $details === [] ? 'verification_failed' : 'written_test_rewritten']);
+
+        return $plan;
+    }
+
+    /**
+     * Have each written test the coder says is wrong (WriteBrief::TEST_WRONG)
+     * corrected at once against the app's real tables and names, once per
+     * test in a run and in one request per file, so a correction never
+     * keeps another reported test's wrong name. A test that cannot be
+     * corrected stays as written, and
+     * the checks decide as before. The owner sees each correction.
+     *
+     * @param  list<array{item: int, file: string, name: string, message: string, by: string}>  $reported
+     * @return array{0: Plan, 1: list<string>}
+     */
+    protected function correctReportedTests(Run $run, RunLease $lease, Workspace $workspace, Plan $plan, array $reported): array
+    {
+        $rewritten = [];
+
+        foreach ($this->untried($run, $reported) as $tests) {
+            ['plan' => $corrected, 'tests' => $asked] = $this->writeTestsFirst->rewrite($run, $plan, $workspace, $tests);
+            $events = array_map(fn (array $test) => ['file' => $test['file'], 'test' => $test['name'], 'reason' => $test['message'], 'by' => 'coder'], $asked);
+
+            if ($corrected === null) {
+                foreach ($events as $event) {
+                    $this->recordEvent($run, $lease, 'written_test_not_rewritten', $event);
+                }
+
+                continue;
+            }
+
+            $plan = $corrected;
+            array_push($rewritten, ...array_map(fn (array $test) => "{$test['file']}|{$test['name']}", $asked));
+
+            DB::transaction(function () use ($run, $lease, $plan, $events) {
+                $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+                $lease->assertHeldOn($locked);
+
+                $locked->plan = $plan->toArray();
+                $locked->save();
+
+                foreach ($events as $event) {
+                    $locked->recordEvent('written_test_rewritten', $event);
+                }
+
+                $run->setRawAttributes($locked->getAttributes(), sync: true);
+            });
+        }
+
+        return [$plan, $rewritten];
+    }
+
+    /**
+     * Get the tests not yet sent for correction in this run, grouped by
+     * file, so each file is corrected in one request.
+     *
+     * @template T of array{file: string, name: string}
+     *
+     * @param  list<T>  $tests
+     * @return list<non-empty-list<T>>
+     */
+    protected function untried(Run $run, array $tests): array
+    {
+        $groups = [];
+
+        foreach ($tests as $test) {
+            if (! $run->events()->whereIn('type', ['written_test_rewritten', 'written_test_not_rewritten'])->where('data->file', $test['file'])->where('data->test', $test['name'])->exists()) {
+                $groups[$test['file']][] = $test;
+            }
+        }
+
+        return array_values($groups);
+    }
+
+    /**
      * Have the driver build (or repair) the change, read it back from the
      * workspace, and hand it to verification.
      */
@@ -151,19 +547,134 @@ class ConstructRun
     {
         $workspace = $this->prepareRunWorkspace->handle($run, $lease);
         $plan = $this->planFor($run);
+
+        if (($run->feedback['reason'] ?? null) === 'written_test_wrong') {
+            $plan = $this->correctWrittenTests($run, $lease, $workspace, $plan);
+        }
+
+        // A worker outside our boxes writes in its own copy of the app, so
+        // the files are written only where our agents work.
+        if ($run->driver !== 'worker' && ($scaffolded = $this->scaffoldDataShape->handle($workspace, $plan)) !== ['files' => [], 'notes' => []]) {
+            $this->recordEvent($run, $lease, 'scaffolded', $scaffolded);
+        }
+
+        // The tests written from the plan are there before the coder
+        // starts, and put back after it: the change must pass them as written.
+        $this->writeTestsFirst->place($workspace, $plan);
+
+        // A worker outside our boxes may take hours, so only our agents warm a preview.
+        if ($run->driver !== 'worker' && $run->repairs === 0) {
+            rescue(fn () => $this->warmChangePreview->start($run->featureRequest));
+        }
+
+        $asked = $run->repairs === 0 && $plan->writtenTests === [] ? $run->events()->where('type', 'tests_beside_asked')->reorder('sequence', 'desc')->first() : null;
         $account = $driver->build($run, $plan, new ToolSession($this->toolExecutor, $run, $lease));
+
+        if ($asked !== null) {
+            $plan = $this->takeTestsBeside($run, $lease, $workspace, $plan, $asked);
+        }
+
+        // A written test the coder says guessed a name the app does not
+        // have is corrected now, and the change is checked against that.
+        [$plan, $rewritten] = $this->correctReportedTests($run, $lease, $workspace, $plan, $this->wrongWrittenTests->reported($account, $plan));
+
+        // A worker made its code pass the tests in its own copy, so a written
+        // test it changed cannot just be put back: the change goes back.
+        $changed = $run->driver === 'worker'
+            ? array_values(array_filter($this->writeTestsFirst->changed($workspace, $plan), fn (array $test) => ! in_array("{$test['file']}|{$test['name']}", $rewritten, true)))
+            : [];
+
+        if (($restored = $this->writeTestsFirst->place($workspace, $plan)) !== []) {
+            $this->recordEvent($run, $lease, 'written_tests_restored', ['paths' => $restored]);
+        }
 
         $this->recordEvent($run, $lease, 'build_finished', ['attempt' => $run->repairs, 'account' => Str::limit($account, 2000)]);
 
-        $patch = $this->extractCandidateChange->handle($workspace);
+        if ($changed !== []) {
+            $details = array_map(fn (array $test) => $test['name'] === null
+                ? __('You changed :file, which holds tests written before the change. Hand it back exactly as written, and change the app so its tests pass.', ['file' => $test['file']])
+                : __('You changed the test ":name" in :file, which was written before the change. Hand it back exactly as written, and change the app so it passes.', ['name' => $test['name'], 'file' => $test['file']]), $changed);
 
-        if (trim($patch) === '') {
-            $this->stopForDecision($run, $lease, __('The run finished without changing the project.'), 'no_changes');
+            if ($driver->canRepair() && $run->repairs < $run->repairLimit()) {
+                $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+                    'repairs' => $run->repairs + 1,
+                    'feedback' => ['reason' => 'written_tests_changed', 'details' => $details],
+                ], ['reason' => 'written_tests_changed', 'tests' => $changed]);
+            } else {
+                $this->stopForDecision($run, $lease, __('The tool making this change changed the tests written to check it, so the change proves nothing: :tests. Ask it to try again and leave those tests as they are.', [
+                    'tests' => implode(', ', array_map(fn (array $test) => $test['name'] ?? $test['file'], $changed)),
+                ]), StopReason::WrittenTestsChanged);
+            }
 
             return;
         }
 
-        DB::transaction(function () use ($run, $lease, $plan, $patch) {
+        // What the agent asked to keep, instead of fixing it, goes to the owner.
+        $this->proposeFindings->fromReply($run, $account);
+
+        $formatted = $this->formatChange->handle($workspace);
+
+        if ($formatted !== []) {
+            $this->recordEvent($run, $lease, 'formatted', ['formatters' => $formatted]);
+        }
+
+        $patch = $this->extractCandidateChange->handle($workspace);
+
+        // What the plan took for granted is kept with the notes, so the
+        // next change builds on it instead of guessing again.
+        $assumed = $this->keepAssumptions->handle($workspace, $plan, $run->context['targets'] ?? []);
+
+        if ($assumed !== []) {
+            $this->recordEvent($run, $lease, 'assumptions_noted', ['count' => count($assumed)]);
+        }
+
+        $noteChanges = $this->extractCandidateChange->notes($workspace);
+
+        if (trim($patch) === '') {
+            $this->stopForDecision($run, $lease, __('The run finished without changing the project.'), StopReason::NoChanges);
+
+            return;
+        }
+
+        // Tests the checks never run cannot count as evidence, and the review
+        // would send the change back for them anyway. Saying so now saves a
+        // verification and a review.
+        $skipped = $this->testsTheChecksSkip($patch);
+
+        if ($skipped !== [] && $driver->canRepair() && $run->repairs < $run->repairLimit()) {
+            $paths = Capability::suiteLocation();
+
+            $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+                'repairs' => $run->repairs + 1,
+                'feedback' => ['reason' => 'tests_not_run', 'details' => array_map(
+                    fn (string $file) => __('The checks do not run :file, so it proves nothing. Check the same behaviour in a test under :paths.', ['file' => $file, 'paths' => $paths]),
+                    $skipped,
+                )],
+            ], ['reason' => 'tests_not_run', 'files' => $skipped]);
+
+            return;
+        }
+
+        // Renaming working tables or columns to fit a written test that
+        // guessed a name breaks the rest of the app. The change goes back
+        // once to keep them; a second try is the coder's call.
+        $reshaped = $this->reshapedSchema->in($patch, $plan);
+
+        if ($reshaped !== [] && $driver->canRepair() && $run->repairs < $run->repairLimit()
+            && ! $run->events()->where('type', 'status')->where('data->reason', 'schema_reshaped')->exists()) {
+            $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
+                'repairs' => $run->repairs + 1,
+                'feedback' => ['reason' => 'schema_reshaped', 'details' => [
+                    ...$reshaped,
+                    (string) __('Keep the app\'s tables, columns and migrations that already ran as they are, unless the plan asks to change them.'),
+                    ...($plan->writtenTests === [] ? [] : [(string) __('If a test written before you started expects a name the app does not have, do not change the app to fit it: say so in a TEST WRONG line.')]),
+                ]],
+            ], ['reason' => 'schema_reshaped', 'found' => $reshaped]);
+
+            return;
+        }
+
+        DB::transaction(function () use ($run, $lease, $plan, $patch, $noteChanges) {
             $featureRequest = $run->featureRequest;
 
             $featureRequest->update([
@@ -171,6 +682,7 @@ class ConstructRun
                 'solution_key' => $plan->solutionKey,
                 'summary' => $plan->summary,
                 'patch' => $patch,
+                'note_changes' => $noteChanges === [] ? null : $noteChanges,
                 'steps' => $plan->steps,
                 'acceptance' => $plan->acceptance,
                 'error' => null,
@@ -181,38 +693,62 @@ class ConstructRun
             ]);
             $this->requestVerification->handle($featureRequest, $run);
         });
+
+        // The owner can try the change while it is checked and reviewed;
+        // keeping it still waits for both.
+        if (config('builder.preview.automatic')) {
+            $featureRequest = $run->featureRequest->refresh();
+
+            if (! rescue(fn () => $this->warmChangePreview->land($featureRequest), false)) {
+                $this->requestPreview->automatically($featureRequest);
+            }
+        }
     }
 
     /**
      * Have the driver review the verified change from the platform's evidence,
-     * then complete the run, send it back for a repair, or stop for a decision.
+     * check that a test in the change covers each verify item, then complete
+     * the run, send it back for a repair, or stop for a decision.
      */
     protected function review(Run $run, RunLease $lease, ConstructionDriver $driver): void
     {
         $featureRequest = $run->featureRequest;
         $verification = $run->verifications()->latest('id')->firstOrFail();
         $plan = $this->planFor($run);
-        $pack = $run->context !== null ? ContextPack::fromArray($run->context) : null;
-        $projectContext = $pack?->projectContext() ?? new ProjectContext;
-        $classification = $this->classifyChange->handle($projectContext, $pack->targets ?? [], $featureRequest->patch);
+        $projectContext = $this->gatherReviewEvidence->projectContext($run);
+        $evidence = $this->gatherReviewEvidence->handle($run, $plan, $verification);
+        $classification = $evidence->classification;
 
-        $review = $driver->review($run, new ReviewEvidence(
-            request: $featureRequest->prompt,
-            plan: $plan,
-            patch: (string) $featureRequest->patch,
-            weakenedTests: TestChanges::weakened($featureRequest->patch),
-            verificationStatus: $verification->status->value,
-            verificationResults: $verification->results ?? [],
-            projectContext: $pack->text ?? '',
-            classification: $classification,
-            areaNames: array_map(fn ($capability) => $capability->name, $projectContext->capabilities),
-        ));
+        $review = $this->reviewOnce($run, $lease, $verification, fn () => $driver->review($run, $evidence));
+
+        // A new test that only guards what the app already did is never a
+        // gap while another new test fails without the change, whatever
+        // the reviewer called it.
+        $review = $review->withGuardingTestsMinor($verification->evidence['new_tests'] ?? []);
+
+        // The platform's own checks of the change block it whatever the
+        // reviewer said.
+        ['review' => $review, 'verified' => $verified] = $this->checkReviewedChange->handle($review, $plan, $verification, $driver->canRepair());
+
+        // The gate (direction 33): what a test run proves the change's own
+        // code did where Laravel expects nothing to change, and what a
+        // caused failure proves it left behind, sends the change back by
+        // itself. No model decides it, and the reviewer can add to it but
+        // never take from it. What the owner said the change does on purpose
+        // is left out. The agent may ask to keep a finding, but only the
+        // owner's yes lets it stay: until they answer, it holds the change,
+        // but it is never sent back to the agent, who can do nothing more
+        // about it. Repairs are only for what the agent can fix.
+        ['review' => $review, 'gate' => $gate, 'asked' => $asked] = $this->checkReviewedChange->gate($review, $featureRequest, $verification, $driver->canRepair());
+
+        $review = $this->checkReviewedChange->screens($review, $verification, $driver->canRepair());
 
         $this->recordEvent($run, $lease, 'review', [
             'approved' => $review->approved,
             'summary' => $review->summary,
             'findings' => $review->findings,
             'verification_id' => $verification->id,
+            'verify' => array_count_values(array_column($verified, 'evidence')),
             'areas' => [
                 'requested' => array_keys($classification->requested),
                 'may_also_affect' => array_keys($classification->mayAlsoAffect),
@@ -224,7 +760,20 @@ class ConstructRun
         $stored = ['review' => [
             ...$this->storedReview($review, $classification),
             'preserved' => $this->assessPreservation->handle($plan, $classification, $projectContext, $verification->results ?? [], $review),
+            'verified' => $verified,
+            'coverage' => $this->assessCoverage->handle($plan, $classification, $projectContext, $verified, $verification->results ?? []),
         ]];
+
+        // Only what the agent asked the owner to keep holds the change: the
+        // owner answers, not the agent. Their answer runs this review again.
+        if ($review->approved && $asked !== []) {
+            $this->stopForDecision($run, $lease, __('I asked you about something the checks found. Read it in how we know the change works, and answer.'), StopReason::FindingProposed, [
+                ...$stored,
+                'feedback' => ['reason' => 'review_findings', 'details' => array_column($asked, 'text'), 'gate' => $gate],
+            ]);
+
+            return;
+        }
 
         if ($review->approved) {
             $this->transitionRun->handle($run, RunStatus::Completed, $lease, $stored);
@@ -237,25 +786,66 @@ class ConstructRun
         }
 
         $details = array_map(fn (array $finding) => trim(($finding['file'] !== null ? "{$finding['file']}: " : '').$finding['summary']), $review->blockingFindings() ?: $review->findings);
+        $feedback = ['reason' => 'review_findings', 'details' => $details ?: [$review->summary], 'gate' => $gate, 'asked' => array_column($asked, 'text')];
 
-        if ($driver->canRepair() && $run->repairs < (int) config('builder.construction.budgets.repairs')) {
+        if ($driver->canRepair() && $run->repairs < $run->repairLimit()) {
             $this->transitionRun->handle($run, RunStatus::Implementing, $lease, [
                 'repairs' => $run->repairs + 1,
-                'feedback' => ['reason' => 'review_findings', 'details' => $details ?: [$review->summary]],
+                'feedback' => $feedback,
                 ...$stored,
             ], ['reason' => 'review_findings']);
 
             return;
         }
 
-        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), 'review_findings', $stored);
+        // The findings are kept so the owner can ask it to keep trying.
+        $this->stopForDecision($run, $lease, __('The review found problems this run cannot fix: :summary', ['summary' => $review->summary]), StopReason::ReviewFindings, [
+            ...$stored,
+            'feedback' => $feedback,
+        ]);
+    }
+
+    /**
+     * Have the model review the change once for the same evidence. A second
+     * review of the same patch, checked by the same verification, with the
+     * same findings accepted, is paid for again but cannot know more: a
+     * job retried after a stop, or a proposal the owner turned down, reuses
+     * the saved one. The free checks and the gate still run each time.
+     *
+     * @param  Closure(): Review  $review
+     */
+    protected function reviewOnce(Run $run, RunLease $lease, Verification $verification, Closure $review): Review
+    {
+        $accepted = $this->acceptFindings->identities($run->featureRequest);
+        sort($accepted);
+        $key = hash('sha256', (string) json_encode([hash('sha256', (string) $run->featureRequest->patch), $verification->id, $accepted]));
+
+        $saved = $run->events()->where('type', 'model_review')->where('data->key', $key)->latest('sequence')->first()?->data['review'] ?? null;
+
+        if (is_array($saved)) {
+            $this->recordEvent($run, $lease, 'model_review_reused', ['verification_id' => $verification->id]);
+
+            return new Review($saved['approved'], $saved['summary'], $saved['findings'], $saved['changes'], $saved['verify']);
+        }
+
+        $fresh = $review();
+
+        $this->recordEvent($run, $lease, 'model_review', ['key' => $key, 'review' => [
+            'approved' => $fresh->approved,
+            'summary' => $fresh->summary,
+            'findings' => $fresh->findings,
+            'changes' => $fresh->changes,
+            'verify' => $fresh->verify,
+        ]]);
+
+        return $fresh;
     }
 
     /**
      * Get a review as stored on the run, with each behaviour change placed in
-     * its section by the area it belongs to.
+     * its section by the area it belongs to, and with what backs it.
      *
-     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>}}
+     * @return array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, evidence: 'tested'|'in_change'|'not_in_change', behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation: list<string>, by_line: list<string>}|null, notes_behind: list<string>}}
      */
     protected function storedReview(Review $review, ChangeClassification $classification): array
     {
@@ -263,9 +853,107 @@ class ConstructRun
             'approved' => $review->approved,
             'summary' => $review->summary,
             'findings' => $review->findings,
-            'changes' => array_map(fn (array $change) => [...$change, 'section' => $classification->sectionFor($change['area'])], $review->changes),
+            'changes' => array_map(fn (array $change) => [...$change, 'section' => $classification->sectionFor($change['area']), 'evidence' => $classification->evidenceFor($change['area'])], $review->changes),
             'classification' => $classification->toArray(),
         ];
+    }
+
+    /**
+     * Whether a run writes its tests beside the coder: our agents building
+     * a project's first change, the first time.
+     */
+    protected function testsBesideTheCoder(Run $run): bool
+    {
+        return config('builder.verification.written_first.beside') === true
+            && $run->driver === 'sdk'
+            && $run->repairs === 0
+            && $run->featureRequest->project->featureRequests()->where('id', '<', $run->feature_request_id)->doesntExist();
+    }
+
+    /**
+     * Record what the test writer is asked, and have a job ask it while
+     * the coder works.
+     */
+    protected function askForTestsBeside(Run $run, RunLease $lease, Plan $plan, Workspace $workspace, PlanningContext $planningContext): void
+    {
+        $asked = $this->writeTestsFirst->prepare($run, $plan, $workspace, $planningContext);
+
+        if ($asked === null) {
+            return;
+        }
+
+        $this->recordEvent($run, $lease, 'tests_beside_asked', ['plan' => $plan->toArray(), ...$asked]);
+
+        WriteTestsBeside::dispatch($run, (int) $run->events()->where('type', 'tests_beside_asked')->max('sequence'));
+    }
+
+    /**
+     * Take the tests written beside the coder once it is done, and place
+     * them before the checks. When the job never started, the run writes
+     * them itself, as before the coder; when the job failed or never came
+     * back, the run asks again, so a refusal stops it as it would have.
+     */
+    protected function takeTestsBeside(Run $run, RunLease $lease, Workspace $workspace, Plan $plan, RunEvent $asked): Plan
+    {
+        $deadline = now()->addSeconds((int) config('builder.verification.written_first.beside_wait_seconds'));
+        $again = fn () => $this->writeTestsFirst->write($run, Plan::fromArray($asked->data['plan']), ['prompt' => $asked->data['prompt'], 'existing' => $asked->data['existing']]);
+
+        while (true) {
+            $result = $run->events()->where('type', 'tests_beside')->where('sequence', '>', $asked->sequence)->get()
+                ->first(fn (RunEvent $event) => ($event->data['asked'] ?? null) === $asked->sequence);
+
+            if ($result !== null) {
+                $written = $result->data['outcome'] === 'written' ? Plan::fromArray($result->data['plan']) : $again();
+
+                break;
+            }
+
+            if (Cache::add(WriteTestsBeside::claim($run, $asked->sequence), 'run', now()->addDay()) || now()->isAfter($deadline)) {
+                $written = $again();
+
+                break;
+            }
+
+            $this->keepWaiting($run, $lease);
+            Sleep::for(2)->seconds();
+        }
+
+        [$plan, $clashed] = $this->writeTestsFirst->besideTheCoder($workspace, $plan, $written);
+
+        DB::transaction(function () use ($run, $lease, $plan, $clashed) {
+            $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+            $lease->assertHeldOn($locked);
+
+            $locked->plan = $plan->toArray();
+            $locked->save();
+            $locked->recordEvent('tests_beside_placed', ['paths' => array_keys($plan->writtenFiles), 'coder_made' => $clashed]);
+
+            $run->setRawAttributes($locked->getAttributes(), sync: true);
+        });
+
+        $this->writeTestsFirst->place($workspace, $plan);
+
+        return $plan;
+    }
+
+    /**
+     * Hold the run while its tests are still being written: keep the lease,
+     * and stop when the owner cancels.
+     */
+    protected function keepWaiting(Run $run, RunLease $lease): void
+    {
+        DB::transaction(function () use ($run, $lease) {
+            $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+            $lease->assertHeldOn($locked);
+
+            if ($locked->status === RunStatus::Cancelling) {
+                throw RunCancelled::forRun($locked->id);
+            }
+
+            $locked->extendLease();
+        });
     }
 
     /**
@@ -288,16 +976,90 @@ class ConstructRun
     }
 
     /**
+     * Stop before new planning or building once today's AI spend reached
+     * the limit, so a busy day cannot drain the AI accounts unseen.
+     *
+     * @throws SpendLimitReached
+     */
+    protected function ensureWithinDailySpend(): void
+    {
+        if ($this->summarizeSpend->dailyLimitReached()) {
+            throw new SpendLimitReached(__('This is our fault: we paused new work for today to keep our costs in check. Nothing in your app changed. Try again tomorrow.'));
+        }
+    }
+
+    /**
+     * Stop before new planning or building once the owner used all the AI
+     * use their plan includes this month.
+     *
+     * @throws UsageLimitReached
+     */
+    protected function ensureWithinPlan(Run $run): void
+    {
+        $usage = $this->measureUsage->handle($run->featureRequest->project->owner);
+
+        if ($usage['reached']) {
+            throw UsageLimitReached::until($usage['resets_at']);
+        }
+    }
+
+    /**
+     * Stop before more planning or building once this change spent what one
+     * try may spend on AI, so a change that keeps failing cannot run on
+     * unseen. Counted since it started, or since the owner last asked it to
+     * keep trying.
+     *
+     * @throws BudgetExhausted
+     */
+    protected function ensureWithinRunSpend(Run $run): void
+    {
+        $limit = (float) config('builder.construction.budgets.run_usd');
+
+        if ($limit <= 0) {
+            return;
+        }
+
+        $since = $run->budgetSince();
+        $spent = $run->events()->where('type', 'model_call')
+            ->when($since !== null, fn ($query) => $query->where('created_at', '>=', $since))
+            ->get()
+            ->sum(fn (RunEvent $call) => is_numeric($call->data['cost_usd'] ?? null) ? (float) $call->data['cost_usd'] : 0.0);
+
+        if ($spent >= $limit) {
+            throw new BudgetExhausted(__('This change used all the AI work one try may take. Your app is as it was. You can ask it to keep trying.'));
+        }
+    }
+
+    /**
      * Stop the run and ask the owner how to continue.
      *
      * @param  array<string, mixed>  $attributes  Other columns to save with the stop
      */
-    protected function stopForDecision(Run $run, RunLease $lease, string $reason, string $cause, array $attributes = []): void
+    protected function stopForDecision(Run $run, RunLease $lease, string $reason, StopReason $cause, array $attributes = []): void
     {
-        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['error' => $reason, ...$attributes], [
-            'reason' => $cause,
-            'choices' => self::DECISION_CHOICES,
-        ]);
+        $this->transitionRun->handle($run, RunStatus::NeedsUserDecision, $lease, ['error' => $reason, ...$attributes], ['reason' => $cause]);
+    }
+
+    /**
+     * Get the test files the change adds to or changes that the checks do not
+     * run, such as a Vitest file when only tests/ is run, when the change has
+     * no test that the checks do run.
+     *
+     * @return list<string>
+     */
+    protected function testsTheChecksSkip(string $patch): array
+    {
+        if (! config('builder.verification.require_verify_tests')) {
+            return [];
+        }
+
+        $tests = array_values(array_filter(
+            array_column(array_filter(PatchSummary::files($patch), fn (array $file) => $file['additions'] > 0), 'path'),
+            fn (string $path) => preg_match('#(\.(test|spec)\.[cm]?[jt]sx?$)|(Test\.php$)|((^|/)(tests?|__tests__)/)#', $path) === 1,
+        ));
+        $skipped = array_values(array_filter($tests, fn (string $path) => ! Capability::runBySuite($path)));
+
+        return count($skipped) === count($tests) ? $skipped : [];
     }
 
     /**

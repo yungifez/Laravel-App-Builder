@@ -17,6 +17,12 @@ interface ConstructionDriver
     public function plan(Run $run, PlanningContext $context): Plan;
 
     /**
+     * Describe the new kinds of record the plan stores, when it says it
+     * stores any.
+     */
+    public function shape(Run $run, Plan $plan, PlanningContext $context): Plan;
+
+    /**
      * Make the planned change in the workspace, using only the session's
      * tools. When the run has feedback, address it. Returns the driver's own
      * account of what it did, which is logged but never trusted.

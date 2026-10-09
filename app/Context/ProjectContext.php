@@ -3,20 +3,27 @@
 namespace App\Context;
 
 /**
- * What the application's `.builder/` directory says about the product: the
- * project notes and one file per area (capability).
+ * What the project's notes say about the product: the project notes and
+ * one file per area (capability). Paths are relative to the notes, which
+ * live in our database (see ProjectNotes).
  */
 final readonly class ProjectContext
 {
     /**
+     * Where notes used to live inside the app's repository. Only imports
+     * read it, to bring the notes into our database.
+     */
+    public const LEGACY_DIRECTORY = '.builder';
+
+    /**
      * The project-wide notes.
      */
-    public const PROJECT_FILE = '.builder/project.md';
+    public const PROJECT_FILE = 'project.md';
 
     /**
      * The directory of capability files.
      */
-    public const CAPABILITIES_DIRECTORY = '.builder/capabilities';
+    public const CAPABILITIES_DIRECTORY = 'capabilities';
 
     /**
      * @param  array<string, Capability>  $capabilities  Keyed by capability key

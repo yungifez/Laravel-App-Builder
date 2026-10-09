@@ -1,0 +1,75 @@
+<?php
+
+namespace App\Models;
+
+use Database\Factories\RunnerFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+
+/**
+ * A runner in the pool: a machine, usually a small VM hosted apart from the
+ * control plane, that holds many workspaces. It connects out with its own
+ * token, which is kept only as a hash, and reports the address its services
+ * (previews) are reached at.
+ *
+ * @property int $id
+ * @property string $name
+ * @property string|null $cloud
+ * @property string|null $cloud_id
+ * @property string|null $box_image
+ * @property string $token_hash
+ * @property string|null $service_host
+ * @property int|null $preview_door_port
+ * @property string|null $preview_door_pin
+ * @property string|null $preview_door_key
+ * @property int|null $disk_free_mb
+ * @property Carbon|null $last_seen_at
+ * @property Carbon|null $draining_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ */
+#[Fillable(['name', 'cloud', 'cloud_id', 'box_image', 'token_hash', 'service_host', 'preview_door_port', 'preview_door_pin', 'preview_door_key', 'disk_free_mb', 'last_seen_at', 'draining_at'])]
+#[Hidden(['token_hash', 'preview_door_key'])]
+class Runner extends Model
+{
+    /** @use HasFactory<RunnerFactory> */
+    use HasFactory;
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'last_seen_at' => 'datetime',
+            'draining_at' => 'datetime',
+            'preview_door_port' => 'integer',
+            'preview_door_key' => 'encrypted',
+        ];
+    }
+
+    /**
+     * Hash a runner's token the way it is stored. Tokens are long and
+     * random, so a plain SHA-256 is enough to find and check them.
+     */
+    public static function hashToken(string $token): string
+    {
+        return hash('sha256', $token);
+    }
+
+    /**
+     * Scope the query to runners that asked for work recently.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeOnline(Builder $query): void
+    {
+        $query->where('last_seen_at', '>=', now()->subSeconds((int) config('workspaces.boxes.pool.online_seconds')));
+    }
+}

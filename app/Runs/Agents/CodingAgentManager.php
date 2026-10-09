@@ -4,6 +4,7 @@ namespace App\Runs\Agents;
 
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Runs\Contracts\CodingAgent;
+use App\Runs\ModelGateway;
 use App\Workspaces\WorkspaceManager;
 use Illuminate\Support\Manager;
 
@@ -34,6 +35,17 @@ class CodingAgentManager extends Manager
     }
 
     /**
+     * Determine if an agent has a stronger model set for a repair its usual
+     * model could not finish.
+     */
+    public function hasStrongModel(string $adapter): bool
+    {
+        $model = $this->config->get("builder.agents.adapters.{$adapter}.strong_model");
+
+        return is_string($model) && $model !== '';
+    }
+
+    /**
      * Get the provider that serves an agent.
      */
     public function providerOf(string $adapter): string
@@ -54,7 +66,12 @@ class CodingAgentManager extends Manager
      */
     public function createCodexDriver(): CodingAgent
     {
-        return $this->runner('codex', ['OPENAI_API_KEY' => (string) $this->config->get('ai.providers.openai.key')]);
+        return $this->runner('codex', [
+            // Without the key, Codex uses its own sign-in, which may be a
+            // ChatGPT plan.
+            'OPENAI_API_KEY' => $this->config->get('builder.agents.adapters.codex.use_api_key') ? (string) $this->config->get('ai.providers.openai.key') : '',
+            'CODEX_HOME' => (string) $this->config->get('builder.agents.adapters.codex.home'),
+        ]);
     }
 
     /**
@@ -65,6 +82,12 @@ class CodingAgentManager extends Manager
     protected function runner(string $adapter, array $credentials): CodingAgent
     {
         $model = $this->config->get("builder.agents.adapters.{$adapter}.model");
+        $sandbox = $this->config->get("builder.agents.adapters.{$adapter}.sandbox");
+        $lightModel = $this->config->get("builder.agents.adapters.{$adapter}.light_model");
+        $effort = $this->config->get("builder.agents.adapters.{$adapter}.effort");
+        $lightEffort = $this->config->get("builder.agents.adapters.{$adapter}.light_effort");
+        $strongModel = $this->config->get("builder.agents.adapters.{$adapter}.strong_model");
+        $strongEffort = $this->config->get("builder.agents.adapters.{$adapter}.strong_effort");
 
         return new RunnerAgent(
             $adapter,
@@ -73,6 +96,13 @@ class CodingAgentManager extends Manager
             $credentials,
             $this->container->make(WorkspaceManager::class),
             $this->container->make(RunWorkspaceCommand::class),
+            is_string($sandbox) && $sandbox !== '' ? $sandbox : null,
+            is_string($lightModel) && $lightModel !== '' ? $lightModel : null,
+            is_string($effort) && $effort !== '' ? $effort : null,
+            is_string($lightEffort) && $lightEffort !== '' ? $lightEffort : null,
+            is_string($strongModel) && $strongModel !== '' ? $strongModel : null,
+            is_string($strongEffort) && $strongEffort !== '' ? $strongEffort : null,
+            $this->container->make(ModelGateway::class),
         );
     }
 }

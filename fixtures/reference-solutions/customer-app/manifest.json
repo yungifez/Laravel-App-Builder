@@ -3,6 +3,10 @@
         {
             "key": "team-invitations",
             "patch": "01-team-invitations.patch",
+            "needs": [
+                "app/Models/Team.php",
+                "database/factories/TeamFactory.php"
+            ],
             "match": [
                 "invite",
                 "invitation"

@@ -1,0 +1,12 @@
+{
+    "name": "Bright Cleaning",
+    "purpose": "My cleaners see their jobs for the day, and customers book a clean online.",
+    "design": "friendly",
+    "includes": [
+        "Customers pick a date, a time and the kind of clean, and book it online",
+        "Each cleaner sees today's jobs, in order, with the address and notes",
+        "I see every booking and give each job to a cleaner",
+        "Customers get an email when they book and the day before"
+    ],
+    "order": 1
+}

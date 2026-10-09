@@ -2,85 +2,168 @@
 
 namespace App\Runs\Drivers;
 
+use App\Actions\Features\AcceptFindings;
+use App\Actions\Runs\CompleteRunVerification;
 use App\Actions\Runs\RecordModelUsage;
+use App\Actions\Runs\WriteBrief;
 use App\Ai\Agents\ChangeReviewer;
-use App\Ai\Agents\FeatureCoder;
 use App\Ai\Agents\FeaturePlanner;
+use App\Ai\Agents\ShapePlanner;
 use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
+use App\Features\AppBoundaries;
+use App\Features\AppConventions;
+use App\Features\AppCoupling;
+use App\Features\AppDrift;
+use App\Features\AppFaults;
+use App\Features\AppTraces;
+use App\Features\NewTests;
+use App\Features\RoleProbes;
+use App\Models\FeatureRequest;
 use App\Models\Run;
+use App\Runs\AiAttempts;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
+use App\Runs\Exceptions\ProvidersUnavailable;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
 use App\Runs\Review;
+use App\Runs\ReviewDiff;
 use App\Runs\ReviewEvidence;
-use App\Runs\ToolSession;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
+use Laravel\Ai\Exceptions\FailoverableException;
+use Laravel\Ai\Files\Image;
+use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\StructuredAgentResponse;
 
 /**
- * Builds changes with three model roles: a planner writes the plan, a coder
- * carries it out through the run's tools, and an independent reviewer judges
- * the verified result. Each role uses its own provider and model
- * (config/builder.php "models").
+ * Plans and reviews changes with models: a planner writes the plan and an
+ * independent reviewer judges the verified result, each on its own provider
+ * and model (config/builder.php "models"). How the plan is carried out is
+ * left to the driver that extends this one.
  */
-class AgentDriver implements ConstructionDriver
+abstract class AgentDriver implements ConstructionDriver
 {
+    /**
+     * How many times the planner is asked for a plan that fits the format.
+     */
+    protected const PLAN_ATTEMPTS = 2;
+
     public function __construct(
         protected AcceptanceSelector $acceptanceSelector,
         protected RecordModelUsage $recordModelUsage,
     ) {}
 
+    /**
+     * Plan the change. A plan that does not fit the format is asked for once
+     * more, with what was wrong, before the run gives up: a malformed answer
+     * is usually a slip, not a sign the request cannot be planned.
+     */
     public function plan(Run $run, PlanningContext $context): Plan
     {
-        $response = FeaturePlanner::make()->prompt(
-            $this->planningPrompt($context),
-            provider: ModelRole::Planner->provider(),
-            model: ModelRole::Planner->model(),
-        );
+        $selection = $this->acceptanceSelector->for($run->featureRequest, $context->files);
+        $prompt = $this->planningPrompt($context);
+
+        for ($attempt = 1; ; $attempt++) {
+            $response = $this->ask($run, fn () => FeaturePlanner::make()->prompt($prompt, $this->pictures($run->featureRequest), provider: ModelRole::Planner->providers()));
+
+            $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
+
+            try {
+                return Plan::fromModelOutput($this->structured($response, 'planner'), $selection['acceptance'], $selection['solution_key']);
+            } catch (ConstructionFailed $exception) {
+                if ($attempt >= self::PLAN_ATTEMPTS) {
+                    throw $exception;
+                }
+
+                $run->recordEvent('plan_rejected', ['attempt' => $attempt, 'error' => $exception->getMessage()]);
+                $prompt = $this->planningPrompt($context)."\n\n## Your previous plan was rejected\n\n{$exception->getMessage()}\nReturn a complete plan that fixes this.";
+            }
+        }
+    }
+
+    /**
+     * Ask for the new kinds of record apart from the plan: in one format the
+     * two were too large for the AI service. A shape that does not hold
+     * together is dropped, and the coder writes those files itself.
+     */
+    public function shape(Run $run, Plan $plan, PlanningContext $context): Plan
+    {
+        if (! $plan->newRecords) {
+            return $plan;
+        }
+
+        $started = hrtime(true);
+        $response = $this->ask($run, fn () => ShapePlanner::make()->prompt($this->shapePrompt($plan, $context), provider: ModelRole::Planner->providers()));
 
         $this->recordModelUsage->handle($run, ModelRole::Planner, $response);
 
-        $selection = $this->acceptanceSelector->for($run->featureRequest);
+        $answered = $this->structured($response, 'shape planner')['data_shape'] ?? [];
+        $shape = Plan::dataShape($answered);
+        $run->recordEvent('shape_planned', [
+            'records' => array_column($shape, 'name'),
+            'duration_ms' => intdiv(hrtime(true) - $started, 1_000_000),
+        ]);
 
-        return Plan::fromModelOutput($this->structured($response, 'planner'), $selection['acceptance'], $selection['solution_key']);
-    }
+        if ($shape === [] && $answered !== []) {
+            $run->recordEvent('shape_dropped', ['records' => is_array($answered) ? count($answered) : 0]);
+        }
 
-    public function build(Run $run, Plan $plan, ToolSession $tools): string
-    {
-        $response = FeatureCoder::make($tools, "coder:{$run->repairs}")->prompt(
-            $this->buildPrompt($run, $plan)."\n\nThe workspace is at revision {$tools->revision()}.",
-            provider: ModelRole::Coder->provider(),
-            model: ModelRole::Coder->model(),
-        );
-
-        $this->recordModelUsage->handle($run, ModelRole::Coder, $response);
-
-        $tools->throwIfHalted();
-
-        return $response->text;
+        return $plan->withDataShape($shape);
     }
 
     public function review(Run $run, ReviewEvidence $evidence): Review
     {
-        return $this->reviewWith($run, $evidence, ModelRole::Reviewer->provider(), ModelRole::Reviewer->model());
+        return $this->reviewWith($run, $evidence, ModelRole::Reviewer->providers());
     }
 
     /**
-     * Have the reviewer judge the change on the given provider and model.
+     * Have the reviewer judge the change on the first of the given providers
+     * that can serve it (the AI SDK fails over on provider trouble, such as
+     * an account out of credit). A review on a later provider is logged.
+     *
+     * @param  array<string, string|null>  $providers  Provider names and their models, in order
      */
-    protected function reviewWith(Run $run, ReviewEvidence $evidence, string $provider, ?string $model): Review
+    protected function reviewWith(Run $run, ReviewEvidence $evidence, array $providers): Review
     {
-        $response = ChangeReviewer::make()->prompt(
-            $this->reviewPrompt($evidence),
-            provider: $provider,
-            model: $model,
-        );
+        $response = $this->ask($run, fn () => ChangeReviewer::make()->prompt($this->reviewPrompt($evidence, app(AcceptFindings::class)->identities($run->featureRequest)), $this->pictures($run->featureRequest), provider: $providers));
 
         $this->recordModelUsage->handle($run, ModelRole::Reviewer, $response);
 
+        $wanted = array_key_first($providers);
+
+        if ($response->meta->provider !== null && $response->meta->provider !== $wanted) {
+            $run->recordEvent('reviewer_failed_over', ['wanted' => $wanted, 'used' => $response->meta->provider]);
+        }
+
         return Review::fromModelOutput($this->structured($response, 'reviewer'));
+    }
+
+    /**
+     * Ask an agent. When every AI service turns the request away, or answers
+     * with an error, the run stops and tells the owner why, instead of being
+     * retried as if it had crashed. What the service said is kept for
+     * operators.
+     *
+     * @param  callable(): AgentResponse  $prompt
+     *
+     * @throws ProvidersUnavailable
+     */
+    protected function ask(Run $run, callable $prompt): AgentResponse
+    {
+        try {
+            return app(AiAttempts::class)->for($run, $prompt);
+        } catch (FailoverableException $exception) {
+            throw ProvidersUnavailable::afterFailover($exception);
+        } catch (RequestException $exception) {
+            $stop = ProvidersUnavailable::fromResponse($exception);
+            $run->recordEvent('ai_service_error', ['reason' => $stop->reason()->value, ...(array) $stop->serviceError()]);
+
+            throw $stop;
+        }
     }
 
     public function canRepair(): bool
@@ -105,13 +188,35 @@ class AgentDriver implements ConstructionDriver
     }
 
     /**
+     * Describe the planned change and the app's models for the shape
+     * planner.
+     */
+    protected function shapePrompt(Plan $plan, PlanningContext $context): string
+    {
+        $models = array_values(array_filter(array_map(
+            fn (string $file) => preg_match('#^app/Models/(\w+)\.php$#', $file, $model) === 1 ? $model[1] : null,
+            $context->files,
+        )));
+
+        return implode("\n\n", [
+            "## Owner's request\n\n{$context->request}",
+            "## The plan\n\n{$plan->summary}",
+            "## What must hold when it is done\n\n".implode("\n", array_map(fn (string $criterion) => "- {$criterion}", $plan->acceptanceCriteria)),
+            "## The developer's tasks\n\n".implode("\n", array_map(fn (string $task) => "- {$task}", $plan->tasks)),
+            "## Models the app has\n\n".($models === [] ? 'None found.' : implode(', ', $models)),
+        ]);
+    }
+
+    /**
      * Describe the request and the project for the planner.
      */
     protected function planningPrompt(PlanningContext $context): string
     {
         $sections = ["## Owner's request\n\n{$context->request}"];
 
-        if ($context->parentRequest !== null) {
+        if ($context->parentRequest !== null && $context->parentAnswered) {
+            $sections[] = "## This follows an earlier question\n\nEarlier question: {$context->parentRequest}\n\nThe answer given: {$context->parentSummary}";
+        } elseif ($context->parentRequest !== null) {
             $sections[] = "## This changes an earlier feature\n\nEarlier request: {$context->parentRequest}\n\nWhat was built: {$context->parentSummary}";
         }
 
@@ -130,7 +235,42 @@ class AgentDriver implements ConstructionDriver
             ));
         }
 
-        $sections[] = "## Project files\n\n".implode("\n", $context->files);
+        if ($context->frontend !== null && $context->frontend->pages !== []) {
+            $sections[] = "## Screens\n\nThe app's screens are made with {$context->frontend->label}, in ".implode(', ', $context->frontend->pages).'. Build new screens the same way, beside the ones it has.';
+        }
+
+        if ($context->routes !== []) {
+            $sections[] = "## Addresses in the app\n\nEach address and the code that handles it.\n\n".implode("\n", array_map(fn (string $route) => "- {$route}", $context->routes));
+        }
+
+        if ($context->names !== []) {
+            $sections[] = "## Names this part of the app already uses\n\nThe data its pages get and its models' relations. Use these names in the plan; do not make up new ones for what is already there.\n\n".implode("\n", array_map(fn (string $name) => "- {$name}", $context->names));
+        }
+
+        if ($context->answers !== []) {
+            $sections[] = "## The owner's answers\n\nThe owner settled these for this request. Plan with them and do not ask about them again.\n\n".implode("\n", array_map(
+                fn (array $answer) => $answer['decided_by'] === 'owner'
+                    ? "- {$answer['question']} {$answer['answer']}"
+                    : "- {$answer['question']} The owner left this to you; use: {$answer['answer']}",
+                $context->answers,
+            ));
+        }
+
+        if (! $context->mayAsk) {
+            $sections[] = "## Questions\n\nDo not ask the owner anything more for this request: return question as null and build on your recommendation.";
+        }
+
+        $sections[] = WriteBrief::compatibility($context->keepOldWorking);
+
+        if ($context->services !== []) {
+            $sections[] = WriteBrief::services($context->services);
+        }
+
+        if ($context->phone !== null) {
+            $sections[] = $context->phone;
+        }
+
+        $sections[] = "## Project files\n\nEach line is a folder, then the files in it.\n\n".self::byFolder($context->files);
 
         foreach ($context->contents as $path => $contents) {
             $sections[] = "## {$path}\n\n```\n{$contents}\n```";
@@ -140,49 +280,57 @@ class AgentDriver implements ConstructionDriver
     }
 
     /**
-     * Describe the plan, and any feedback to address, for the coder.
+     * List files by folder, so each folder is named once. It says the same
+     * as one path per line in about half the words.
+     *
+     * @param  list<string>  $files
      */
-    protected function buildPrompt(Run $run, Plan $plan): string
+    public static function byFolder(array $files): string
     {
-        $sections = ["## Owner's request\n\n{$run->featureRequest->prompt}"];
+        $folders = [];
 
-        if (filled($run->context['text'] ?? null)) {
-            $sections[] = "## Project context\n\nWhat is known about the product for the areas this change touches.\n\n{$run->context['text']}";
+        foreach ($files as $file) {
+            $folders[Str::contains($file, '/') ? Str::beforeLast($file, '/').'/' : ''][] = Str::afterLast($file, '/');
         }
 
-        if ($plan->currentBehavior !== null) {
-            $sections[] = "## What it does now\n\n{$plan->currentBehavior}";
-        }
+        return implode("\n", array_map(
+            fn (string $folder, array $names) => ($folder === '' ? '' : "{$folder}: ").implode(', ', $names),
+            array_keys($folders),
+            $folders,
+        ));
+    }
 
-        array_push(
-            $sections,
-            "## Plan\n\n{$plan->summary}",
-            "## Tasks\n\n".$this->list($plan->tasks),
-            "## Acceptance criteria\n\n".$this->list($plan->acceptanceCriteria),
+    /**
+     * Get the pictures the owner attached, for the planner to see what they
+     * mean and the reviewer to check the change against.
+     *
+     * @return list<StoredImage>
+     */
+    protected function pictures(FeatureRequest $featureRequest): array
+    {
+        return array_map(
+            fn (array $image) => Image::fromStorage($image['path'], Config::string('builder.construction.images.disk')),
+            $featureRequest->images ?? [],
         );
-
-        if ($plan->preserve !== []) {
-            $sections[] = "## Keep as it is\n\nDo not change these. If the request cannot be done without changing one, stop and say so.\n\n".$this->list(array_column($plan->preserve, 'statement'));
-        }
-
-        if ($plan->assumptions !== []) {
-            $sections[] = "## Assumptions\n\n".$this->list($plan->assumptions);
-        }
-
-        if ($run->feedback !== null) {
-            $sections[] = "## Fix these problems with your earlier attempt\n\nThe files already contain your earlier changes.\n\n".$this->list($run->feedback['details']);
-        }
-
-        return implode("\n\n", $sections);
     }
 
     /**
      * Lay out the evidence for the reviewer.
+     *
+     * @param  list<string>  $accepted  The findings the owner said the change makes on purpose
      */
-    protected function reviewPrompt(ReviewEvidence $evidence): string
+    protected function reviewPrompt(ReviewEvidence $evidence, array $accepted = []): string
     {
         $results = array_map(
-            fn (array $result) => "- [{$result['outcome']}] {$result['name']} ({$result['stage']})".($result['outcome'] === 'passed' ? '' : "\n  ".str_replace("\n", "\n  ", mb_substr($result['output'], -1500))),
+            fn (array $result) => match (true) {
+                $result['outcome'] === 'passed' => "- [passed] {$result['name']} ({$result['stage']})",
+                // The lookup itself broke, so it says nothing about the change.
+                CompleteRunVerification::lookupCouldNotRun($result) => "- [could not run, says nothing about the change] {$result['name']} ({$result['stage']})",
+                // It failed on the starting commit too: only what is new
+                // there is the change's doing.
+                ($result['at_start'] ?? null) === 'failed' => "- [failed before this change too] {$result['name']} ({$result['stage']})".(($result['new_problems'] ?? []) === [] ? '' : "\n  New with the change:\n  - ".implode("\n  - ", $result['new_problems'])),
+                default => "- [{$result['outcome']}] {$result['name']} ({$result['stage']})\n  ".str_replace("\n", "\n  ", mb_substr($result['output'], -1500)),
+            },
             $evidence->verificationResults,
         );
 
@@ -192,11 +340,197 @@ class AgentDriver implements ConstructionDriver
             $this->areasTouched($evidence),
             "## Plan\n\n{$evidence->plan->summary}",
             "## Acceptance criteria\n\n".$this->list($evidence->plan->acceptanceCriteria),
+            "## What the tests must check\n\n".$this->numbered(array_column($evidence->plan->verifyItems(), 'text')),
             $evidence->plan->preserve !== [] ? "## Must stay as it is\n\n".$this->list(array_column($evidence->plan->preserve, 'statement')) : null,
             "## Verification: {$evidence->verificationStatus}\n\n".implode("\n", $results),
             "## Tests deleted or weakened by the diff\n\n".($evidence->weakenedTests === [] ? 'None.' : $this->json($evidence->weakenedTests)),
-            "## Diff\n\n```diff\n".$this->bounded($evidence->patch)."\n```",
+            $this->changeEvidence($evidence, $accepted),
+            $this->diff($evidence->patch),
         ]));
+    }
+
+    /**
+     * Describe what running the app with and without the change showed:
+     * the new tests that pass without it, what it did to the addresses the
+     * app answers, how far tests reach into its new code, what its code
+     * saved and sent in the requests the tests made, and what those
+     * requests left behind when one thing was made to fail. These are
+     * measured facts; whether each was wanted is the reviewer's to judge
+     * against the plan.
+     *
+     * @param  list<string>  $accepted  The findings the owner said the change makes on purpose
+     */
+    protected function changeEvidence(ReviewEvidence $evidence, array $accepted = []): ?string
+    {
+        $measured = $evidence->changeEvidence;
+        $parts = [];
+
+        if (isset($measured['new_tests'])) {
+            $passing = array_values(array_filter($measured['new_tests'], fn (array $test) => $test['without_change'] === NewTests::PASSED));
+            $parts[] = sprintf('The change added %d tests. Tests that fail without its code, as a test of new behaviour must: %d.', count($measured['new_tests']), count($measured['new_tests']) - count($passing))
+                .($passing === [] ? '' : " These pass without it too: the app already did what they check, and they now guard it. That is not a gap while at least one test fails without the change:\n".$this->list(array_map(fn (array $test) => "{$test['file']}: {$test['name']}", $passing)));
+        }
+
+        $routes = $measured['routes'] ?? [];
+
+        if (($routes['added'] ?? []) !== []) {
+            // A route the plan lets everyone use is the request, not a
+            // missing check.
+            $parts[] = "Routes it added, with their middleware:\n".$this->list(array_map(fn (array $route) => $route['route'].' ['.implode(', ', $route['middleware']).']'.(($route['planned'] ?? false) ? ' (the plan lets everyone do this)' : ''), $routes['added']));
+        }
+
+        if (($routes['changed'] ?? []) !== []) {
+            $parts[] = "Routes whose middleware it changed:\n".$this->list(array_map(fn (array $route) => $route['route'].($route['lost'] === [] ? '' : ' lost '.implode(', ', $route['lost'])).($route['gained'] === [] ? '' : ' gained '.implode(', ', $route['gained'])), $routes['changed']));
+        }
+
+        if (($routes['removed'] ?? []) !== []) {
+            $parts[] = "Routes it removed:\n".$this->list($routes['removed']);
+        }
+
+        if (isset($measured['new_code'])) {
+            $code = $measured['new_code'];
+            $parts[] = sprintf('Of its %d new lines of PHP that can run, tests ran %d; %d of those only its own tests ran.', $code['lines'], $code['run'], $code['own_tests_only'])
+                .($code['unrun'] === [] ? '' : " No test ran:\n".$this->list(array_map(fn (string $path, array $lines) => $path.': line '.implode(', ', $lines), array_keys($code['unrun']), $code['unrun'])));
+        }
+
+        if (isset($measured['mutants'])) {
+            $mutants = $measured['mutants'];
+            $parts[] = sprintf('Small mistakes were made in its new code on purpose, one at a time, and the tests that run each line ran again. They noticed %d of %d.', $mutants['caught'], $mutants['tried'])
+                .($mutants['survived'] === [] ? '' : " Not noticed, so no test pins this behaviour down:\n".$this->list(array_map(fn (array $mutant) => $mutant['now'] === ''
+                    ? "{$mutant['file']}: line {$mutant['line']} `{$mutant['was']}` was left out"
+                    : "{$mutant['file']}: line {$mutant['line']} `{$mutant['was']}` became `{$mutant['now']}`", $mutants['survived'])));
+        }
+
+        if (isset($measured['roles'])) {
+            // Who may do what was measured, not read from the code: hold
+            // each gained or lost thing against the plan.
+            $parts[] = "Each request that works on a team or one of its members was sent as a signed-out visitor, a person outside the team and a member of each role, with the change and on the app before it. Check every line against the plan:\n".RoleProbes::describe($measured['roles']);
+        }
+
+        if (isset($measured['traces'])) {
+            $traces = $measured['traces'];
+            $parts[] = sprintf('While the tests ran, %d requests to the app were recorded: their queries, transactions and what they sent. %d ran code the change added.', $traces['requests'], $traces['reached'])
+                .match (true) {
+                    $traces['findings'] !== [] => " Recorded from the code the change added:\n".$this->list(array_map($this->recorded(...), $traces['findings'])),
+                    $traces['reached'] === 0 => ' So the recording says nothing about the change.',
+                    default => ' The code the change added saved nothing on a GET request, kept nothing after refusing a request, and sent nothing while a transaction was open.',
+                }
+            .($traces['unseen'] === 0 ? '' : sprintf("\nOf the requests that ran the change's code, %d opened a transaction in a test that fakes mail, jobs or notifications, so what they sent, and when, was not seen.", $traces['unseen']));
+        }
+
+        if (isset($measured['boundaries'])) {
+            $boundaries = AppBoundaries::without($measured['boundaries'], $accepted);
+            $parts[] = 'The recording also says in which part of a request each thing ran: while Laravel checked who may act, checked the input, handled the request or built the response. Checks and responses can run many times per request and before the request is refused, so nothing in them may save, queue or send.'
+                .($boundaries['findings'] === []
+                    ? (($boundaries['accepted'] ?? 0) === 0 ? ' The code the change added saved and sent nothing in those parts.' : ' Nothing else the code the change added saved or sent in those parts.')
+                    : " Saved, queued or sent by the code the change added in those parts:\n".$this->list(array_map($this->crossed(...), $boundaries['findings'])))
+                .($boundaries['unknown'] === 0 ? '' : sprintf("\nFor %d recorded things the part of the request could not be told.", $boundaries['unknown']))
+                .(($boundaries['accepted'] ?? 0) === 0 ? '' : sprintf("\nLeft out above: %d found in those parts that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.", $boundaries['accepted']))
+                .(($boundaries['read'] ?? []) === [] ? '' : "\nRead from the code the change added, not seen running; each is likely, so check the method before you hold it against the change:\n".$this->list(array_map($this->read(...), $boundaries['read'])));
+        }
+
+        if (($measured['containment']['findings'] ?? []) !== []) {
+            $parts[] = "The rest of the app calls each of these outside services only from certain areas. So one place knows how to talk to each service. The new code calls them from somewhere else. Unless the plan asks for that, call them through the code that already does:\n"
+                .$this->list(array_map($this->contained(...), $measured['containment']['findings']));
+        }
+
+        if (($measured['coupling']['findings'] ?? []) !== []) {
+            $parts[] = sprintf("While the tests ran, %d calls from one area of the app into another were seen in the rest of the app. The new code makes one area call into another that it did not call before. Each such call ties the two areas together. Unless the plan asks for it, ask for the work to stay in its own area, or to go through code the two areas already share:\n", $measured['coupling']['known'])
+                .$this->list(array_map(AppCoupling::describe(...), $measured['coupling']['findings']));
+        }
+
+        if (($measured['conventions']['findings'] ?? []) !== []) {
+            $conventions = $measured['conventions']['conventions'];
+            $parts[] = "The rest of the app keeps almost all of its saves or sends in one kind of class, as recorded while the tests ran. The new code does that work straight from a controller or a Livewire component instead. Unless the plan asks for that, ask for the work to go through the app's own classes, as the rest of the app does:\n"
+                .$this->list(array_map(fn (array $finding) => AppConventions::describe($finding, $conventions), $measured['conventions']['findings']));
+        }
+
+        $grew = array_values(array_filter($measured['drift']['findings'] ?? [], fn (array $finding) => ! in_array(AppDrift::identity($finding), $accepted, true)));
+
+        if ($grew !== []) {
+            $parts[] = "The work each request does grew in these areas of the app, counted from the recording: the queries, and what each request queued and sent, of each area's own files. The count depends on the tests, so judge it against the plan. Growth the plan does not need is a reason to ask for eager loading or less repeated work:\n"
+                .$this->list(array_map(fn (array $finding) => AppDrift::describe($finding, $finding['name']), $grew));
+        }
+
+        if (isset($measured['faults'])) {
+            $faults = AppFaults::without($measured['faults'], $accepted);
+            $parts[] = sprintf("One failure at a time was caused in requests that ran the change's code: an email that could not be sent, an outside call that got no answer or got a server error as its answer, a save the database refused, or a queued job that ran a second time, whole or after a save in it was refused. Two more places have no failure. A queued job that sent or saved something, or that the request does more after: it ran after the response, the way a queue worker runs it, with no signed-in user and an empty request and session. An event with listeners that Laravel found by itself: its listeners ran in the reverse order. Of %d places where those requests send, save, run a job or dispatch such an event, %d were tried and the failure happened in %d.", $faults['points'], $faults['run'] + $faults['missed'], $faults['run'])
+                .match (true) {
+                    $faults['findings'] !== [] => " What the app left behind:\n".$this->list(array_map(AppFaults::describe(...), $faults['findings'])),
+                    ($faults['accepted'] ?? 0) !== 0 => ' The app left nothing else behind.',
+                    $faults['run'] === 0 => ' So this says nothing about the change.',
+                    default => ' Each time the app left nothing behind: it had saved nothing before a server error, sent nothing before a save it lost, kept no part of a save it lost, sent or added nothing again in a job that ran twice or was tried again after its save failed, made no POST or PATCH call again without an idempotency key, asked how an outside call went or did something else when its answer was a server error, and the request and the job did the same when a queued job ran after the response the way a queue worker runs it, or the listeners of an event ran in the reverse order.',
+                }
+            .(($faults['accepted'] ?? 0) === 0 ? '' : sprintf("\nLeft out above: %d left behind that the owner said the change does on purpose, after reading what each costs. Do not hold them against the change.", $faults['accepted']));
+        }
+
+        return $parts === [] ? null : "## What running the app with and without the change showed\n\n".implode("\n\n", $parts);
+    }
+
+    /**
+     * Say one thing the recorder saw the change's code do, for the reviewer.
+     *
+     * @param  array{kind: string, route: string, what: string, at: string|null, test: string|null}  $finding
+     */
+    protected function recorded(array $finding): string
+    {
+        $did = match ($finding['kind']) {
+            AppTraces::SAVED_ON_READ => 'saved data on a request that only reads',
+            AppTraces::KEPT_AFTER_REFUSAL => 'refused the request but kept what it had saved',
+            AppTraces::SENT_BEFORE_SAVED => 'sent this while a database transaction was still open, so it goes out even when the transaction is rolled back',
+            default => $finding['kind'],
+        };
+
+        return "{$finding['route']} {$did}: {$finding['what']}"
+            .($finding['at'] === null ? '' : " at {$finding['at']}")
+            .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
+    }
+
+    /**
+     * Say one thing the change's code saved or sent in a part of a request
+     * that must not change anything, for the reviewer.
+     *
+     * @param  array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}  $finding
+     */
+    protected function crossed(array $finding): string
+    {
+        $while = match ($finding['kind']) {
+            AppBoundaries::CHANGED_WHILE_AUTHORIZING => 'while Laravel checked whether the person may act',
+            AppBoundaries::CHANGED_WHILE_VALIDATING => 'while Laravel checked the input',
+            AppBoundaries::CHANGED_WHILE_RENDERING => 'while Laravel built the response',
+            default => $finding['kind'],
+        };
+
+        return "{$finding['route']} {$while}: {$finding['what']}"
+            .($finding['at'] === null ? '' : " at {$finding['at']}")
+            .($finding['in'] === null ? '' : " in {$finding['in']}")
+            .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
+    }
+
+    /**
+     * Say one call the change's code makes to an outside service from
+     * outside the areas the rest of the app calls it from, for the reviewer.
+     *
+     * @param  array{route: string, what: string, at: string, in: string|null, from: list<string>, home: list<string>, test: string|null}  $finding
+     */
+    protected function contained(array $finding): string
+    {
+        return "{$finding['route']}: {$finding['what']} at {$finding['at']}"
+            .($finding['in'] === null ? '' : " in {$finding['in']}")
+            .', '.($finding['from'] === [] ? 'in code no area claims' : 'in '.implode(', ', $finding['from']))
+            .'; the rest of the app calls it only from '.implode(', ', $finding['home'])
+            .($finding['test'] === null ? '' : " (seen in {$finding['test']})");
+    }
+
+    /**
+     * Say one call the change's code makes in a method Laravel runs where
+     * nothing may change, read from the code, for the reviewer.
+     *
+     * @param  array{kind: string, what: string, at: string, in: string}  $finding
+     */
+    protected function read(array $finding): string
+    {
+        return AppBoundaries::describeRead($finding);
     }
 
     /**
@@ -224,19 +558,34 @@ class AgentDriver implements ConstructionDriver
             $lines[] = '- Files no area claims: '.implode(', ', $classification->unclaimed);
         }
 
+        // Observed by running the tests: evidence of reach, not a full list.
+        if ($classification->observed !== null) {
+            $reached = array_map(fn (string $area, int $tests) => ($evidence->areaNames[$area] ?? $area)." ({$area}, {$tests})", array_keys($classification->observed['areas']), $classification->observed['areas']);
+            $lines[] = "- Tests that ran the changed code: {$classification->observed['tests']}".($reached === [] ? '' : '; they belong to '.implode(', ', $reached));
+
+            if ($classification->observed['foundation'] !== []) {
+                $lines[] = '- Changed shared code that most of the tests run, so it can reach the whole app: '.implode(', ', $classification->observed['foundation']);
+            }
+
+            if ($classification->observed['unmapped'] !== []) {
+                $lines[] = '- Changed PHP files no test ran, so their reach is unknown: '.implode(', ', $classification->observed['unmapped']);
+            }
+        }
+
         return $lines === [] ? null : "## Areas this change touched\n\nUse these area keys for your behaviour changes.\n\n".implode("\n", $lines);
     }
 
     /**
-     * Cut a diff to the configured size for the reviewer, saying so when cut.
+     * Lay out the diff for the reviewer within the configured size, naming
+     * each file of the change it does not show (ReviewDiff).
      */
-    protected function bounded(string $patch): string
+    protected function diff(string $patch): string
     {
-        $limit = (int) config('builder.construction.limits.review_diff_characters');
+        $laid = ReviewDiff::lay($patch, (int) config('builder.construction.limits.review_diff_characters'));
 
-        return mb_strlen($patch) > $limit
-            ? mb_substr($patch, 0, $limit)."\n… (diff cut at {$limit} characters; judge the remainder as unreviewed)"
-            : $patch;
+        return "## Diff\n\n```diff\n{$laid['diff']}\n```"
+            .($laid['left_out'] === [] ? '' : "\n\n## Files of the change not shown in the diff\n\n".$this->list($laid['left_out'])
+                ."\n\nThe verification ran the whole change, these files too. Judge the change on the diff and the verification. A file not shown is never by itself a reason to refuse the change or to say an item has no test: name a test in a file not shown when you know it from the verification. If you could not judge something only because its file is not shown, say so in the summary, not as a finding.");
     }
 
     /**
@@ -247,6 +596,16 @@ class AgentDriver implements ConstructionDriver
     protected function list(array $items): string
     {
         return $items === [] ? '(none)' : '- '.implode("\n- ", $items);
+    }
+
+    /**
+     * Format items as a numbered Markdown list, starting at 1.
+     *
+     * @param  list<string>  $items
+     */
+    protected function numbered(array $items): string
+    {
+        return $items === [] ? '(none)' : implode("\n", array_map(fn (int $index, string $item) => ($index + 1).". {$item}", array_keys($items), $items));
     }
 
     /**

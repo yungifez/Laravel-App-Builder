@@ -2,11 +2,17 @@
 
 namespace Tests\Feature\Previews;
 
+use App\Actions\Previews\GrantPreviewAccess;
+use App\Actions\Previews\RequestPreview;
 use App\Enums\PreviewStatus;
+use App\Jobs\ClosePreview;
 use App\Jobs\StartPreview;
 use App\Models\FeatureRequest;
 use App\Models\Preview;
+use App\Models\PreviewRebuild;
+use App\Models\Project;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Previews\PreviewGateway;
 use App\Workspaces\CommandResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -14,7 +20,10 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\FakesWorkspaces;
@@ -36,11 +45,23 @@ class PreviewTest extends TestCase
         config([
             'builder.preview.workspace_driver' => 'fake',
             'builder.preview.domain' => 'preview.test',
+            'builder.preview.listen_host' => '127.0.0.1',
             'builder.preview.public_port' => null,
             'builder.preview.setup' => [
                 ['name' => 'Install', 'command' => ['composer', 'install'], 'timeout' => 600],
             ],
         ]);
+    }
+
+    public function test_a_change_still_being_made_cannot_be_tried_yet()
+    {
+        $request = FeatureRequest::factory()->create();
+
+        $this->actingAs($request->project->owner)
+            ->post(route('feature-requests.previews.store', $request))
+            ->assertSessionHasErrors(['preview' => 'There is no change to try yet.']);
+
+        $this->assertSame(0, $request->previews()->count());
     }
 
     public function test_the_owner_starts_a_preview_of_the_change_and_its_lineage()
@@ -50,6 +71,7 @@ class PreviewTest extends TestCase
         $request = FeatureRequest::factory()->generated()->for($parent->project)->create(['parent_id' => $parent->id, 'patch' => 'CHILD PATCH']);
 
         $this->actingAs($parent->project->owner)
+            ->from(route('feature-requests.show', $request))
             ->post(route('feature-requests.previews.store', $request))
             ->assertRedirect(route('feature-requests.show', $request));
 
@@ -58,19 +80,76 @@ class PreviewTest extends TestCase
         $this->assertMatchesRegularExpression('/^p[a-z0-9]{31}$/', $preview->host);
 
         $workspaceId = $this->driver->copies[0]['workspace'];
-        $this->assertSame('PARENT PATCH', $this->driver->files["{$workspaceId}:.builder-lineage/01.patch"]);
-        $this->assertSame('CHILD PATCH', $this->driver->files["{$workspaceId}:.builder-lineage/02.patch"]);
-        $this->assertContains(['composer', 'install'], array_column($this->driver->executed, 'command'));
+        $this->assertSame('PARENT PATCH', $this->driver->files["{$workspaceId}:.patches-to-apply/01.patch"]);
+        $this->assertSame('CHILD PATCH', $this->driver->files["{$workspaceId}:.patches-to-apply/02.patch"]);
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains(['composer', 'install'], $commands);
+        $this->assertGreaterThan(array_search(['composer', 'install'], $commands, true), array_search(['npm', 'run', 'build'], $commands, true), 'The frontend is built after setup.');
 
         $service = $this->driver->services[0];
         $this->assertSame($preview->port, $service['port']);
         $this->assertContains("APP_URL=http://{$preview->host}.preview.test", $service['command']);
         $this->assertContains('MAIL_MAILER=log', $service['command']);
-        $this->assertSame(['php', '-S', "127.0.0.1:{$preview->port}"], array_slice($service['command'], array_search('php', $service['command'], true), 3));
+        // The server loads the trace recorder, which "What happened" reads.
+        $this->assertSame(['php', '-d', 'auto_prepend_file=/opt/trace-recorder/prepend.php', '-S', "127.0.0.1:{$preview->port}"], array_slice($service['command'], array_search('php', $service['command'], true), 5));
         $this->assertSame("http://{$workspaceId}.test:{$preview->port}", $preview->upstream_url);
 
         $this->get(route('feature-requests.show', $request))
             ->assertInertia(fn (Assert $page) => $page->where('preview.status', 'ready'));
+    }
+
+    public function test_an_app_with_no_package_json_starts_without_node()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        config(['builder.preview.setup' => [
+            ['name' => 'Install', 'command' => ['composer', 'install'], 'timeout' => 600],
+            ['name' => 'Install Node dependencies', 'command' => ['npm', 'ci'], 'timeout' => 600, 'needs' => 'package.json'],
+        ]]);
+        // A Blade or Livewire app may have no frontend build at all.
+        $this->driver->onExec = fn (string $id, array $command) => new CommandResult(exitCode: $command === ['test', '-e', 'package.json'] ? 1 : 0, output: '', errorOutput: '', durationMs: 5);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertSame(PreviewStatus::Ready, $request->previews()->sole()->status);
+        $commands = array_column($this->driver->executed, 'command');
+        $this->assertContains(['composer', 'install'], $commands);
+        $this->assertNotContains(['npm', 'ci'], $commands);
+        $this->assertNotContains(['npm', 'run', 'build'], $commands);
+    }
+
+    public function test_without_a_listen_host_the_app_listens_only_where_we_reach_it()
+    {
+        // On a runner hosted apart, that is its private address: the
+        // preview never opens to the machine's public network.
+        config(['builder.preview.listen_host' => null]);
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $preview = $request->previews()->sole();
+        $command = $this->driver->services[0]['command'];
+        $workspaceId = $this->driver->copies[0]['workspace'];
+        $this->assertSame(['-S', "{$workspaceId}.test:{$preview->port}"], array_slice($command, array_search('-S', $command, true), 2));
+    }
+
+    public function test_a_preview_gets_the_keys_of_the_apps_services_but_never_sends_real_email()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $request->project->forceFill(['service_keys' => [
+            'payments' => ['STRIPE_KEY' => 'pk_test_a', 'STRIPE_SECRET' => 'sk_test_b'],
+            'email' => ['RESEND_API_KEY' => 're_c', 'MAIL_FROM_ADDRESS' => 'hi@example.com'],
+        ]])->save();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $command = $this->driver->services[0]['command'];
+        $this->assertContains('STRIPE_SECRET=sk_test_b', $command);
+        $this->assertContains('RESEND_API_KEY=re_c', $command);
+        $this->assertContains('MAIL_MAILER=log', $command);
+        $this->assertNotContains('MAIL_MAILER=resend', $command);
     }
 
     public function test_a_duplicate_start_leaves_a_running_preview_alone()
@@ -97,10 +176,85 @@ class PreviewTest extends TestCase
 
         $preview = $request->previews()->sole();
         $this->assertSame(PreviewStatus::Failed, $preview->status);
+        // The owner reads the first line; operators get the step and its output.
+        $this->assertStringStartsWith("Something went wrong on our side while getting your app ready. This is our fault. Try once more.\n", (string) $preview->error);
         $this->assertStringContainsString('The setup step "Install" failed.', (string) $preview->error);
         $this->assertStringContainsString('Your lock file is out of date.', (string) $preview->error);
         $this->assertCount(1, $this->driver->destroyed);
         $this->assertSame([], $this->driver->services);
+    }
+
+    public function test_an_app_that_starts_with_an_error_asks_the_owner_to_have_it_fixed()
+    {
+        Sleep::fake();
+        Http::fake(['*/up' => Http::response('Whoops', 500)]);
+        config(['builder.preview.boot_seconds' => 1]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $error = (string) $request->previews()->sole()->error;
+        $this->assertStringStartsWith("Your app started, but it shows an error instead of its pages. Ask me in the chat to fix it.\n", $error);
+        $this->assertStringContainsString('last answer: 500', $error);
+    }
+
+    public function test_an_app_without_a_health_route_is_ready_once_its_home_page_answers()
+    {
+        Http::fake(['*/up' => Http::response('Not Found', 404), '*' => Http::response('', 302, ['Location' => '/login'])]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertSame(PreviewStatus::Ready, $request->previews()->sole()->status);
+    }
+
+    public function test_an_app_without_a_health_route_whose_home_page_fails_is_not_ready()
+    {
+        Sleep::fake();
+        Http::fake(['*/up' => Http::response('Not Found', 404), '*' => Http::response('Whoops', 500)]);
+        config(['builder.preview.boot_seconds' => 1]);
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertStringContainsString('last answer: 500', (string) $request->previews()->sole()->error);
+    }
+
+    public function test_a_change_that_no_longer_fits_the_app_says_so()
+    {
+        $this->driver->onExec = fn (string $id, array $command) => new CommandResult(
+            exitCode: $command[0] === 'git' && $command[1] === 'apply' ? 1 : 0,
+            output: '',
+            errorOutput: $command[0] === 'git' ? 'error: patch failed: app/Models/Team.php:12' : '',
+            durationMs: 5,
+        );
+        $request = FeatureRequest::factory()->generated()->create(['patch' => 'PATCH']);
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $error = (string) $request->previews()->sole()->error;
+        $this->assertStringStartsWith("Your app changed after this change was made, so it no longer fits. This is our fault. Try again to make it on your app as it is now.\nChange #{$request->id} does not apply to the project.\n", $error);
+    }
+
+    public function test_a_setup_step_that_runs_out_of_time_says_how_long_it_had()
+    {
+        $this->driver->onExec = fn (string $id, array $command) => new CommandResult(
+            exitCode: $command === ['composer', 'install'] ? 124 : 0,
+            output: '',
+            errorOutput: '',
+            durationMs: 600000,
+            timedOut: $command === ['composer', 'install'],
+        );
+        $request = FeatureRequest::factory()->generated()->create();
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $error = (string) $request->previews()->sole()->error;
+        $this->assertStringStartsWith("Getting your app ready took more than 10 minutes, so I stopped. This is our fault. Try once more.\n", $error);
+        $this->assertStringContainsString('The setup step "Install" ran out of time.', $error);
+
+        $this->get(route('feature-requests.show', $request))
+            ->assertInertia(fn (Assert $page) => $page->where('preview.error', 'Getting your app ready took more than 10 minutes, so I stopped. This is our fault. Try once more.'));
     }
 
     public function test_starting_a_preview_again_stops_the_running_one()
@@ -113,6 +267,56 @@ class PreviewTest extends TestCase
 
         $this->assertSame(PreviewStatus::Stopped, $running->refresh()->status);
         $this->assertSame(PreviewStatus::Ready, $running->featureRequest->previews()->latest('id')->first()?->status);
+    }
+
+    public function test_a_copy_replaced_while_it_installs_stays_stopped_and_the_new_copy_starts()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $replaced = false;
+        $this->driver->onExec = function (string $id, array $command) use ($request, &$replaced) {
+            if ($command === ['composer', 'install'] && ! $replaced) {
+                $replaced = true;
+                // The owner opens a newer copy. Closing this copy's workspace
+                // kills its install, as the runner's close does.
+                app(RequestPreview::class)->handle($request->refresh());
+
+                return new CommandResult(exitCode: 137, output: '', errorOutput: '', durationMs: 324);
+            }
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        [$replacedCopy, $newCopy] = $request->previews()->orderBy('id')->get()->all();
+        $this->assertSame(PreviewStatus::Stopped, $replacedCopy->status);
+        $this->assertNull($replacedCopy->error);
+        $this->assertSame(PreviewStatus::Ready, $newCopy->status);
+        $this->assertSame([$replacedCopy->workspace?->driver_id], $this->driver->destroyed);
+        $this->assertNotSame($replacedCopy->workspace_id, $newCopy->workspace_id);
+    }
+
+    public function test_a_copy_stopped_before_its_workspace_was_recorded_never_becomes_ready()
+    {
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $this->driver->onExec = function () use ($request) {
+            // Stopped by a request that came before the copy recorded its
+            // workspace, so the stop could not close it.
+            $request->previews()->update(['status' => PreviewStatus::Stopped, 'stopped_at' => now()]);
+
+            return new CommandResult(exitCode: 0, output: 'ok', errorOutput: '', durationMs: 5);
+        };
+
+        $this->actingAs($request->project->owner)->post(route('feature-requests.previews.store', $request));
+
+        $preview = $request->previews()->sole();
+        $this->assertSame(PreviewStatus::Stopped, $preview->status);
+        $this->assertNull($preview->error);
+        $this->assertNull($preview->ready_at);
+        $this->assertSame([], $this->driver->services);
+        $this->assertSame([$preview->workspace?->driver_id], $this->driver->destroyed);
     }
 
     public function test_opening_a_preview_hands_the_owner_a_single_use_grant_that_becomes_a_preview_session()
@@ -131,11 +335,56 @@ class PreviewTest extends TestCase
         $cookie = collect($exchange->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === 'builder_preview');
         $this->assertNotNull($cookie);
         $this->assertTrue($cookie->isHttpOnly());
-        $this->assertSame('lax', $cookie->getSameSite());
+        // A change's copy shows inside the builder, so the cookie must work
+        // in a frame there, kept apart for each site that shows it.
+        $this->assertSame('none', $cookie->getSameSite());
+        $this->assertTrue($cookie->isPartitioned());
         $this->assertNull($cookie->getDomain(), 'The session cookie must stay on the preview host.');
 
         // The grant cannot be used twice.
         $this->get((string) $location)->assertForbidden();
+    }
+
+    public function test_the_owner_can_have_a_preview_open_in_the_builder_and_in_a_tab_at_once()
+    {
+        $preview = Preview::factory()->ready()->create();
+        Http::fake(['http://127.0.0.1:20001/*' => Http::response('<h1>Teams</h1>', 200, ['Content-Type' => 'text/html'])]);
+        $owner = $preview->featureRequest->project->owner;
+        $show = route('previews.show', $preview);
+        $stop = route('previews.destroy', $preview);
+        $open = function () use ($show, $owner): string {
+            $location = $this->actingAs($owner)->get($show)->headers->get('Location');
+            $cookie = collect($this->get((string) $location)->headers->getCookies())->firstWhere(fn ($cookie) => $cookie->getName() === 'builder_preview');
+
+            return (string) $cookie->getValue();
+        };
+
+        $builder = $open();
+        $tab = $open();
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => $builder])->assertOk();
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => $tab])->assertOk();
+
+        // Stopping the preview ends every session.
+        $this->actingAs($owner)->delete($stop);
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => $builder])->assertForbidden();
+        $this->assertNull(Cache::get(PreviewGateway::sessionsKey($preview)));
+    }
+
+    public function test_two_openings_at_once_both_get_in_and_each_grant_works_once()
+    {
+        $preview = Preview::factory()->ready()->create();
+        $owner = $preview->featureRequest->project->owner;
+        $first = (string) $this->actingAs($owner)->get(route('previews.show', $preview))->headers->get('Location');
+        $second = (string) $this->actingAs($owner)->get(route('previews.show', $preview))->headers->get('Location');
+
+        // The first is used after the second was made, as when the builder
+        // and another tab open the app in the same moment.
+        $this->get($second)->assertRedirect();
+        $this->get($first)->assertRedirect();
+
+        $this->get($first)->assertForbidden();
+        $this->get($second)->assertForbidden();
     }
 
     public function test_a_grant_spent_by_a_concurrent_request_is_refused()
@@ -143,6 +392,9 @@ class PreviewTest extends TestCase
         $preview = Preview::factory()->ready()->create();
         $location = (string) $this->actingAs($preview->featureRequest->project->owner)->get(route('previews.show', $preview))->headers->get('Location');
         parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+
+        // The cache lost the grant, so the one stored on the preview is used.
+        Cache::forget(GrantPreviewAccess::ownerKey($preview, $query['grant']));
 
         // This request read the preview before a concurrent one spent the grant.
         $stale = $preview->fresh();
@@ -202,6 +454,55 @@ class PreviewTest extends TestCase
             && $request->body() === 'name=Acme');
     }
 
+    public function test_the_app_can_be_signed_in_to_inside_the_builder()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        Http::fake(['*' => Http::response('<h1>Log in</h1>', 200, [
+            'Content-Type' => 'text/html',
+            'X-Frame-Options' => 'SAMEORIGIN',
+            'Set-Cookie' => ['laravel-session=abc; path=/; httponly; samesite=lax', 'XSRF-TOKEN=def; path=/; samesite=lax'],
+        ])]);
+
+        $response = $this->previewRequest('GET', "http://{$preview->host}.preview.test/login", ['builder_preview' => 'secret-value']);
+
+        // Shown in the builder's frame, the app's session and form token
+        // would be refused as a third party's, and every sign-in would fail.
+        $response->assertOk();
+        $this->assertFalse($response->headers->has('X-Frame-Options'));
+        $this->assertStringContainsString('frame-ancestors '.config('app.url'), (string) $response->headers->get('Content-Security-Policy'));
+        $cookies = collect($response->headers->getCookies())->keyBy(fn ($cookie) => $cookie->getName());
+        $this->assertSame(['laravel-session', 'XSRF-TOKEN'], $cookies->keys()->all());
+
+        foreach ($cookies as $cookie) {
+            $this->assertSame('none', $cookie->getSameSite());
+            $this->assertTrue($cookie->isSecure());
+            $this->assertTrue($cookie->isPartitioned());
+        }
+
+        $this->assertTrue($cookies['laravel-session']->isHttpOnly());
+        $this->assertSame('abc', $cookies['laravel-session']->getValue());
+    }
+
+    public function test_the_app_opens_on_the_page_the_owner_was_on()
+    {
+        $preview = Preview::factory()->ready()->create();
+        $owner = $preview->featureRequest->project->owner;
+
+        // Built first: after a request to the preview host, URLs resolve
+        // against that host.
+        $elsewhere = ['//evil.test/x', '/\\evil.test', 'https://evil.test/'];
+        $opens = collect(['/classes/3?week=2', ...$elsewhere])->mapWithKeys(fn (string $to) => [$to => route('previews.show', [$preview, 'to' => $to])]);
+
+        $location = (string) $this->actingAs($owner)->get($opens['/classes/3?week=2'])->headers->get('Location');
+        $this->get($location)->assertRedirect('/classes/3?week=2');
+
+        // Never another site.
+        foreach ($elsewhere as $to) {
+            $location = (string) $this->actingAs($owner)->get($opens[$to])->headers->get('Location');
+            $this->get($location)->assertRedirect('/');
+        }
+    }
+
     public function test_file_uploads_are_relayed_as_multipart_requests()
     {
         $preview = $this->previewWithSession('secret-value');
@@ -241,22 +542,127 @@ class PreviewTest extends TestCase
         $this->actingAs($preview->featureRequest->project->owner)
             ->get("http://{$preview->host}.preview.test/dashboard")
             ->assertForbidden()
-            ->assertSee('Open this preview from the builder.');
+            ->assertSee('This page has closed. Open the app again from the builder, or from the link you were sent.');
 
-        $this->get("http://{$preview->host}.preview.test/previews/{$preview->id}")->assertForbidden();
+        $this->get("http://{$preview->host}.preview.test/previews/{$preview->uuid}")->assertForbidden();
         $this->get('http://unknown.preview.test/')->assertNotFound();
         $this->get('http://p-evil.preview.test/')->assertNotFound();
 
         Http::assertNothingSent();
     }
 
-    public function test_an_unreachable_app_is_reported_as_a_bad_gateway()
+    public function test_an_unreachable_change_copy_is_reported_as_a_bad_gateway_and_tells_the_builder()
     {
         $preview = $this->previewWithSession('secret-value');
         Http::fake(fn () => throw new ConnectionException('Connection refused'));
 
+        // The builder shows a change's copy too, and offers to open it again.
         $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502)
+            ->assertSee('parent.postMessage({builder:true,type:"lost"},"'.PreviewGateway::builderOrigin().'")', false);
+    }
+
+    public function test_an_editable_app_that_stopped_tells_the_builder_so_it_can_start_it_again()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['editable' => true]);
+        Http::fake(fn () => throw new ConnectionException('Connection refused'));
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502)
+            ->assertSee('parent.postMessage({builder:true,type:"lost"},"'.PreviewGateway::builderOrigin().'")', false)
+            // A builder that starts to listen later says hello and hears it again.
+            ->assertSee('e.data.type==="hello"', false);
+    }
+
+    public function test_an_app_that_stopped_mid_session_is_marked_stopped_at_once_and_its_box_removed()
+    {
+        Bus::fake([ClosePreview::class]);
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['workspace_id' => Workspace::factory()->create()->id]);
+        $other = Preview::factory()->ready()->create(['upstream_url' => 'http://127.0.0.1:20009']);
+        Http::fake([
+            '127.0.0.1:20001*' => fn () => throw new ConnectionException('Connection refused'),
+            '*' => Http::response('ok'),
+        ]);
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/dashboard", ['builder_preview' => 'secret-value'])
             ->assertStatus(502);
+
+        // A reload shows it stopped, and why, without waiting for the reaper.
+        $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
+        $this->assertStringContainsString('This is our fault', (string) $preview->error);
+        // Another owner's app on the same runner runs on.
+        $this->assertSame(PreviewStatus::Ready, $other->refresh()->status);
+
+        // The box goes on the previews queue, not in the request.
+        Bus::assertDispatched(ClosePreview::class, fn (ClosePreview $job) => $job->preview->is($preview) && $job->queue === config('builder.preview.queue'));
+        Bus::assertDispatchedTimes(ClosePreview::class, 1);
+        app()->call([new ClosePreview($preview), 'handle']);
+        $this->assertSame([$preview->workspace->driver_id], $this->driver->destroyed);
+        $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
+        $this->assertNull($preview->session_hash);
+    }
+
+    public function test_an_app_taking_a_change_or_still_answering_is_left_running_when_a_request_fails()
+    {
+        Bus::fake([ClosePreview::class]);
+        $preview = $this->previewWithSession('secret-value');
+        // One slow page times out, but the app still answers.
+        Http::fake([
+            '127.0.0.1:20001/slow' => fn () => throw new ConnectionException('Operation timed out'),
+            '*' => Http::response('ok'),
+        ]);
+        $probed = fn () => Http::recorded(fn (ClientRequest $request) => $request->url() === 'http://127.0.0.1:20001')->count();
+
+        // A copy taking a kept change can be closed for a moment; it is
+        // never checked or stopped.
+        $rebuild = PreviewRebuild::query()->create(['preview_id' => $preview->id, 'project_id' => $preview->featureRequest->project_id, 'from_revision' => 'a', 'to_revision' => 'b', 'status' => 'running', 'started_at' => now()]);
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/slow", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502);
+        $this->assertSame(PreviewStatus::Ready, $preview->refresh()->status);
+        $this->assertSame(0, $probed());
+
+        $rebuild->update(['status' => 'rebuilt', 'finished_at' => now()]);
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/slow", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502);
+        $this->assertSame(1, $probed());
+        $this->assertSame(PreviewStatus::Ready, $preview->refresh()->status);
+        Bus::assertNotDispatched(ClosePreview::class);
+    }
+
+    public function test_requests_that_fail_together_check_and_stop_the_app_once()
+    {
+        Bus::fake([ClosePreview::class]);
+        $preview = $this->previewWithSession('secret-value');
+        $asked = 0;
+        Http::fake(function () use (&$asked) {
+            $asked++;
+
+            throw new ConnectionException('Connection refused');
+        });
+
+        // Another request of the same page load is already checking.
+        $lock = Cache::lock("previews:{$preview->id}:lost", 30);
+        $this->assertTrue($lock->get());
+
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/build/app.js", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502)
+            ->assertSee('type:"lost"', false);
+
+        // Only the asset was asked for: no second check, no second stop.
+        $this->assertSame(1, $asked);
+        $this->assertSame(PreviewStatus::Ready, $preview->refresh()->status);
+        Bus::assertNotDispatched(ClosePreview::class);
+
+        $lock->release();
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/build/app.css", ['builder_preview' => 'secret-value'])
+            ->assertStatus(502);
+        $this->assertSame(PreviewStatus::Stopped, $preview->refresh()->status);
+        // A stopped copy's page has closed, so a late request checks nothing.
+        $this->previewRequest('GET', "http://{$preview->host}.preview.test/build/app.png", ['builder_preview' => 'secret-value'])
+            ->assertForbidden();
+        Bus::assertDispatchedTimes(ClosePreview::class, 1);
     }
 
     public function test_the_owner_can_stop_a_preview_and_its_session_ends()
@@ -279,6 +685,7 @@ class PreviewTest extends TestCase
         $expired = Preview::factory()->ready()->create(['expires_at' => now()->subMinute()]);
         $idle = Preview::factory()->ready()->create(['last_seen_at' => now()->subMinutes(31)]);
         $active = Preview::factory()->ready()->create(['last_seen_at' => now()->subMinutes(5)]);
+        Http::fake(['*' => Http::response('ok')]);
 
         $this->artisan('previews:reap')->assertSuccessful();
 
@@ -287,18 +694,121 @@ class PreviewTest extends TestCase
         $this->assertSame(PreviewStatus::Ready, $active->refresh()->status);
     }
 
+    public function test_only_opening_a_page_or_a_page_in_view_keeps_a_preview_running()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['last_seen_at' => now()->subMinutes(10)]);
+        Http::fake(['http://127.0.0.1:20001/*' => Http::response('<html><body><h1>Teams</h1></body></html>', 200, ['Content-Type' => 'text/html'])]);
+        $url = "http://{$preview->host}.preview.test";
+
+        // A page polling in a tab nobody looks at.
+        $this->previewRequest('GET', "{$url}/livewire/update", ['builder_preview' => 'secret-value'], [], ['HTTP_SEC_FETCH_MODE' => 'cors'])->assertOk();
+        $this->assertTrue($preview->refresh()->last_seen_at->lt(now()->subMinutes(9)));
+
+        // A page in view says so, and the app never hears of it.
+        $this->previewRequest('POST', "{$url}/__builder/alive", ['builder_preview' => 'secret-value'], [], ['HTTP_SEC_FETCH_MODE' => 'cors'])->assertNoContent();
+        $this->assertTrue($preview->refresh()->last_seen_at->gt(now()->subMinute()));
+        Http::assertSentCount(1);
+
+        // Opening a page counts, and the page carries the keep-alive.
+        $preview->update(['last_seen_at' => now()->subMinutes(10)]);
+        $page = $this->previewRequest('GET', "{$url}/teams", ['builder_preview' => 'secret-value'], [], ['HTTP_SEC_FETCH_MODE' => 'navigate']);
+        $this->assertStringContainsString('/__builder/alive', (string) $page->getContent());
+        $this->assertTrue($preview->refresh()->last_seen_at->gt(now()->subMinute()));
+    }
+
+    public function test_an_owner_at_the_running_limit_gets_the_new_preview_and_the_least_used_one_stops()
+    {
+        config(['builder.preview.max_running_per_owner' => 2]);
+        Http::fake(['*/up' => Http::response('ok')]);
+        $request = FeatureRequest::factory()->generated()->create();
+        $owner = $request->project->owner;
+        $otherProject = Project::factory()->for($owner, 'owner')->create();
+        $old = Preview::factory()->ready()->for($otherProject)->create(['last_seen_at' => now()->subMinutes(20)]);
+        $recent = Preview::factory()->ready()->for($otherProject)->create(['last_seen_at' => now()->subMinute()]);
+        $someoneElses = Preview::factory()->ready()->create(['last_seen_at' => now()->subHour()]);
+
+        $this->actingAs($owner)->post(route('feature-requests.previews.store', $request));
+
+        $this->assertSame(PreviewStatus::Ready, $request->previews()->sole()->status);
+        $this->assertSame(PreviewStatus::Stopped, $old->refresh()->status);
+        $this->assertStringContainsString('make room', (string) $old->error);
+        $this->assertSame(PreviewStatus::Ready, $recent->refresh()->status);
+        $this->assertSame(PreviewStatus::Ready, $someoneElses->refresh()->status);
+    }
+
+    public function test_a_preview_started_in_the_background_never_closes_one_the_owner_is_looking_at()
+    {
+        config(['builder.preview.max_running_per_owner' => 2]);
+        Http::fake(['*/up' => Http::response('ok')]);
+        $owner = User::factory()->create();
+        $otherProject = Project::factory()->for($owner, 'owner')->create();
+        $watched = Preview::factory()->ready()->for($otherProject)->create(['last_seen_at' => now()->subMinute()]);
+        // Started by an earlier change in the background and never opened,
+        // so it counts as less used than the one on screen.
+        $unopened = Preview::factory()->ready()->for($otherProject)->create(['created_at' => now()->subSeconds(10), 'last_seen_at' => null]);
+
+        $first = FeatureRequest::factory()->generated()->for(Project::factory()->for($owner, 'owner'))->create();
+        $this->assertNotNull(app(RequestPreview::class)->automatically($first));
+
+        $this->assertSame(PreviewStatus::Stopped, $unopened->refresh()->status);
+        $this->assertSame(PreviewStatus::Ready, $watched->refresh()->status);
+
+        // Now only the watched one could make room: nothing starts instead.
+        $first->previews()->sole()->update(['last_seen_at' => now()]);
+        $second = FeatureRequest::factory()->generated()->for(Project::factory()->for($owner, 'owner'))->create();
+
+        $this->assertNull(app(RequestPreview::class)->automatically($second));
+        $this->assertSame(0, $second->previews()->count());
+        $this->assertSame(PreviewStatus::Ready, $watched->refresh()->status);
+
+        // Once it has not been seen for a while, it is not being looked at.
+        $watched->update(['last_seen_at' => now()->subMinutes(10)]);
+
+        $this->assertNotNull(app(RequestPreview::class)->automatically($second));
+        $this->assertSame(PreviewStatus::Stopped, $watched->refresh()->status);
+    }
+
+    public function test_the_keep_alive_needs_the_preview_session()
+    {
+        $preview = $this->previewWithSession('secret-value');
+        $preview->update(['last_seen_at' => now()->subMinutes(10)]);
+
+        $this->previewRequest('POST', "http://{$preview->host}.preview.test/__builder/alive", ['builder_preview' => 'wrong'])->assertForbidden();
+
+        $this->assertTrue($preview->refresh()->last_seen_at->lt(now()->subMinutes(9)));
+    }
+
+    public function test_a_preview_whose_app_stopped_on_our_side_is_marked_stopped()
+    {
+        $stopped = Preview::factory()->ready()->create(['upstream_url' => 'http://127.0.0.1:20002']);
+        $failing = Preview::factory()->ready()->create(['upstream_url' => 'http://127.0.0.1:20003']);
+        Http::fake([
+            '127.0.0.1:20002*' => fn () => throw new ConnectionException('Connection refused'),
+            '127.0.0.1:20003*' => Http::response('Server error', 500),
+        ]);
+
+        $this->artisan('previews:reap')->assertSuccessful();
+
+        $this->assertSame(PreviewStatus::Stopped, $stopped->refresh()->status);
+        $this->assertStringContainsString('This is our fault', (string) $stopped->error);
+        // An app that answers with an error page still runs.
+        $this->assertSame(PreviewStatus::Ready, $failing->refresh()->status);
+    }
+
     /**
      * Send a request to a preview host with the given cookies, as a browser
      * would (both parsed and in the raw Cookie header).
      *
      * @param  array<string, string>  $cookies
      * @param  array<string, string>  $parameters
+     * @param  array<string, string>  $server
      */
-    protected function previewRequest(string $method, string $url, array $cookies = [], array $parameters = []): TestResponse
+    protected function previewRequest(string $method, string $url, array $cookies = [], array $parameters = [], array $server = []): TestResponse
     {
         $header = implode('; ', array_map(fn (string $name, string $value) => "{$name}={$value}", array_keys($cookies), $cookies));
 
-        return $this->call($method, $url, $parameters, $cookies, [], $header === '' ? [] : ['HTTP_COOKIE' => $header]);
+        return $this->call($method, $url, $parameters, $cookies, [], [...$server, ...($header === '' ? [] : ['HTTP_COOKIE' => $header])]);
     }
 
     /**

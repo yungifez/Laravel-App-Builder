@@ -4,29 +4,33 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        {{-- Inline script to detect system dark mode preference and apply it immediately --}}
+        {{-- Pick the theme before the first paint, the same way the app does
+             once it starts: the choice saved in this browser first, then the
+             system's. The cookie alone can disagree with it, which painted a
+             light page that turned dark a moment later. --}}
         <script>
             (function() {
-                const appearance = '{{ $appearance ?? "system" }}';
+                let appearance = '{{ $appearance ?? "system" }}';
 
-                if (appearance === 'system') {
-                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                try {
+                    appearance = localStorage.getItem('appearance') || 'system';
+                } catch (e) {}
 
-                    if (prefersDark) {
-                        document.documentElement.classList.add('dark');
-                    }
-                }
+                const dark = appearance === 'dark'
+                    || (appearance === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+                document.documentElement.classList.toggle('dark', dark);
             })();
         </script>
 
-        {{-- Inline style to set the HTML background color based on our theme in app.css --}}
+        {{-- The page's own background from app.css, so the first paint is not a different shade. --}}
         <style>
             html {
-                background-color: oklch(1 0 0);
+                background-color: hsl(220 20% 98.5%);
             }
 
             html.dark {
-                background-color: oklch(0.145 0 0);
+                background-color: hsl(224 16% 7%);
             }
         </style>
 
@@ -39,6 +43,7 @@
         @vite(['resources/css/app.css', 'resources/js/app.ts', "resources/js/pages/{$page['component']}.vue"])
         <x-inertia::head>
             <title>{{ config('app.name', 'Laravel') }}</title>
+            <meta name="description" data-inertia="description" content="Don't just build a prototype. Every change passes fixed checks before you keep it.">
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">

@@ -5,6 +5,7 @@ namespace App\Workspaces\Drivers;
 use App\Workspaces\CommandResult;
 use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceSpec;
+use Closure;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -21,6 +22,8 @@ use RuntimeException;
  */
 class LocalDriver implements WorkspaceDriver
 {
+    use WaitsWhileRunning;
+
     /**
      * Exit code reported for a command that ran out of time.
      */
@@ -45,10 +48,14 @@ class LocalDriver implements WorkspaceDriver
      * The local driver is for trusted development use: extra environment
      * variables are passed to `env` on its command line.
      */
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = [], ?Closure $whileRunning = null): CommandResult
     {
         $startedAt = hrtime(true);
         $extra = array_map(fn (string $name, string $value) => "{$name}={$value}", array_keys($environment), $environment);
+
+        if ($whileRunning !== null) {
+            return $this->execWhileRunning($workspaceId, ['env', '-i', ...$this->environment(), ...$extra, ...$command], $timeoutSeconds, $whileRunning, $startedAt);
+        }
 
         try {
             $result = Process::path($this->directory($workspaceId))
@@ -72,10 +79,38 @@ class LocalDriver implements WorkspaceDriver
         );
     }
 
+    /**
+     * Run a command that can be stopped part way. Coreutils `timeout` leads
+     * its own process group and passes a stop signal to the whole group, so
+     * processes the command started stop with it.
+     *
+     * @param  list<string>  $command
+     * @param  Closure(): void  $whileRunning
+     */
+    protected function execWhileRunning(string $workspaceId, array $command, int $timeoutSeconds, Closure $whileRunning, int $startedAt): CommandResult
+    {
+        $process = Process::path($this->directory($workspaceId))
+            ->timeout($timeoutSeconds + 30)
+            ->start(['timeout', '--kill-after=5', "{$timeoutSeconds}s", ...$command]);
+
+        $result = $this->waitWhileRunning($process, $whileRunning, function () use ($process) {
+            $process->signal(SIGTERM);
+        });
+        $exitCode = $result->exitCode() ?? 1;
+
+        return new CommandResult(
+            exitCode: $exitCode,
+            output: $result->output(),
+            errorOutput: $result->errorOutput(),
+            durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000),
+            timedOut: $exitCode === self::TIMEOUT_EXIT_CODE,
+        );
+    }
+
     public function copyDirectory(string $workspaceId, string $sourcePath): void
     {
         $result = Process::run([
-            'sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -cf - . | tar -C "$2" -xf -',
+            'sh', '-c', 'tar -C "$1" '.CopyExclusions::tarFlags().' -cf - . | tar -C "$2" --no-same-owner -xf -',
             'sh', $sourcePath, $this->directory($workspaceId),
         ]);
 
@@ -92,9 +127,21 @@ class LocalDriver implements WorkspaceDriver
         File::put($target, $contents);
     }
 
-    public function readFile(string $workspaceId, string $path): string
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string
     {
-        return File::get($this->path($workspaceId, $path));
+        $target = $this->path($workspaceId, $path);
+
+        if ($tailBytes === null) {
+            return File::get($target);
+        }
+
+        $result = Process::run(['tail', '-c', (string) max(0, $tailBytes), '--', $target]);
+
+        if ($result->failed()) {
+            throw new RuntimeException("Could not read [{$path}]: ".trim($result->errorOutput()));
+        }
+
+        return $result->output();
     }
 
     /**

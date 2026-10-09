@@ -13,7 +13,23 @@ use Illuminate\Validation\ValidationException;
 
 class RequestPreview
 {
-    public function __construct(private StopPreview $stopPreview) {}
+    public function __construct(
+        private StopPreview $stopPreview,
+        private MakeRoomForPreview $makeRoomForPreview,
+    ) {}
+
+    /**
+     * Start a preview of a change that was just made, so the owner can try
+     * it at once, unless that would close a preview they are looking at.
+     */
+    public function automatically(FeatureRequest $featureRequest): ?Preview
+    {
+        if (! $this->makeRoomForPreview->handle($featureRequest->project, automatic: true)) {
+            return null;
+        }
+
+        return $this->handle($featureRequest);
+    }
 
     /**
      * Start a preview of the request's change, replacing any running one.
@@ -24,7 +40,7 @@ class RequestPreview
     {
         if ($featureRequest->status !== FeatureRequestStatus::Generated) {
             throw ValidationException::withMessages([
-                'preview' => __('Only a generated change can be previewed.'),
+                'preview' => __('There is no change to try yet.'),
             ]);
         }
 
@@ -32,8 +48,15 @@ class RequestPreview
             ->whereIn('status', [PreviewStatus::Starting, PreviewStatus::Ready])
             ->each(fn (Preview $preview) => $this->stopPreview->handle($preview));
 
+        $this->makeRoomForPreview->handle($featureRequest->project);
+
         return DB::transaction(function () use ($featureRequest) {
             $preview = $featureRequest->previews()->create([
+                'project_id' => $featureRequest->project_id,
+                // The owner can design on the copy; the edits become part of
+                // the change. A change with no base commit has no branch to
+                // hold them.
+                'editable' => $featureRequest->base_revision !== null,
                 'host' => 'p'.Str::lower(Str::random(31)),
                 'status' => PreviewStatus::Starting,
                 'expires_at' => now()->addMinutes((int) config('builder.preview.max_minutes')),

@@ -36,6 +36,7 @@ trait UsesReferenceSolutions
                 'summary' => 'Owners and admins can invite people.',
                 'steps' => [$step('Owners and admins.')],
                 'acceptance' => ['Invitations/ContractTest.php'],
+                'needs' => ['config/teams.php'],
             ],
             [
                 'key' => 'owner-only-invitations',
@@ -45,6 +46,14 @@ trait UsesReferenceSolutions
                 'match' => ['owner'],
                 'summary' => 'Only the owner can invite people.',
                 'steps' => [$step('Owner only.')],
+            ],
+            [
+                'key' => 'invitation-reminders',
+                'patch' => '03.patch',
+                'follows' => 'team-invitations',
+                'match' => ['remind'],
+                'summary' => 'People are reminded of invitations they have not answered.',
+                'steps' => [],
             ],
         ]], JSON_THROW_ON_ERROR));
 
@@ -82,6 +91,20 @@ trait UsesReferenceSolutions
             "-        'members:invite',",
             '     ],',
             ' ];',
+            '',
+        ]));
+
+        File::put("{$directory}/03.patch", implode("\n", [
+            'diff --git a/app/Policies/TeamPolicy.php b/app/Policies/TeamPolicy.php',
+            '--- a/app/Policies/TeamPolicy.php',
+            '+++ b/app/Policies/TeamPolicy.php',
+            '@@ -1,5 +1,6 @@',
+            ' <?php',
+            ' // invite',
+            ' // members:invite',
+            '+// remind',
+            ' ',
+            ' class TeamPolicy {}',
             '',
         ]));
 

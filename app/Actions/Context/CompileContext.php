@@ -7,22 +7,42 @@ use App\Context\ContextPack;
 use App\Context\Effect;
 use App\Context\ProjectContext;
 use App\Enums\ContextMode;
+use Illuminate\Support\Facades\Context;
 
 class CompileContext
 {
     /**
+     * The hidden context key a context experiment's trial sets to its mode.
+     */
+    public const TRIAL_MODE = 'context_trial_mode';
+
+    /**
+     * Test files listed for an area, at most.
+     */
+    protected const LISTED_TESTS = 8;
+
+    /**
+     * Code files listed for an area, at most. The agent searches for more.
+     */
+    protected const LISTED_CODE = 30;
+
+    /**
      * Compile the project context for a change, deterministically.
      *
      * Selective (the product): the project notes, the files of the areas the
-     * change is about with their Effects as hints, and an index of the other
-     * areas the agent may read itself. Flat: every file. None: nothing. The
-     * outline of every area is kept in all modes, to classify the change.
+     * change is about with their Effects as hints and their code files, and
+     * an index of the other areas the agent may read itself. Flat: every
+     * file. None: nothing. The outline of every area is kept in all modes,
+     * to classify the change.
      *
      * @param  list<string>  $targets  The areas the change is about
+     * @param  list<string>  $files  The app's files, to list each area's code
      */
-    public function handle(ProjectContext $context, array $targets, ?ContextMode $mode = null): ContextPack
+    public function handle(ProjectContext $context, array $targets, ?ContextMode $mode = null, array $files = []): ContextPack
     {
-        $mode ??= ContextMode::from((string) config('builder.context.mode'));
+        // A context experiment's trial asks for its own way, carried with the
+        // queued work that builds its change (see RunContextExperiment).
+        $mode ??= ContextMode::from((string) (Context::getHidden(self::TRIAL_MODE) ?? config('builder.context.mode')));
         $targets = $context->known($targets);
         $sections = [];
 
@@ -39,7 +59,7 @@ class CompileContext
         if ($mode === ContextMode::Selective || $mode === ContextMode::SelectiveWithoutEffects) {
             foreach ($targets as $target) {
                 $capability = $context->capabilities[$target];
-                $sections[] = [(string) $capability->file, $this->area($context, $capability, withEffects: $mode === ContextMode::Selective)];
+                $sections[] = [(string) $capability->file, $this->area($context, $capability, withEffects: $mode === ContextMode::Selective, files: $files)];
             }
 
             $others = array_diff_key($context->capabilities, array_flip($targets));
@@ -63,11 +83,29 @@ class CompileContext
     }
 
     /**
-     * Render one area: its notes and, when asked, what it may also affect.
+     * Render one area: its notes, its code, its existing tests and, when
+     * asked, what it may also affect. Tests seen running the area's code
+     * come first, then the test files it claims by path.
+     *
+     * @param  list<string>  $files  The app's files
      */
-    protected function area(ProjectContext $context, Capability $capability, bool $withEffects): string
+    protected function area(ProjectContext $context, Capability $capability, bool $withEffects, array $files = []): string
     {
         $text = "## {$capability->name} ({$capability->file})\n\n".($capability->notes !== '' ? $capability->notes : ($capability->summary ?? ''));
+
+        $code = array_values(array_filter($files, fn (string $path) => ! Capability::runBySuite($path) && $capability->claims($path)));
+
+        if ($code !== []) {
+            $more = count($code) - self::LISTED_CODE;
+            $text .= "\n\nCode in this area:\n".implode("\n", array_map(fn (string $file) => "- {$file}", array_slice($code, 0, self::LISTED_CODE)))
+                .($more > 0 ? "\n- and {$more} more files" : '');
+        }
+
+        $tests = array_slice(array_values(array_unique([...$capability->reachedBy, ...$capability->testFiles])), 0, self::LISTED_TESTS);
+
+        if ($tests !== []) {
+            $text .= "\n\nExisting tests for this area, most relevant first:\n".implode("\n", array_map(fn (string $file) => "- {$file}", $tests));
+        }
 
         if ($withEffects && $capability->effects !== []) {
             $text .= "\n\nMay also affect (hints, not requirements; look only if they matter for this request):\n".implode("\n", array_map(

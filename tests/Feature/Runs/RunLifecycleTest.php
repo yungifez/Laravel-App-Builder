@@ -2,26 +2,39 @@
 
 namespace Tests\Feature\Runs;
 
+use App\Actions\Features\OpenChangeForDesign;
+use App\Actions\Features\RetryFeatureRequest;
+use App\Actions\Projects\CreateProject;
 use App\Actions\Runs\AcquireRunLease;
 use App\Actions\Runs\CancelRun;
 use App\Actions\Runs\CompleteRunVerification;
+use App\Actions\Runs\KeepTryingRun;
+use App\Actions\Runs\PrepareRunWorkspace;
 use App\Actions\Runs\StartRun;
 use App\Actions\Runs\TransitionRun;
 use App\Enums\FeatureRequestStatus;
+use App\Enums\PreviewStatus;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Enums\VerificationStatus;
 use App\Enums\WorkspaceStatus;
+use App\Events\RunStatusChanged;
 use App\Jobs\ExecuteRun;
+use App\Jobs\RebuildPreview;
+use App\Jobs\StartPreview;
 use App\Jobs\VerifyFeatureRequest;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\User;
 use App\Models\Verification;
+use App\Projects\ProjectRepository;
 use App\Runs\ConstructionDriverManager;
 use App\Runs\Contracts\ConstructionDriver;
+use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\InvalidRunTransition;
 use App\Runs\Exceptions\LeaseLost;
+use App\Runs\Exceptions\RunCancelled;
 use App\Runs\Exceptions\RunLeaseHeld;
 use App\Runs\Plan;
 use App\Runs\PlanningContext;
@@ -30,6 +43,7 @@ use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
 use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\PreparesRuns;
@@ -63,10 +77,10 @@ class RunLifecycleTest extends TestCase
             $run->operations()->orderBy('id')->get()->map(fn ($operation) => [$operation->operation_key, $operation->tool, $operation->status->value])->all(),
         );
         $this->assertSame(
-            ['created', 'lease_acquired', 'status', 'workspace_ready', 'context_compiled', 'status', 'operation', 'operation', 'build_finished', 'status'],
+            ['created', 'lease_acquired', 'status', 'workspace_ready', 'compatibility', 'planned', 'context_compiled', 'status', 'operation', 'operation', 'build_finished', 'status'],
             $run->events()->pluck('type')->all(),
         );
-        $this->assertSame(range(1, 10), $run->events()->pluck('sequence')->all());
+        $this->assertSame(range(1, 12), $run->events()->pluck('sequence')->all());
         $this->assertSame('team-invitations', $run->plan['solution_key']);
 
         $featureRequest->refresh();
@@ -74,6 +88,100 @@ class RunLifecycleTest extends TestCase
         $this->assertStringContainsString("+        'members:invite',", (string) $featureRequest->patch);
         $this->assertSame(VerificationStatus::Queued, $run->verifications()->sole()->status);
         Queue::assertPushed(VerifyFeatureRequest::class, 1);
+    }
+
+    public function test_the_checks_of_a_built_change_go_to_their_own_queue()
+    {
+        config(['builder.verification.queue' => 'checks']);
+
+        app(StartRun::class)->handle($this->invitationRequest());
+
+        Queue::assertPushedOn('checks', VerifyFeatureRequest::class);
+    }
+
+    public function test_a_preview_of_the_change_starts_on_its_own_queue_as_soon_as_it_is_built()
+    {
+        config(['builder.preview.automatic' => true, 'builder.preview.queue' => 'previews']);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class]);
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(PreviewStatus::Starting, $featureRequest->previews()->sole()->status);
+        Queue::assertPushedOn('previews', StartPreview::class);
+
+        $this->actingAs($featureRequest->project->owner)->get(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('change.preview.status', 'starting')->where('change.featureRequest.can_accept', false));
+    }
+
+    public function test_a_first_versions_preview_warms_while_the_coder_works_and_takes_the_change_when_it_lands()
+    {
+        config(['builder.preview.automatic' => true, 'builder.preview.queue' => 'previews']);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class, RebuildPreview::class]);
+        $this->useDriver(function (Run $run, ToolSession $tools) {
+            // The preview started on the app as it was while the coder works.
+            $preview = $run->featureRequest->previews()->sole();
+            $preview->update(['status' => PreviewStatus::Ready, 'revision' => app(OpenChangeForDesign::class)->handle($run->featureRequest->refresh())]);
+
+            $this->actingAs($run->featureRequest->project->owner)->get(route('projects.show', ['project' => $run->featureRequest->project, 'change' => $run->featureRequest->uuid]))
+                ->assertInertia(fn (Assert $page) => $page->where('change.preview', null));
+
+            $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Done.';
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->firstVersionRequest())->refresh();
+
+        $preview = $featureRequest->previews()->sole();
+        $head = app(ProjectRepository::class)->head($featureRequest->project, $featureRequest->refresh()->designBranch());
+        $this->assertSame([RunStatus::Verifying, PreviewStatus::Ready], [$run->status, $preview->status]);
+        $this->assertSame("<?php\n", app(ProjectRepository::class)->show($featureRequest->project, $head, 'app/Invitation.php'));
+        Queue::assertPushedOn('previews', RebuildPreview::class, fn (RebuildPreview $job) => $job->preview->is($preview));
+        Queue::assertPushed(StartPreview::class, 1);
+
+        $this->actingAs($featureRequest->project->owner)->get(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('change.preview.status', 'ready')->where('change.preview.updating', true));
+    }
+
+    public function test_a_first_version_that_is_not_built_lets_its_warm_preview_go()
+    {
+        config(['builder.preview.automatic' => true]);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class, RebuildPreview::class]);
+        $this->useDriver(function (Run $run) {
+            $run->featureRequest->previews()->sole()->update(['status' => PreviewStatus::Ready, 'revision' => app(OpenChangeForDesign::class)->handle($run->featureRequest->refresh())]);
+
+            throw new ConstructionFailed('The coder stopped.');
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest = $this->firstVersionRequest())->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame(PreviewStatus::Stopped, $featureRequest->previews()->sole()->status);
+        $this->assertFalse(app(ProjectRepository::class)->hasBranch($featureRequest->project, $featureRequest->designBranch()));
+        $this->assertNull($featureRequest->refresh()->design_base);
+        Queue::assertNotPushed(RebuildPreview::class);
+    }
+
+    public function test_a_later_change_starts_its_preview_once_it_is_built()
+    {
+        config(['builder.preview.automatic' => true]);
+        Queue::fake([VerifyFeatureRequest::class, StartPreview::class, RebuildPreview::class]);
+        $first = $this->firstVersionRequest();
+        $featureRequest = FeatureRequest::factory()->for($first->project)->create(['prompt' => 'Let owners invite people again.', 'base_revision' => $first->base_revision]);
+        $this->useDriver(function (Run $run, ToolSession $tools) {
+            $this->assertSame(0, $run->featureRequest->previews()->count(), 'Nothing warms for a later change.');
+            $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Done.';
+        });
+
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+        $this->assertSame(PreviewStatus::Starting, $featureRequest->previews()->sole()->status);
+        Queue::assertPushed(StartPreview::class, 1);
+        Queue::assertNotPushed(RebuildPreview::class);
     }
 
     public function test_a_duplicate_delivery_does_not_repeat_the_work()
@@ -149,8 +257,9 @@ class RunLifecycleTest extends TestCase
         $run = Run::factory()->for($featureRequest)->create();
 
         $this->actingAs($featureRequest->project->owner)
+            ->from(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]))
             ->post(route('runs.cancellation.store', $run))
-            ->assertRedirect(route('feature-requests.show', $featureRequest));
+            ->assertRedirect(route('projects.show', ['project' => $featureRequest->project, 'change' => $featureRequest->uuid]));
 
         $this->assertSame(RunStatus::Cancelled, $run->refresh()->status);
         $this->assertSame(FeatureRequestStatus::Cancelled, $featureRequest->refresh()->status);
@@ -180,6 +289,93 @@ class RunLifecycleTest extends TestCase
         $this->assertSame(0, $run->verifications()->count());
     }
 
+    public function test_a_change_stopped_while_it_was_built_goes_on_from_its_code_when_the_owner_asks()
+    {
+        $featureRequest = $this->invitationRequest();
+        $seen = null;
+        $this->useDriver(function (Run $run, ToolSession $tools) use (&$seen) {
+            if ($run->events()->where('type', 'resumed')->doesntExist()) {
+                $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+                app(CancelRun::class)->handle($run);
+                $tools->call('look', 'list_files');
+
+                return 'Never reached.';
+            }
+
+            $seen = file_exists($this->workspaceFile($run->fresh(), 'app/Invitation.php'));
+            $tools->call('write', 'write_file', ['path' => 'app/AcceptInvitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Finished the invitations.';
+        });
+
+        $stopped = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        // Stopping removes the workspace, but keeps the code made so far.
+        $this->assertSame(RunStatus::Cancelled, $stopped->status);
+        $this->assertSame(WorkspaceStatus::Destroyed, $stopped->workspace->status);
+        $this->assertStringContainsString('app/Invitation.php', (string) $featureRequest->refresh()->patch);
+        $this->assertTrue(KeepTryingRun::resumable($featureRequest));
+
+        $run = app(KeepTryingRun::class)->handle($featureRequest)->refresh();
+
+        // The same change, built on from the code so far, not planned again.
+        $this->assertNotSame($stopped->id, $run->id);
+        $this->assertSame($featureRequest->id, $run->feature_request_id);
+        $this->assertSame(0, FeatureRequest::query()->where('retry_of_id', $featureRequest->id)->count());
+        $this->assertSame($stopped->plan, $run->plan);
+        $this->assertTrue($seen);
+        $patch = (string) $featureRequest->refresh()->patch;
+        $this->assertStringContainsString('app/Invitation.php', $patch);
+        $this->assertStringContainsString('app/AcceptInvitation.php', $patch);
+        $this->assertFalse(KeepTryingRun::possible($featureRequest));
+    }
+
+    public function test_a_change_stopped_before_it_wrote_any_code_goes_on_from_its_plan()
+    {
+        $featureRequest = $this->invitationRequest();
+        $this->useDriver(function (Run $run, ToolSession $tools) {
+            if ($run->events()->where('type', 'resumed')->doesntExist()) {
+                app(CancelRun::class)->handle($run);
+                $tools->call('look', 'list_files');
+
+                return 'Never reached.';
+            }
+
+            $tools->call('write', 'write_file', ['path' => 'app/Invitation.php', 'contents' => "<?php\n", 'expected_sha256' => null], $tools->revision());
+
+            return 'Made the invitations.';
+        });
+
+        app(StartRun::class)->handle($featureRequest);
+        $this->assertNull($featureRequest->refresh()->patch);
+
+        $run = app(KeepTryingRun::class)->handle($featureRequest)->refresh();
+
+        // Nothing to go on from but the plan, so nothing to say about earlier code.
+        $this->assertFalse($run->events()->where('type', 'resumed')->firstOrFail()->data['made_so_far']);
+        $this->assertStringContainsString('app/Invitation.php', (string) $featureRequest->refresh()->patch);
+    }
+
+    public function test_a_run_waiting_for_a_machine_keeps_its_lease_and_stops_when_cancelled()
+    {
+        $run = Run::factory()->create(['status' => RunStatus::Planning]);
+        $lease = app(AcquireRunLease::class)->handle($run, 'worker-a');
+        $this->assertNotNull($lease);
+        $whileWaiting = (fn () => $this->whileWaiting($run, $lease))->call(app(PrepareRunWorkspace::class));
+
+        $this->travel(4)->minutes();
+        $whileWaiting();
+        $whileWaiting();
+
+        $this->assertTrue($run->refresh()->lease_expires_at->gt(now()->addMinutes(4)));
+        $this->assertSame(1, $run->events()->where('type', 'waiting_for_machine')->count());
+
+        app(CancelRun::class)->handle($run);
+
+        $this->expectException(RunCancelled::class);
+        $whileWaiting();
+    }
+
     public function test_other_users_cannot_cancel_a_run()
     {
         $run = Run::factory()->create();
@@ -200,8 +396,27 @@ class RunLifecycleTest extends TestCase
 
         $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
         $this->assertSame('The run used all 1 of its tool operations.', $run->error);
-        $this->assertSame(['revise_request', 'use_stronger_model', 'involve_a_person'], $run->events()->get()->last()->data['choices']);
-        $this->assertSame(FeatureRequestStatus::Generating, $featureRequest->refresh()->status);
+        $this->assertSame(['from' => 'implementing', 'to' => 'needs_user_decision', 'reason' => 'budget_exhausted'], $run->events()->get()->last()->data);
+        // Nothing is being made while it waits, so the request says it stopped.
+        $this->assertSame(FeatureRequestStatus::Failed, $featureRequest->refresh()->status);
+    }
+
+    public function test_a_change_that_spent_what_one_try_may_spend_stops_for_the_owners_decision()
+    {
+        config(['builder.construction.budgets.run_usd' => 0.5]);
+        // The planner's call costs more than one try may spend, but less
+        // than the owner's plan allows.
+        Event::listen(RunStatusChanged::class, function (RunStatusChanged $event) {
+            if ($event->to === RunStatus::Planning) {
+                $event->run->recordEvent('model_call', ['role' => 'planner', 'cost_usd' => 0.6]);
+            }
+        });
+
+        $run = app(StartRun::class)->handle($this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::NeedsUserDecision, $run->status);
+        $this->assertSame(StopReason::BudgetExhausted, $run->stop_reason);
+        $this->assertSame('This change used all the AI work one try may take. Your app is as it was. You can ask it to keep trying.', $run->error);
     }
 
     public function test_the_change_is_read_back_from_the_workspace_not_taken_from_the_driver()
@@ -231,6 +446,74 @@ class RunLifecycleTest extends TestCase
         $this->assertSame('The run finished without changing the project.', $run->error);
     }
 
+    public function test_a_run_stops_once_todays_ai_spend_reaches_the_daily_limit()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+        $featureRequest = $this->invitationRequest();
+
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertStringStartsWith('This is our fault: we paused new work for today', (string) $run->error);
+        $this->assertSame(0, $run->events()->where('type', 'model_call')->count());
+    }
+
+    public function test_the_owner_is_not_offered_to_try_again_until_the_daily_limit_resets()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+        $featureRequest = $this->invitationRequest();
+        app(StartRun::class)->handle($featureRequest);
+
+        $this->assertFalse(RetryFeatureRequest::retryable($featureRequest->refresh()));
+
+        $this->travel(1)->days();
+
+        $this->assertTrue(RetryFeatureRequest::retryable($featureRequest->refresh()));
+    }
+
+    public function test_spend_from_earlier_days_does_not_count_towards_the_daily_limit()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        $this->travel(-1)->days();
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 50]);
+        $this->travelBack();
+
+        $run = app(StartRun::class)->handle($this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+    }
+
+    public function test_a_run_stops_once_the_owner_used_this_months_plan()
+    {
+        config(['billing.plans.free.monthly_usd' => 5]);
+        $featureRequest = $this->invitationRequest();
+        Run::factory()->for(FeatureRequest::factory()->for($featureRequest->project))->create()
+            ->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 5.5]);
+
+        $run = app(StartRun::class)->handle($featureRequest)->refresh();
+
+        $this->assertSame(RunStatus::Failed, $run->status);
+        $this->assertSame(StopReason::UsageLimit, $run->stop_reason);
+        $this->assertStringStartsWith('You have used all the AI use your plan includes this month.', (string) $run->error);
+        $this->assertFalse(RetryFeatureRequest::retryable($featureRequest->refresh()));
+
+        $this->travel(1)->months();
+
+        $this->assertTrue(RetryFeatureRequest::retryable($featureRequest->refresh()));
+    }
+
+    public function test_another_owners_use_does_not_count_towards_a_plan()
+    {
+        config(['billing.plans.free.monthly_usd' => 5, 'builder.construction.budgets.daily_usd' => 0]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 50]);
+
+        $run = app(StartRun::class)->handle($this->invitationRequest())->refresh();
+
+        $this->assertSame(RunStatus::Verifying, $run->status);
+    }
+
     public function test_a_passing_verification_completes_the_run_after_review()
     {
         [$run, $verification] = $this->verifyingRun(VerificationStatus::Passed);
@@ -240,8 +523,19 @@ class RunLifecycleTest extends TestCase
         $run->refresh();
         $this->assertSame(RunStatus::Completed, $run->status);
         $this->assertNotNull($run->finished_at);
-        $this->assertSame(['status', 'lease_acquired', 'review', 'status'], $run->events()->pluck('type')->all());
+        $this->assertSame(['status', 'lease_acquired', 'model_review', 'review', 'status'], $run->events()->pluck('type')->all());
         $this->assertTrue($run->events()->where('type', 'review')->sole()->data['approved']);
+    }
+
+    public function test_a_built_and_checked_change_is_still_reviewed_once_the_daily_limit_is_reached()
+    {
+        config(['builder.construction.budgets.daily_usd' => 10]);
+        Run::factory()->create()->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'cost_usd' => 10.5]);
+        [$run, $verification] = $this->verifyingRun(VerificationStatus::Passed);
+
+        app(CompleteRunVerification::class)->handle($verification);
+
+        $this->assertSame(RunStatus::Completed, $run->refresh()->status);
     }
 
     public function test_a_failing_verification_stops_the_run_for_the_owners_decision()
@@ -273,11 +567,15 @@ class RunLifecycleTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('run.status', 'verifying')
                 ->where('run.plan.summary', 'Owners and admins can invite people.')
-                ->where('run.repairs', 0)
-                ->where('run.operations', 2)
-                ->where('run.budget.operations', 30)
-                ->where('run.events.0.type', 'created')
-                ->where('run.events.7.data.tool', 'apply_patch'));
+                ->missing('run.driver')
+                ->missing('run.budget')
+                ->missing('run.events')
+                ->where('run.log', fn ($log) => collect($log)->pluck('text')->all() === [
+                    'You asked for this',
+                    'Working out what you need',
+                    'Making the change',
+                    'Checking it works',
+                ]));
     }
 
     /**
@@ -290,6 +588,18 @@ class RunLifecycleTest extends TestCase
         $project = Project::factory()->create(['source_path' => "{$solutions}/source"]);
 
         return FeatureRequest::factory()->for($project)->create(['prompt' => 'Let owners invite people.']);
+    }
+
+    /**
+     * The first change asked of a project whose code is kept in its own
+     * repository, as a project made in the builder is.
+     */
+    protected function firstVersionRequest(): FeatureRequest
+    {
+        $solutions = $this->useReferenceSolutions();
+        $project = app(CreateProject::class)->handle(User::factory()->create(), 'Invites', "{$solutions}/source");
+
+        return FeatureRequest::factory()->for($project)->create(['prompt' => 'Let owners invite people.', 'base_revision' => app(ProjectRepository::class)->head($project)]);
     }
 
     /**
@@ -306,6 +616,11 @@ class RunLifecycleTest extends TestCase
             public function plan(Run $run, PlanningContext $context): Plan
             {
                 return new Plan('A test change.');
+            }
+
+            public function shape(Run $run, Plan $plan, PlanningContext $context): Plan
+            {
+                return $plan;
             }
 
             public function build(Run $run, Plan $plan, ToolSession $tools): string

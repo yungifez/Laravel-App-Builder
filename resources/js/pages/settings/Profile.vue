@@ -23,6 +23,10 @@ defineOptions({
     },
 });
 
+defineProps<{
+    apps: { id: string; name: string; live: boolean }[];
+}>();
+
 const page = usePage();
 const user = computed(() => page.props.auth.user);
 </script>
@@ -101,5 +105,5 @@ const user = computed(() => page.props.auth.user);
         </Form>
     </div>
 
-    <DeleteUser />
+    <DeleteUser :apps="apps" />
 </template>

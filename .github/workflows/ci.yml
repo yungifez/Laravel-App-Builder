@@ -100,6 +100,10 @@ jobs:
       - name: npm run check:types
         run: npm run check:types
 
+      # The browser tests drive the built app in Chromium.
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+
       - name: composer check:tests
         run: composer check:tests
 

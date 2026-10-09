@@ -1,0 +1,12 @@
+{
+    "name": "Corner Shop",
+    "purpose": "Customers order for pickup, and I see what to pack each morning.",
+    "design": "calm",
+    "includes": [
+        "A list of products with prices and photos",
+        "Customers order and choose a pickup day",
+        "Each morning I see what to pack, order by order",
+        "I mark an order as collected"
+    ],
+    "order": 3
+}

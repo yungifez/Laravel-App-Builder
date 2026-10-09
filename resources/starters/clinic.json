@@ -1,0 +1,12 @@
+{
+    "name": "Care Clinic",
+    "purpose": "Patients book appointments, and my staff see the day's list.",
+    "design": "calm",
+    "includes": [
+        "Patients pick a service, a practitioner and a free time",
+        "Staff see the day's appointments for each practitioner",
+        "Practitioners set the hours they work",
+        "Patients can move or cancel an appointment up to a day before"
+    ],
+    "order": 4
+}

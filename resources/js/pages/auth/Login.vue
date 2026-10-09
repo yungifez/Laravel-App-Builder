@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { fieldError, focusFirstError } from '@/lib/forms';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
@@ -15,8 +16,8 @@ import PasskeyVerify from '@/components/PasskeyVerify.vue';
 
 defineOptions({
     layout: {
-        title: 'Log in to your account',
-        description: 'Enter your email and password below to log in',
+        title: 'Log in',
+        description: 'Your apps are where you left them.',
     },
 });
 
@@ -31,14 +32,19 @@ defineProps<{
 
     <div
         v-if="status"
-        class="mb-4 text-center text-sm font-medium text-green-600"
+        class="mb-6 text-sm font-medium text-emerald-600 dark:text-emerald-400"
     >
         {{ status }}
     </div>
 
-    <PasskeyVerify />
+    <PasskeyVerify
+        label="Log in with a passkey"
+        loading-label="Checking your passkey…"
+        separator="Or use your email"
+    />
 
     <Form
+        @error="focusFirstError"
         v-bind="store.form()"
         :reset-on-success="['password']"
         v-slot="{ errors, processing }"
@@ -51,13 +57,15 @@ defineProps<{
                     id="email"
                     type="email"
                     name="email"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'email')"
                     required
                     v-focus
                     :tabindex="1"
                     autocomplete="email"
                     placeholder="email@example.com"
                 />
-                <InputError :message="errors.email" />
+                <InputError id="email-error" :message="errors.email" />
             </div>
 
             <div class="grid gap-2">
@@ -66,7 +74,7 @@ defineProps<{
                     <TextLink
                         v-if="canResetPassword"
                         :href="request()"
-                        class="text-sm"
+                        class="py-3 text-sm sm:py-0"
                         :tabindex="5"
                     >
                         Forgot your password?
@@ -75,12 +83,14 @@ defineProps<{
                 <PasswordInput
                     id="password"
                     name="password"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'password')"
                     required
                     :tabindex="2"
                     autocomplete="current-password"
                     placeholder="Password"
                 />
-                <InputError :message="errors.password" />
+                <InputError id="password-error" :message="errors.password" />
             </div>
 
             <div class="flex items-center justify-between">
@@ -92,7 +102,7 @@ defineProps<{
 
             <Button
                 type="submit"
-                class="mt-4 w-full"
+                class="mt-4 h-11 w-full sm:h-9"
                 :tabindex="4"
                 :disabled="processing"
                 data-test="login-button"
@@ -102,9 +112,9 @@ defineProps<{
             </Button>
         </div>
 
-        <div class="text-center text-sm text-muted-foreground">
-            Don't have an account?
-            <TextLink :href="register()" :tabindex="5">Sign up</TextLink>
+        <div class="text-sm text-muted-foreground">
+            New here?
+            <TextLink :href="register()" :tabindex="5">Start an app</TextLink>
         </div>
     </Form>
 </template>

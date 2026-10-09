@@ -44,7 +44,7 @@ const handleDelete = () => {
                     <p class="font-medium tracking-tight">{{ passkey.name }}</p>
                     <span
                         v-if="passkey.authenticator"
-                        class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase ring-1 ring-border ring-inset"
+                        class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border ring-inset"
                     >
                         {{ passkey.authenticator }}
                     </span>
@@ -74,8 +74,8 @@ const handleDelete = () => {
             <DialogContent>
                 <DialogTitle>Remove passkey</DialogTitle>
                 <DialogDescription>
-                    Are you sure you want to remove the "{{ passkey.name }}"
-                    passkey? You will no longer be able to use it to sign in.
+                    After this, you cannot sign in with "{{ passkey.name }}".
+                    Your password still works.
                 </DialogDescription>
                 <DialogFooter class="gap-2">
                     <DialogClose as-child>

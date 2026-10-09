@@ -1,9 +1,15 @@
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, router } from '@inertiajs/vue3';
 import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
+import AppPageLayout from '@/layouts/AppPageLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
+import PublicLayout from '@/layouts/PublicLayout.vue';
+import SignedInAsLayout from '@/layouts/SignedInAsLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
+import WorkspaceLayout from '@/layouts/WorkspaceLayout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
+import { rememberScreen } from '@/lib/screen';
+import { rememberTimeZone, settleDates } from '@/lib/when';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -12,13 +18,24 @@ void createInertiaApp({
     layout: (name) => {
         switch (true) {
             case name === 'Welcome':
+            case name.startsWith('shared-apps/'):
+            case name.startsWith('try/'):
                 return null;
+            case name === 'projects/Show':
+                return [SignedInAsLayout, WorkspaceLayout];
+            case name === 'projects/Understanding':
+            case name === 'projects/Developers':
+            case name === 'feature-requests/Show':
+            case name.startsWith('operations/'):
+                return [SignedInAsLayout, AppPageLayout];
+            case name.startsWith('public/'):
+                return PublicLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):
-                return [AppLayout, SettingsLayout];
+                return [SignedInAsLayout, AppLayout, SettingsLayout];
             default:
-                return AppLayout;
+                return [SignedInAsLayout, AppLayout];
         }
     },
     withApp: (app) => {
@@ -33,6 +50,37 @@ void createInertiaApp({
     progress: {
         color: '#4B5563',
     },
+    defaults: {
+        // Going to another page crossfades instead of cutting. Reloads,
+        // partial loads and form posts keep the page as it is.
+        visitOptions: (href, options) =>
+            (options.method ?? 'get') === 'get' &&
+            !options.preserveState &&
+            !options.async &&
+            (options.only ?? []).length === 0
+                ? { viewTransition: true }
+                : {},
+    },
+}).then(() => {
+    // The page is in the browser and matches the server's drawing now.
+    if (typeof window !== 'undefined') {
+        settleDates();
+        rememberTimeZone();
+        rememberScreen();
+    }
+});
+
+// After an update the page is out of date, and the server refuses its
+// requests until it loads again. Inertia reloads for a visit but not for a
+// background request (a part's details, a poll), which would then fail
+// every time. So load the page again once, whichever request found it.
+let reloading = false;
+
+router.on('location', (event) => {
+    if (event.detail.versionChange && !reloading) {
+        reloading = true;
+        window.location.reload();
+    }
 });
 
 // This will set light / dark mode on page load...

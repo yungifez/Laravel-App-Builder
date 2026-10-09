@@ -1,0 +1,66 @@
+<?php
+
+namespace App\Actions\VisualEditing;
+
+use App\Models\User;
+use App\Models\VisualEdit;
+use App\VisualEditing\ElementName;
+use Illuminate\Validation\ValidationException;
+
+class RevertVisualEdit
+{
+    public function __construct(
+        private SwapElementClasses $swapElementClasses,
+        private SwapMovedElement $swapMovedElement,
+    ) {}
+
+    /**
+     * Undo a change to how an element looks with a new commit, only while
+     * the element still looks the way the change left it. The commit
+     * rebuilds the editable preview, so the owner sees it undone.
+     *
+     * @throws ValidationException when the edit was already undone or the element changed since.
+     */
+    public function handle(VisualEdit $edit, User $owner): VisualEdit
+    {
+        if ($edit->reverted_at !== null) {
+            throw ValidationException::withMessages(['edit' => __('This change was already undone.')]);
+        }
+
+        $name = ElementName::for($edit->tag);
+        $picture = $edit->tag === 'img' ? 'the new picture' : "the new picture in {$name}";
+
+        // A move, new words, a new link address, a new picture, a copy or a
+        // removal put back the whole file; a new look puts back only the
+        // element's classes.
+        $sha = $edit->rewritesFile()
+            ? $this->swapMovedElement->handle(
+                $edit,
+                $edit->commit_sha,
+                $edit->base_revision,
+                match ($edit->kind()) {
+                    'move' => "Undo moving {$name}",
+                    'link' => "Undo where {$name} goes",
+                    'picture' => "Undo {$picture}",
+                    'theme' => "Undo a change to the app's colours",
+                    'duplicate' => "Undo copying {$name}",
+                    'add' => "Undo adding {$name}",
+                    'remove' => "Undo removing {$name}",
+                    default => "Undo new words in {$name}",
+                }."\n\nThis undoes commit {$edit->commit_sha}.",
+                $owner,
+            )
+            : $this->swapElementClasses->handle(
+                $edit,
+                $edit->classes_after,
+                $edit->classes_before,
+                ($edit->kind() === 'motion' ? "Undo a change to how {$name} moves" : "Undo a change to how {$name} looks")."\n\nThis undoes commit {$edit->commit_sha}.",
+                $owner,
+            );
+
+        // The new commit rebuilds the editable preview (ProjectCommitted).
+        $edit->update(['revert_sha' => $sha, 'reverted_at' => now()]);
+
+        return $edit;
+    }
+}

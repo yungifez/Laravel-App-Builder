@@ -53,6 +53,34 @@ class DockerDriverTest extends TestCase
         ] && $process->timeout === 90);
     }
 
+    public function test_a_command_stopped_while_running_is_killed_inside_the_container()
+    {
+        Process::fake(['*' => Process::describe()->iterations(5)]);
+
+        try {
+            $this->driver()->exec('abc123', ['node', 'runner.mjs'], 60, whileRunning: fn () => throw new RuntimeException('Lease lost.'));
+            $this->fail('The exception from whileRunning must be passed on.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Lease lost.', $exception->getMessage());
+        }
+
+        $pidFile = null;
+        Process::assertRan(function (PendingProcess $process) use (&$pidFile) {
+            $command = (array) $process->command;
+
+            if (array_slice($command, 0, 5) !== ['docker', 'exec', 'abc123', 'sh', '-c']) {
+                return false;
+            }
+
+            $pidFile = $command[6];
+
+            return array_slice($command, 7) === ['timeout', '--kill-after=5', '60s', 'node', 'runner.mjs'];
+        });
+        Process::assertRan(fn (PendingProcess $process) => (array) $process->command === [
+            'docker', 'exec', 'abc123', 'sh', '-c', 'kill -TERM "$(cat "$0")"', $pidFile,
+        ]);
+    }
+
     public function test_file_paths_are_passed_as_arguments_not_interpolated_into_the_shell()
     {
         Process::fake();
@@ -76,6 +104,16 @@ class DockerDriverTest extends TestCase
         $this->expectExceptionMessage('no such image');
 
         $this->driver()->create(new WorkspaceSpec('workspace-test', 'missing', 1, 512, 64));
+    }
+
+    public function test_a_file_tail_is_read_inside_the_container()
+    {
+        Process::fake(['*' => Process::result(output: 'recent')]);
+
+        $this->assertSame("recent\n", $this->driver()->readFile('abc123', 'app log.txt', 7));
+        Process::assertRan(fn (PendingProcess $process) => $process->command === [
+            'docker', 'exec', 'abc123', 'tail', '-c', '7', '--', 'app log.txt',
+        ]);
     }
 
     protected function driver(): DockerDriver

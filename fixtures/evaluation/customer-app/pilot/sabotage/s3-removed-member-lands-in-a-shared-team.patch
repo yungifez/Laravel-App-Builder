@@ -1,0 +1,12 @@
+diff --git a/app/Actions/Teams/RemoveTeamMember.php b/app/Actions/Teams/RemoveTeamMember.php
+--- a/app/Actions/Teams/RemoveTeamMember.php
++++ b/app/Actions/Teams/RemoveTeamMember.php
+@@ -31,7 +31,7 @@
+ 
+             if ($member->isCurrentTeam($team)) {
+                 $fallbackTeam = $member->teams()
+-                    ->orderByDesc('personal_team')
++                    ->orderBy('personal_team')
+                     ->orderBy('teams.id')
+                     ->first();
+ 

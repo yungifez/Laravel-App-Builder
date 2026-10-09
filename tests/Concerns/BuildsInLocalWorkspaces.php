@@ -20,6 +20,8 @@ trait BuildsInLocalWorkspaces
             'builder.construction.workspace_driver' => 'local',
             'builder.construction.setup' => [],
             'workspaces.drivers.local.root' => $root,
+            // The test apps are our own, so agents may run beside them.
+            'workspaces.drivers.local.agents' => true,
         ]);
 
         return $root;

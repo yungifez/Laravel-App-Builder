@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
+import { onMounted, ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import TextLink from '@/components/TextLink.vue';
@@ -7,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { fieldError, focusFirstError } from '@/lib/forms';
+import { peekIdea } from '@/lib/startIdea';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
 
@@ -16,16 +19,36 @@ defineProps<{
 
 defineOptions({
     layout: {
-        title: 'Create an account',
-        description: 'Enter your details below to create your account',
+        title: 'Start an app',
+        description: 'Make an account. Then say what your app is for.',
     },
+});
+
+// What they typed on the home page, shown so they know it is not lost.
+// It is read after mount because it lives in this browser only.
+const idea = ref('');
+
+onMounted(() => {
+    idea.value = peekIdea();
 });
 </script>
 
 <template>
-    <Head title="Register" />
+    <Head title="Start an app" />
+
+    <div
+        v-if="idea !== ''"
+        class="mb-8 rounded-md bg-panel-blue px-4 py-3.5"
+        data-test="register-idea"
+    >
+        <p class="text-sm text-muted-foreground">
+            Your idea waits on the next page
+        </p>
+        <p class="mt-1 line-clamp-3 text-pretty">{{ idea }}</p>
+    </div>
 
     <Form
+        @error="focusFirstError"
         v-bind="store.form()"
         :reset-on-success="['password', 'password_confirmation']"
         v-slot="{ errors, processing }"
@@ -42,9 +65,11 @@ defineOptions({
                     :tabindex="1"
                     autocomplete="name"
                     name="name"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'name')"
                     placeholder="Full name"
                 />
-                <InputError :message="errors.name" />
+                <InputError id="name-error" :message="errors.name" />
             </div>
 
             <div class="grid gap-2">
@@ -56,9 +81,11 @@ defineOptions({
                     :tabindex="2"
                     autocomplete="email"
                     name="email"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'email')"
                     placeholder="email@example.com"
                 />
-                <InputError :message="errors.email" />
+                <InputError id="email-error" :message="errors.email" />
             </div>
 
             <div class="grid gap-2">
@@ -69,10 +96,12 @@ defineOptions({
                     :tabindex="3"
                     autocomplete="new-password"
                     name="password"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'password')"
                     placeholder="Password"
                     :passwordrules="passwordRules"
                 />
-                <InputError :message="errors.password" />
+                <InputError id="password-error" :message="errors.password" />
             </div>
 
             <div class="grid gap-2">
@@ -83,15 +112,20 @@ defineOptions({
                     :tabindex="4"
                     autocomplete="new-password"
                     name="password_confirmation"
+                    class="h-11 sm:h-9"
+                    v-bind="fieldError(errors, 'password_confirmation')"
                     placeholder="Confirm password"
                     :passwordrules="passwordRules"
                 />
-                <InputError :message="errors.password_confirmation" />
+                <InputError
+                    id="password_confirmation-error"
+                    :message="errors.password_confirmation"
+                />
             </div>
 
             <Button
                 type="submit"
-                class="mt-2 w-full"
+                class="mt-2 h-11 w-full sm:h-9"
                 tabindex="5"
                 :disabled="processing"
                 data-test="register-user-button"
@@ -101,7 +135,7 @@ defineOptions({
             </Button>
         </div>
 
-        <div class="text-center text-sm text-muted-foreground">
+        <div class="text-sm text-muted-foreground">
             Already have an account?
             <TextLink
                 :href="login()"

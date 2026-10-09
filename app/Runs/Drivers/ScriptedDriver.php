@@ -5,6 +5,7 @@ namespace App\Runs\Drivers;
 use App\Features\FeatureGeneratorManager;
 use App\Features\PatchSummary;
 use App\Models\Run;
+use App\Runs\Assumption;
 use App\Runs\Contracts\ConstructionDriver;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Plan;
@@ -35,13 +36,21 @@ class ScriptedDriver implements ConstructionDriver
         return new Plan(
             summary: $change->summary,
             acceptanceCriteria: [],
-            assumptions: [__('Replays the known-good solution ":key".', ['key' => $change->solutionKey])],
+            assumptions: [new Assumption(__('Replays the known-good solution ":key".', ['key' => $change->solutionKey]))],
             tasks: [__('Apply the solution\'s patch.')],
             steps: $change->steps,
             acceptance: $change->acceptance,
             solutionKey: $change->solutionKey,
             capabilities: array_values(array_unique($touched)),
         );
+    }
+
+    /**
+     * A replayed solution carries its own files; there is nothing to shape.
+     */
+    public function shape(Run $run, Plan $plan, PlanningContext $context): Plan
+    {
+        return $plan;
     }
 
     public function build(Run $run, Plan $plan, ToolSession $tools): string

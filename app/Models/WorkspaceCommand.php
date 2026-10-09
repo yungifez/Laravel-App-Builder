@@ -14,13 +14,14 @@ use Illuminate\Support\Carbon;
  * @property list<string> $command
  * @property int $exit_code
  * @property bool $timed_out
+ * @property bool $lost No runner took the command, or it never answered
  * @property int $duration_ms
  * @property string $output
  * @property string $error_output
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['command', 'exit_code', 'timed_out', 'duration_ms', 'output', 'error_output'])]
+#[Fillable(['command', 'exit_code', 'timed_out', 'lost', 'duration_ms', 'output', 'error_output'])]
 class WorkspaceCommand extends Model
 {
     /**
@@ -33,6 +34,7 @@ class WorkspaceCommand extends Model
         return [
             'command' => 'array',
             'timed_out' => 'boolean',
+            'lost' => 'boolean',
         ];
     }
 

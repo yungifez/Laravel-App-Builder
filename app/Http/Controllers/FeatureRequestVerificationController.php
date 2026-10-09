@@ -18,6 +18,6 @@ class FeatureRequestVerificationController extends Controller
 
         $requestVerification->handle($featureRequest);
 
-        return to_route('feature-requests.show', $featureRequest);
+        return back();
     }
 }

@@ -2,19 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
+use Illuminate\Http\RedirectResponse;
 
 class DashboardController extends Controller
 {
     /**
-     * Show the internal landing screen.
+     * Send the owner to their apps. The starter kit signs people in to
+     * "dashboard", and an owner's home is the list of their apps.
      */
-    public function __invoke(Request $request): Response
+    public function __invoke(): RedirectResponse
     {
-        return Inertia::render('Dashboard', [
-            'projectCount' => $request->user()->projects()->count(),
-        ]);
+        return to_route('projects.index');
     }
 }

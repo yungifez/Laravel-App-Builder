@@ -4,6 +4,7 @@ namespace App\Runs;
 
 use App\Runs\Exceptions\ConstructionFailed;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 /**
  * A reviewer's verdict on a verified change, with findings tied to evidence,
@@ -14,12 +15,14 @@ final readonly class Review
     /**
      * @param  list<array{severity: string, summary: string, file: string|null}>  $findings
      * @param  list<array{area: string|null, behavior: string, before: string, now: string}>  $changes
+     * @param  list<array{criterion: int, test_file: string|null, test_name: string|null}>  $verify  The test the reviewer says checks each of the plan's verify items, by number from 1
      */
     public function __construct(
         public bool $approved,
         public string $summary,
         public array $findings = [],
         public array $changes = [],
+        public array $verify = [],
     ) {}
 
     /**
@@ -32,6 +35,7 @@ final readonly class Review
      */
     public static function fromModelOutput(array $data): self
     {
+        $data = self::shortened($data);
         $validator = Validator::make($data, [
             'approved' => ['required', 'boolean'],
             'summary' => ['required', 'string', 'max:2000'],
@@ -44,13 +48,17 @@ final readonly class Review
             'changes.*.behavior' => ['required', 'string', 'max:200'],
             'changes.*.before' => ['required', 'string', 'max:1000'],
             'changes.*.now' => ['required', 'string', 'max:1000'],
+            'verify' => ['sometimes', 'array', 'max:90'],
+            'verify.*.criterion' => ['required', 'integer', 'min:1', 'max:90'],
+            'verify.*.test_file' => ['nullable', 'string', 'max:500'],
+            'verify.*.test_name' => ['nullable', 'string', 'max:300'],
         ]);
 
         if ($validator->fails()) {
             throw new ConstructionFailed(__('The reviewer returned an invalid review: :errors', ['errors' => implode(' ', $validator->errors()->all())]));
         }
 
-        /** @var array{approved: bool, summary: string, findings: array<int, array{severity: string, summary: string, file?: string|null}>, changes?: array<int, array{area?: string|null, behavior: string, before: string, now: string}>} $valid */
+        /** @var array{approved: bool, summary: string, findings: array<int, array{severity: string, summary: string, file?: string|null}>, changes?: array<int, array{area?: string|null, behavior: string, before: string, now: string}>, verify?: array<int, array{criterion: int, test_file?: string|null, test_name?: string|null}>} $valid */
         $valid = $validator->validated();
 
         $findings = array_values(array_map(fn (array $finding) => [
@@ -68,7 +76,91 @@ final readonly class Review
             'now' => $change['now'],
         ], $valid['changes'] ?? []));
 
-        return new self((bool) $valid['approved'] && $blocking === [], $valid['summary'], $findings, $changes);
+        $verify = array_values(array_map(fn (array $item) => [
+            'criterion' => (int) $item['criterion'],
+            'test_file' => $item['test_file'] ?? null,
+            'test_name' => $item['test_name'] ?? null,
+        ], $valid['verify'] ?? []));
+
+        return new self((bool) $valid['approved'] && $blocking === [], $valid['summary'], $findings, $changes, $verify);
+    }
+
+    /**
+     * Shorten the words that are only shown, so one long sentence does not
+     * throw away a change that took minutes to make and check. What the
+     * review decides (approval, severity, which test proves what) is still
+     * checked as it came.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected static function shortened(array $data): array
+    {
+        $shorten = fn (mixed $text, int $max) => is_string($text) ? Str::limit($text, $max - 1, '…') : $text;
+
+        $data['summary'] = $shorten($data['summary'] ?? null, 2000);
+
+        foreach (['findings' => ['summary' => 2000], 'changes' => ['behavior' => 200, 'before' => 1000, 'now' => 1000]] as $list => $fields) {
+            if (! is_array($data[$list] ?? null)) {
+                continue;
+            }
+
+            foreach ($data[$list] as $index => $item) {
+                foreach ($fields as $field => $max) {
+                    if (is_array($item) && array_key_exists($field, $item)) {
+                        $data[$list][$index][$field] = $shorten($item[$field], $max);
+                    }
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Get a copy of the review with more blocking findings, which is then
+     * no longer approving.
+     *
+     * @param  list<string>  $summaries
+     */
+    public function withBlockingFindings(array $summaries): self
+    {
+        if ($summaries === []) {
+            return $this;
+        }
+
+        $findings = [...$this->findings, ...array_map(fn (string $summary) => ['severity' => 'blocking', 'summary' => $summary, 'file' => null], $summaries)];
+
+        return new self(false, $this->summary, $findings, $this->changes, $this->verify);
+    }
+
+    /**
+     * Get a copy of the review where a blocking finding about a new test
+     * that passes without the change is minor, when other new tests fail
+     * without it. Such a test guards what the app already did, such as the
+     * starter app's sign-in, which is never a gap by itself. Only a finding
+     * that names the test and points at no file but the test's own is
+     * changed, so a finding about the app's code stays blocking.
+     *
+     * @param  list<array{file: string, name: string, without_change: string}>  $newTests  What the verification measured
+     */
+    public function withGuardingTestsMinor(array $newTests): self
+    {
+        $guarding = array_filter($newTests, fn (array $test) => $test['without_change'] === 'passed');
+
+        if ($guarding === [] || ! in_array('failed', array_column($newTests, 'without_change'), true)) {
+            return $this;
+        }
+
+        $findings = array_map(fn (array $finding) => $finding['severity'] === 'blocking' && array_any($guarding, fn (array $test) => $test['name'] !== ''
+            && str_contains($finding['summary'], $test['name'])
+            && in_array($finding['file'], [null, $test['file']], true))
+            ? [...$finding, 'severity' => 'minor']
+            : $finding, $this->findings);
+
+        $blocking = array_filter($findings, fn (array $finding) => $finding['severity'] === 'blocking');
+
+        return new self($blocking === [] && ($this->approved || $this->blockingFindings() !== []), $this->summary, $findings, $this->changes, $this->verify);
     }
 
     /**

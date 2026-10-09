@@ -22,7 +22,7 @@ class RequestVerification
     {
         if ($featureRequest->status !== FeatureRequestStatus::Generated) {
             throw ValidationException::withMessages([
-                'verification' => __('Only a generated change can be verified.'),
+                'verification' => __('There is no change to check yet.'),
             ]);
         }
 
@@ -32,7 +32,7 @@ class RequestVerification
 
         if ($inProgress) {
             throw ValidationException::withMessages([
-                'verification' => __('A verification run is already in progress.'),
+                'verification' => __('The checks are already running.'),
             ]);
         }
 

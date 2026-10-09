@@ -75,6 +75,41 @@ class LocalDriverTest extends TestCase
         $this->assertLessThan(4000, $result->durationMs);
     }
 
+    public function test_a_command_stopped_while_running_stops_with_everything_it_started()
+    {
+        $calls = 0;
+        $startedAt = hrtime(true);
+
+        try {
+            // The command starts a background child that would write a file.
+            $this->driver->exec($this->workspaceId, ['sh', '-c', '(sleep 1; touch late.txt) & sleep 5'], 30, whileRunning: function () use (&$calls) {
+                if (++$calls > 2) {
+                    throw new RuntimeException('Lease lost.');
+                }
+            });
+            $this->fail('The exception from whileRunning must be passed on.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Lease lost.', $exception->getMessage());
+        }
+
+        $this->assertLessThan(1000, intdiv(hrtime(true) - $startedAt, 1_000_000));
+        sleep(2);
+        $this->assertFileDoesNotExist($this->root.'/workspace-local-test/late.txt');
+    }
+
+    public function test_a_command_watched_while_running_reports_its_result()
+    {
+        $calls = 0;
+
+        $result = $this->driver->exec($this->workspaceId, ['sh', '-c', 'sleep 1; echo done'], 30, whileRunning: function () use (&$calls) {
+            $calls++;
+        });
+
+        $this->assertTrue($result->successful());
+        $this->assertSame("done\n", $result->output);
+        $this->assertGreaterThan(1, $calls);
+    }
+
     public function test_files_round_trip_and_cannot_escape_the_workspace()
     {
         $this->driver->writeFile($this->workspaceId, 'nested/file.txt', 'hello');
@@ -102,6 +137,18 @@ class LocalDriverTest extends TestCase
         $this->assertFileExists("{$copy}/.env.example");
         $this->assertFileDoesNotExist("{$copy}/.env");
         $this->assertDirectoryDoesNotExist("{$copy}/vendor");
+    }
+
+    public function test_file_tails_are_bounded_and_handle_short_and_missing_files()
+    {
+        $this->driver->writeFile($this->workspaceId, 'large.log', str_repeat('old', 1_000_000).'recent');
+        $this->assertSame('recent', $this->driver->readFile($this->workspaceId, 'large.log', 6));
+        $this->assertSame('', $this->driver->readFile($this->workspaceId, 'large.log', 0));
+        $this->driver->writeFile($this->workspaceId, 'short.log', 'short');
+        $this->assertSame('short', $this->driver->readFile($this->workspaceId, 'short.log', 100));
+
+        $this->expectException(RuntimeException::class);
+        $this->driver->readFile($this->workspaceId, 'missing.log', 100);
     }
 
     public function test_destroying_removes_the_directory()

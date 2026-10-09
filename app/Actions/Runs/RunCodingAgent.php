@@ -2,26 +2,40 @@
 
 namespace App\Actions\Runs;
 
+use App\Actions\Billing\MeasureUsage;
+use App\Actions\Context\SelectAreas;
 use App\Actions\Workspaces\RunWorkspaceCommand;
+use App\Context\ContextPack;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\Run;
+use App\Models\RunEvent;
 use App\Models\Workspace;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
+use App\Runs\Agents\RunnerAgent;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\Exceptions\ProvidersUnavailable;
+use App\Runs\Exceptions\RunCancelled;
+use App\Runs\Exceptions\UsageLimitReached;
 use App\Runs\RunLease;
-use App\Runs\ToolContext;
+use App\Workspaces\WorkspaceManager;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class RunCodingAgent
 {
     public function __construct(
         private CodingAgentManager $agents,
         private RunWorkspaceCommand $runWorkspaceCommand,
+        private SelectAreas $selectAreas,
+        private MeasureUsage $measureUsage,
+        private WorkspaceManager $workspaces,
     ) {}
 
     /**
@@ -31,18 +45,44 @@ class RunCodingAgent
      * back exactly as it was before the first attempt, and the same task goes
      * to the next agent; partial edits never carry across. An agent whose
      * provider keeps failing is tried last for a while (a circuit breaker).
-     * Every attempt is logged with what it cost.
+     * Every attempt is logged with what it cost, and the attempt that stays
+     * with what it did.
+     *
+     * While an agent works, its lease is renewed. When the lease is lost or
+     * the owner cancels, the agent is stopped at once, so it never edits a
+     * workspace another worker has taken over.
      *
      * @throws ProvidersUnavailable when no provider could serve the task.
      * @throws ConstructionFailed
      * @throws LeaseLost
+     * @throws RunCancelled
+     * @throws UsageLimitReached when the gateway refused a call for the owner's monthly AI use.
      */
     public function handle(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task): AgentOutcome
     {
-        $snapshot = $this->snapshot($workspace);
+        $this->ensureAgentsMayRunIn($workspace);
+
+        // A worker that stopped part way through an attempt left the files
+        // as its agent had them. That session goes on where it can; never
+        // does a fresh agent start on its half-done edits.
+        $interrupted = $this->interrupted($run, $workspace);
+        $carry = $interrupted !== null ? RunnerAgent::leftBehind($this->workspaces, $workspace) : null;
+        $order = $this->order($carry['adapter'] ?? $task->prefer);
+
+        if ($carry !== null && ($order[0] ?? null) !== $carry['adapter']) {
+            $carry = null;
+        }
+
+        $snapshot = $interrupted ?? $this->snapshot($workspace);
+
+        if ($interrupted !== null && $carry === null) {
+            $this->restore($workspace, $snapshot);
+        }
+
+        $this->recordEvent($run, $lease, 'coder_started', ['snapshot' => $snapshot, 'workspace_id' => $workspace->id]);
         $previous = null;
 
-        foreach ($this->order() as $adapter) {
+        foreach ($order as $adapter) {
             if ($previous !== null) {
                 $this->restore($workspace, $snapshot);
                 $this->recordEvent($run, $lease, 'failover', [
@@ -52,23 +92,47 @@ class RunCodingAgent
                 ]);
             }
 
-            // The agent blocks this worker for up to its timeout.
-            Run::holdLease($lease, $task->timeoutSeconds + ToolContext::LEASE_MARGIN_SECONDS);
+            $outcome = $carry !== null
+                ? $this->carryOn($run, $lease, $workspace, $task, $adapter, $carry['session'], $snapshot)
+                : $this->attempt($run, $lease, $workspace, $task, $adapter);
+            $carry = null;
 
-            $outcome = $this->agents->driver($adapter)->run($workspace, $task);
+            // The computer working on it restarted or went away. Neither the
+            // agent nor the task was at fault, so it goes on once on its own:
+            // in the same session when it had one. A second loss stops the
+            // change and says it is our fault.
+            if ($outcome->errorKind === AgentOutcome::RUNNER_LOST) {
+                $this->recordEvent($run, $lease, 'runner_lost', ['adapter' => $adapter, 'session' => $outcome->session !== null]);
+                $outcome = $this->carryOn($run, $lease, $workspace, $task, $adapter, $outcome->session, $snapshot);
+            }
 
-            $this->recordEvent($run, $lease, 'model_call', [
-                'role' => 'coder',
-                ...$outcome->toArray(),
-            ]);
+            // The owner's plan, not the provider, stopped it: no other
+            // agent may take over, and what it spent is already logged.
+            if ($outcome->errorKind === AgentOutcome::USAGE_LIMIT) {
+                $this->restore($workspace, $snapshot);
 
-            if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable) {
+                throw UsageLimitReached::until($this->measureUsage->handle($run->featureRequest->project->owner)['resets_at']);
+            }
+
+            if ($outcome->status !== AgentOutcomeStatus::ProviderUnavailable && ! $this->couldNotStart($outcome)) {
                 Cache::forget($this->circuitKey($adapter));
+
+                // What the agent did and said, kept for the owner to read
+                // back once the task files are gone. Attempts that failed
+                // over left nothing behind, so they tell no story.
+                if ($outcome->story !== []) {
+                    $this->recordEvent($run, $lease, 'agent_story', ['story' => $outcome->story]);
+                }
+
+                $this->recordAreasRead($run, $lease, $outcome);
 
                 return $outcome;
             }
 
-            $this->recordProviderFailure($adapter);
+            if ($outcome->status === AgentOutcomeStatus::ProviderUnavailable) {
+                $this->recordProviderFailure($adapter);
+            }
+
             $previous = $outcome;
         }
 
@@ -76,25 +140,221 @@ class RunCodingAgent
 
         throw new ProvidersUnavailable(__('No AI provider could take the task right now (:reason). Try again later.', [
             'reason' => $previous->error ?? $previous->errorKind ?? 'unknown',
-        ]));
+        ]), ProvidersUnavailable::saysOutOfCredit($previous->errorKind, $previous->error) ? StopReason::OutOfCredit : StopReason::ProvidersUnavailable);
     }
 
     /**
-     * Get the agents in the order to try them: configured order, with agents
-     * whose circuit is open moved to the end.
+     * Continue a session that was cut off part way, on the files as it left
+     * them, so what it did and paid for is kept. When there is no session,
+     * or it is gone, the files go back to the snapshot and the task starts
+     * fresh.
+     */
+    protected function carryOn(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task, string $adapter, ?string $session, string $snapshot): AgentOutcome
+    {
+        if ($session !== null) {
+            $outcome = $this->attempt($run, $lease, $workspace, $task->continuing($adapter, $session), $adapter);
+
+            if ($outcome->errorKind !== AgentOutcome::SESSION_GONE) {
+                return $outcome;
+            }
+        }
+
+        $this->restore($workspace, $snapshot);
+
+        return $this->attempt($run, $lease, $workspace, $task, $adapter);
+    }
+
+    /**
+     * Get the snapshot of an attempt a stopped worker left unfinished in
+     * this pass and this workspace: one that started since the run last
+     * went to building and whose build never finished. Null when there is
+     * none.
+     */
+    protected function interrupted(Run $run, Workspace $workspace): ?string
+    {
+        $since = (int) $run->events()->where('type', 'status')->where('data->to', RunStatus::Implementing->value)->max('sequence');
+        $started = $run->events()->where('type', 'coder_started')->where('sequence', '>', $since)->reorder('sequence', 'desc')->first();
+
+        if ($started === null || ($started->data['workspace_id'] ?? null) !== $workspace->id || $run->events()->where('type', 'build_finished')->where('sequence', '>', $started->sequence)->exists()) {
+            return null;
+        }
+
+        return is_string($started->data['snapshot'] ?? null) ? $started->data['snapshot'] : null;
+    }
+
+    /**
+     * Run the task once with one agent, and log what the call cost.
+     */
+    protected function attempt(Run $run, RunLease $lease, Workspace $workspace, AgentTask $task, string $adapter): AgentOutcome
+    {
+        $outcome = $this->agents->driver($adapter)->run($workspace, $task, $this->heartbeat($run, $lease));
+
+        // Claude's SDK reports what the session cost. Codex's does not, so
+        // its tokens are priced from config when the model is known.
+        $estimate = $outcome->costUsd === null && $outcome->model !== null
+            ? RecordModelUsage::cost($outcome->model, $outcome->inputTokens, $outcome->outputTokens, $outcome->cachedInputTokens)
+            : null;
+        $reported = $this->callCost($outcome);
+
+        $this->recordEvent($run, $lease, 'model_call', [
+            'role' => 'coder',
+            ...$outcome->toArray(),
+            // So a light repair that did not pass is not tried light again.
+            'tier' => $task->tier->value,
+            'cost_usd' => $reported ?? $estimate,
+            'session_cost_usd' => $outcome->costUsd,
+            'cost_source' => match (true) {
+                $outcome->costUsd !== null => 'reported',
+                $estimate !== null => 'estimated',
+                default => null,
+            },
+        ]);
+
+        return $outcome;
+    }
+
+    /**
+     * Get what this call cost, as the agent reported it. Claude reports what
+     * the whole session has cost so far, so for a resumed session what its
+     * earlier calls reported is taken off.
+     */
+    protected function callCost(AgentOutcome $outcome): ?float
+    {
+        if ($outcome->costUsd === null || ! $outcome->resumed || $outcome->session === null) {
+            return $outcome->costUsd;
+        }
+
+        $earlier = RunEvent::query()->where('type', 'model_call')->where('data->session', $outcome->session)
+            ->where('data->cost_source', 'reported')->get()
+            ->sum(fn (RunEvent $call) => (float) ($call->data['cost_usd'] ?? 0));
+
+        return max(0.0, round($outcome->costUsd - $earlier, 6));
+    }
+
+    /**
+     * Note the areas of the app the agent read beyond those it was given,
+     * from the files it says it read.
+     */
+    protected function recordAreasRead(Run $run, RunLease $lease, AgentOutcome $outcome): void
+    {
+        if ($run->context === null) {
+            return;
+        }
+
+        $pack = ContextPack::fromArray($run->context);
+        $files = array_values(array_filter(array_map(fn (array $entry) => $entry['kind'] === 'read' ? ($entry['file'] ?? null) : null, $outcome->story)));
+        $areas = $this->selectAreas->read($pack->projectContext(), $pack->targets, $files);
+
+        if ($areas !== []) {
+            $this->recordEvent($run, $lease, 'areas_read', ['areas' => $areas]);
+        }
+    }
+
+    /**
+     * Make the check an agent's command runs while it works: at most every
+     * "heartbeat_seconds", renew the lease, or stop when it is lost or the
+     * owner has cancelled.
+     *
+     * @return Closure(): void
+     */
+    protected function heartbeat(Run $run, RunLease $lease): Closure
+    {
+        $every = (int) config('builder.construction.heartbeat_seconds');
+        $last = hrtime(true);
+
+        return function () use ($run, $lease, $every, &$last) {
+            if (hrtime(true) - $last < $every * 1_000_000_000) {
+                return;
+            }
+
+            $last = hrtime(true);
+
+            DB::transaction(function () use ($run, $lease) {
+                $locked = Run::query()->lockForUpdate()->findOrFail($run->id);
+
+                $lease->assertHeldOn($locked);
+
+                if ($locked->status === RunStatus::Cancelling) {
+                    throw RunCancelled::forRun($locked->id);
+                }
+
+                $locked->extendLease();
+            });
+        };
+    }
+
+    /**
+     * Refuse a workspace driver that does not keep agents away from the
+     * control plane, such as "local", unless an operator allowed it for
+     * trusted apps. The owner only hears that the change could not start.
+     *
+     * @throws ConstructionFailed
+     */
+    protected function ensureAgentsMayRunIn(Workspace $workspace): void
+    {
+        if (config("workspaces.drivers.{$workspace->driver}.agents") !== false) {
+            return;
+        }
+
+        Log::warning('A coding agent was refused in a workspace that does not isolate it.', [
+            'driver' => $workspace->driver,
+            'allow_with' => 'WORKSPACE_LOCAL_AGENTS=true (trusted apps only)',
+        ]);
+
+        throw new ConstructionFailed(__('This change could not be started here. Nothing in your app was changed.'));
+    }
+
+    /**
+     * Get the agents in the order to try them: configured order, or the
+     * preferred agent first, with agents whose circuit is open moved to the
+     * end.
      *
      * @return list<string>
      */
-    protected function order(): array
+    protected function order(?string $prefer = null): array
+    {
+        $available = $this->available($prefer);
+
+        return [...$available, ...array_values(array_diff($this->preferred($prefer), $available))];
+    }
+
+    /**
+     * Get the agents whose provider is not failing, in the configured order
+     * with the preferred agent first.
+     *
+     * @return list<string>
+     */
+    public function available(?string $prefer = null): array
     {
         $threshold = (int) config('builder.agents.circuit.failures');
-        $open = fn (string $adapter) => (int) Cache::get($this->circuitKey($adapter), 0) >= $threshold;
+
+        return array_values(array_filter($this->preferred($prefer), fn (string $adapter) => (int) Cache::get($this->circuitKey($adapter), 0) < $threshold));
+    }
+
+    /**
+     * Get the configured agents with the preferred one first.
+     *
+     * @return list<string>
+     */
+    protected function preferred(?string $prefer): array
+    {
         $order = $this->agents->order();
 
-        return [
-            ...array_values(array_filter($order, fn (string $adapter) => ! $open($adapter))),
-            ...array_values(array_filter($order, $open)),
-        ];
+        return $prefer !== null && in_array($prefer, $order, true)
+            ? [$prefer, ...array_values(array_diff($order, [$prefer]))]
+            : $order;
+    }
+
+    /**
+     * Whether the agent broke before its first turn, such as a command line
+     * tool that exits at once. It did no work, so the next agent can take
+     * the same task without losing anything.
+     */
+    protected function couldNotStart(AgentOutcome $outcome): bool
+    {
+        return $outcome->status === AgentOutcomeStatus::Failed
+            && $outcome->turns === 0
+            && $outcome->errorKind === 'exception';
     }
 
     /**

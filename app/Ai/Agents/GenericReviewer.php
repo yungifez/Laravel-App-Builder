@@ -2,6 +2,8 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Attributes\Tier;
+use App\Enums\ModelRole;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
@@ -17,6 +19,7 @@ use Stringable;
  * derives from them.
  */
 #[Timeout(300)]
+#[Tier(ModelRole::Reviewer)]
 class GenericReviewer implements Agent, HasStructuredOutput
 {
     use Promptable;

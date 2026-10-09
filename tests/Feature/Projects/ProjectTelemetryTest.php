@@ -1,0 +1,203 @@
+<?php
+
+namespace Tests\Feature\Projects;
+
+use App\Actions\Projects\SummarizeProjectTelemetry;
+use App\Actions\Runs\RecordModelUsage;
+use App\Enums\ModelRole;
+use App\Enums\RunStatus;
+use App\Enums\VerificationStatus;
+use App\Models\FeatureRequest;
+use App\Models\Project;
+use App\Models\Run;
+use App\Models\Verification;
+use App\Models\VisualEdit;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
+use Tests\TestCase;
+
+class ProjectTelemetryTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_it_reports_cost_per_kept_change_first_attempt_passes_and_unexpected_changes()
+    {
+        $project = Project::factory()->create(['setup_model_calls' => [
+            ['role' => 'planner', 'provider' => 'anthropic', 'model' => 'm', 'input_tokens' => 9000, 'output_tokens' => 900, 'cost_usd' => 0.04],
+            ['role' => 'planner', 'provider' => 'anthropic', 'model' => 'n', 'input_tokens' => 10, 'output_tokens' => 1, 'cost_usd' => null],
+        ]]);
+
+        $accepted = $this->request($project, ['commit_sha' => 'abc', 'accepted_at' => now()]);
+        $acceptedRun = $this->completedRun($accepted, repairs: 1, unexpected: []);
+        $acceptedRun->recordEvent('model_call', ['role' => 'planner', 'input_tokens' => 1000, 'output_tokens' => 100, 'cost_usd' => 0.5]);
+        $acceptedRun->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'claude', 'input_tokens' => 5000, 'output_tokens' => 900, 'cost_usd' => 1.25]);
+        $this->verification($acceptedRun, VerificationStatus::Failed);
+        $this->verification($acceptedRun, VerificationStatus::Passed);
+
+        $abandoned = $this->request($project);
+        $abandonedRun = $this->completedRun($abandoned, repairs: 0, unexpected: ['billing' => ['config/billing.php']]);
+        $abandonedRun->recordEvent('model_call', ['role' => 'reviewer', 'input_tokens' => 400, 'output_tokens' => 40, 'cost_usd' => null]);
+        $abandonedRun->recordEvent('model_call', ['role' => 'coder', 'adapter' => 'codex', 'input_tokens' => 100, 'output_tokens' => 10, 'cost_usd' => 0.25]);
+        $this->verification($abandonedRun, VerificationStatus::Unverified);
+
+        VisualEdit::factory()->count(3)->for($project)->create();
+        VisualEdit::factory()->create();
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(2, $telemetry['requests']);
+        $this->assertSame(3, $telemetry['edits_without_model']);
+        $this->assertSame(1, $telemetry['kept']);
+        $this->assertSame(2.0, $telemetry['cost_usd']);
+        $this->assertSame(0.04, $telemetry['setup_cost_usd']);
+        $this->assertSame(1, $telemetry['unpriced_calls']);
+        $this->assertSame(2.0, $telemetry['cost_per_kept_change_usd']);
+        $this->assertSame(2, $telemetry['runs_verified']);
+        // The only first attempt that got through passed with no test for
+        // the change: that is unverified, never a pass.
+        $this->assertSame(0, $telemetry['first_attempt_passed']);
+        $this->assertSame(1, $telemetry['first_attempt_unverified']);
+        $this->assertSame(1.0, $telemetry['repairs_before_acceptance']);
+        $this->assertSame(2, $telemetry['reviewed']);
+        $this->assertSame(1, $telemetry['with_unexpected_changes']);
+        $this->assertSame(0, $telemetry['with_notes_behind']);
+        $this->assertSame(6500, $telemetry['input_tokens']);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('telemetry.kept', 1)->where('telemetry.cost_per_kept_change_usd', 2));
+    }
+
+    public function test_a_change_that_touched_parts_it_was_not_about_says_whether_the_owner_kept_or_undid_it()
+    {
+        $project = Project::factory()->create();
+        $billing = ['billing' => ['config/billing.php']];
+
+        // Kept and still in the app.
+        $this->completedRun($this->request($project, ['commit_sha' => 'a1', 'accepted_at' => now()]), repairs: 0, unexpected: $billing);
+        // Kept, then undone.
+        $this->completedRun($this->request($project, ['commit_sha' => 'b2', 'accepted_at' => now(), 'revert_sha' => 'c3', 'reverted_at' => now()]), repairs: 0, unexpected: $billing);
+        // Never kept: neither. A change without surprises is not counted.
+        $this->completedRun($this->request($project), repairs: 0, unexpected: $billing);
+        $this->completedRun($this->request($project, ['commit_sha' => 'd4', 'accepted_at' => now()]), repairs: 0, unexpected: []);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame([3, 1, 1], [$telemetry['with_unexpected_changes'], $telemetry['unexpected_kept'], $telemetry['unexpected_undone']]);
+        $this->assertSame([0, 0], array_values(array_intersect_key(app(SummarizeProjectTelemetry::class)->handle(Project::factory()->create()), array_flip(['unexpected_kept', 'unexpected_undone']))));
+    }
+
+    public function test_it_counts_reviewed_changes_that_left_notes_behind()
+    {
+        $project = Project::factory()->create();
+
+        $this->completedRun($this->request($project), repairs: 0, unexpected: [], notesBehind: ['billing', 'teams']);
+        $this->completedRun($this->request($project), repairs: 0, unexpected: [], notesBehind: ['billing']);
+        // A change whose notes kept up with its code.
+        $this->completedRun($this->request($project), repairs: 0, unexpected: []);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(3, $telemetry['reviewed']);
+        $this->assertSame(2, $telemetry['with_notes_behind']);
+
+        $this->actingAs($project->owner)
+            ->get(route('projects.show', $project))
+            ->assertInertia(fn (Assert $page) => $page->where('telemetry.with_notes_behind', 2)->where('telemetry.reviewed', 3));
+    }
+
+    public function test_a_change_that_was_never_reviewed_has_no_notes_to_leave_behind()
+    {
+        $project = Project::factory()->create();
+
+        Run::factory()->for($this->request($project))->create(['status' => RunStatus::Failed, 'review' => null]);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(0, $telemetry['reviewed']);
+        $this->assertSame(0, $telemetry['with_notes_behind']);
+    }
+
+    public function test_the_decision_models_calls_count_toward_what_a_kept_change_cost()
+    {
+        $project = Project::factory()->create();
+        $call = fn (?float $cost) => ['provider' => 'anthropic', 'model' => 'm', 'input_tokens' => 100, 'output_tokens' => 10, 'cost_usd' => $cost, 'cost_source' => $cost === null ? null : 'estimated', 'at' => now()->toIso8601String()];
+
+        $kept = $this->request($project, ['commit_sha' => 'abc', 'accepted_at' => now(), 'decision_model_calls' => [$call(0.5), $call(null)]]);
+        $this->completedRun($kept, repairs: 0, unexpected: [])->recordEvent('model_call', ['role' => 'planner', 'input_tokens' => 1000, 'output_tokens' => 100, 'cost_usd' => 1.0]);
+        // A request with no decisions, and another app's decision.
+        $this->request($project);
+        $this->request(Project::factory()->create(), ['decision_model_calls' => [$call(9.0)]]);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(1.5, $telemetry['cost_usd']);
+        $this->assertSame(1.5, $telemetry['cost_per_kept_change_usd']);
+        // A call with no known price is counted, never guessed.
+        $this->assertSame(1, $telemetry['unpriced_calls']);
+        $this->assertSame(1200, $telemetry['input_tokens']);
+    }
+
+    public function test_it_counts_each_time_the_owner_acted_per_kept_change()
+    {
+        $project = Project::factory()->create();
+
+        $kept = $this->request($project, ['commit_sha' => 'abc', 'accepted_at' => now()]);
+        $undone = $this->request($project, ['commit_sha' => 'def', 'accepted_at' => now(), 'reverted_at' => now()]);
+        $this->request($project, ['parent_id' => $kept->id, 'target_step' => 'route']);
+
+        $stopped = $this->request($project);
+        Run::factory()->for($stopped)->create(['status' => RunStatus::Cancelled]);
+        $this->request($project, ['retry_of_id' => $stopped->id]);
+
+        // A question the builder asked and the owner answered is not steering.
+        Run::factory()->for($undone)->create(['answers' => [['question' => 'q', 'answer' => 'a', 'by' => 'owner']]]);
+
+        $telemetry = app(SummarizeProjectTelemetry::class)->handle($project);
+
+        $this->assertSame(['adjustments' => 1, 'stops' => 1, 'retries' => 1, 'undos' => 1], $telemetry['owner_actions']);
+        $this->assertSame(2.0, $telemetry['owner_actions_per_kept_change']);
+    }
+
+    public function test_model_calls_are_priced_from_the_configured_prices_and_unknown_models_are_left_unpriced()
+    {
+        config(['builder.prices' => ['planner.model-1' => ['input' => 3, 'output' => 15]]]);
+        $run = $this->completedRun($this->request(Project::factory()->create()), repairs: 0, unexpected: []);
+
+        app(RecordModelUsage::class)->handle($run, ModelRole::Planner, new AgentResponse('call-1', 'plan', new TextUsage(1000, 100), new Meta('anthropic', 'planner.model-1')));
+        app(RecordModelUsage::class)->handle($run, ModelRole::Reviewer, new AgentResponse('call-2', 'review', new TextUsage(1000, 100), new Meta('openai', 'unknown')));
+
+        $this->assertSame([0.0045, null], $run->events()->where('type', 'model_call')->orderBy('sequence')->get()->pluck('data.cost_usd')->all());
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function request(Project $project, array $attributes = []): FeatureRequest
+    {
+        return FeatureRequest::factory()->generated()->for($project)->create($attributes);
+    }
+
+    /**
+     * @param  array<string, list<string>>  $unexpected
+     * @param  list<string>  $notesBehind
+     */
+    protected function completedRun(FeatureRequest $request, int $repairs, array $unexpected, array $notesBehind = []): Run
+    {
+        return Run::factory()->for($request)->create([
+            'status' => RunStatus::Completed,
+            'repairs' => $repairs,
+            'review' => ['approved' => true, 'summary' => 'ok', 'preserved' => [], 'verified' => [], 'coverage' => [], 'findings' => [], 'changes' => [], 'classification' => [
+                'requested' => [], 'may_also_affect' => [], 'unexpected' => $unexpected, 'unclaimed' => [], 'context_updates' => [], 'targets' => [], 'notes_behind' => $notesBehind, 'observed' => null,
+            ]],
+        ]);
+    }
+
+    protected function verification(Run $run, VerificationStatus $status): Verification
+    {
+        return $run->featureRequest->verifications()->create(['run_id' => $run->id, 'status' => $status]);
+    }
+}

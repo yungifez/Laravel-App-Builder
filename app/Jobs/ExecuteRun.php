@@ -7,6 +7,7 @@ use App\Actions\Runs\ConstructRun;
 use App\Actions\Runs\FailRun;
 use App\Actions\Runs\ReleaseRunLease;
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
 use App\Models\Run;
 use App\Runs\Exceptions\RunLeaseHeld;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -78,6 +79,17 @@ class ExecuteRun implements ShouldQueue
             return;
         }
 
-        app(FailRun::class)->handle($run, __('The run stopped unexpectedly.'));
+        // The change passed its checks, so a review that stops is our fault,
+        // not the change's. Leave it waiting for `runs:reconcile` to review
+        // it again, rather than make the owner's tool write it again.
+        if ($run->status === RunStatus::Reviewing && $run->events()->where('type', 'review_stopped')->count() < (int) config('builder.construction.budgets.review_restarts')) {
+            $run->recordEvent('review_stopped', ['error' => $exception === null ? null : class_basename($exception)]);
+
+            return;
+        }
+
+        app(FailRun::class)->handle($run, $run->status === RunStatus::Reviewing
+            ? __('This is our fault: your change passed its checks, but my last look over it kept stopping on our side, so I did not keep it. Nothing in your app changed. Try again.')
+            : __('This is our fault: something on our side stopped while I worked on this. Nothing in your app changed. Try again.'), cause: StopReason::WorkerStopped);
     }
 }

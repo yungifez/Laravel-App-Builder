@@ -1,16 +1,33 @@
 <script setup lang="ts">
 import { Form, Head, Link, setLayoutProps, usePoll } from '@inertiajs/vue3';
+import {
+    Check,
+    ChevronDown,
+    ChevronRight,
+    CircleDashed,
+    ExternalLink,
+    Minus,
+    Target,
+} from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
+import DeploymentController from '@/actions/App/Http/Controllers/DeploymentController';
+import FeatureRequestAcceptanceController from '@/actions/App/Http/Controllers/FeatureRequestAcceptanceController';
+import FeatureRequestAnswerController from '@/actions/App/Http/Controllers/FeatureRequestAnswerController';
+import FeatureRequestCaseCorrectionController from '@/actions/App/Http/Controllers/FeatureRequestCaseCorrectionController';
 import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/FeatureRequestPreviewController';
+import FeatureRequestKeepTryingController from '@/actions/App/Http/Controllers/FeatureRequestKeepTryingController';
+import FeatureRequestNotesUpdateController from '@/actions/App/Http/Controllers/FeatureRequestNotesUpdateController';
+import FeatureRequestRetryController from '@/actions/App/Http/Controllers/FeatureRequestRetryController';
+import FeatureRequestReversionController from '@/actions/App/Http/Controllers/FeatureRequestReversionController';
 import FeatureRequestStepChangeController from '@/actions/App/Http/Controllers/FeatureRequestStepChangeController';
 import FeatureRequestVerificationController from '@/actions/App/Http/Controllers/FeatureRequestVerificationController';
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import RunCancellationController from '@/actions/App/Http/Controllers/RunCancellationController';
-import Heading from '@/components/Heading.vue';
+import ChangeProof from '@/components/ChangeProof.vue';
+import MessageImages from '@/components/MessageImages.vue';
 import InputError from '@/components/InputError.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -18,8 +35,12 @@ import {
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
+import { when } from '@/lib/when';
+import { edit as billing } from '@/routes/billing';
 import { show as showFeatureRequest } from '@/routes/feature-requests';
 import { index, show as showProject } from '@/routes/projects';
+import { index as developers } from '@/routes/projects/developers';
+import { show as showUnderstanding } from '@/routes/projects/understanding';
 import type {
     ChangedArea,
     ChangeSection,
@@ -28,22 +49,24 @@ import type {
     FeatureRequestSummary,
     Preview,
     Run,
-    RunEvent,
+    ProofLine,
     Verification,
     VerificationResult,
 } from '@/types';
 
 const props = defineProps<{
-    project: { id: number; name: string };
+    project: { id: string; name: string };
     featureRequest: FeatureRequestDetail;
-    parent: { id: number; prompt: string } | null;
+    parent: { id: string; prompt: string } | null;
     followUps: FeatureRequestSummary[];
     verification: Verification | null;
+    proof: ProofLine[];
     run: Run | null;
     preview: Preview | null;
 }>();
 
 const selectedStepKey = ref<string | null>(null);
+const moreQuestions = ref(false);
 
 // Inertia reuses this component when navigating from one request to another
 // (for example to a follow-up), so refresh the breadcrumbs and selection.
@@ -53,12 +76,15 @@ watch(
         selectedStepKey.value = null;
         setLayoutProps({
             breadcrumbs: [
-                { title: 'Projects', href: index() },
+                { title: 'Your apps', href: index() },
+                // Back returns to this change in the workspace, not the list.
                 {
                     title: props.project.name,
-                    href: showProject(props.project.id),
+                    href: showProject(props.project.id, {
+                        query: { change: id },
+                    }),
                 },
-                { title: `Request #${id}`, href: showFeatureRequest(id) },
+                { title: 'Change details', href: showFeatureRequest(id) },
             ],
         });
     },
@@ -67,7 +93,16 @@ watch(
 
 const { start, stop } = usePoll(
     1500,
-    { only: ['featureRequest', 'followUps', 'verification', 'run', 'preview'] },
+    {
+        only: [
+            'featureRequest',
+            'followUps',
+            'verification',
+            'proof',
+            'run',
+            'preview',
+        ],
+    },
     { autoStart: false },
 );
 
@@ -90,67 +125,39 @@ const runInProgress = computed(
         ].includes(props.run.status),
 );
 
+// The side column holds the owner's next step. With nothing to do there,
+// it is left out, so no empty lines show beside the chat.
+const asideShown = computed(
+    () =>
+        props.featureRequest.can_accept ||
+        props.featureRequest.commit_sha !== null ||
+        props.featureRequest.status === 'generated' ||
+        (runInProgress.value && props.run?.status !== 'cancelling'),
+);
+
 watch(
     () =>
         runInProgress.value ||
         props.preview?.status === 'starting' ||
         props.featureRequest.status === 'generating' ||
-        verificationInProgress.value,
+        verificationInProgress.value ||
+        props.run?.review?.notes_update.state === 'working',
     (busy) => (busy ? start() : stop()),
     { immediate: true },
 );
 
 const runLabels: Record<Run['status'], string> = {
-    queued: 'Queued',
-    planning: 'Planning',
-    implementing: 'Implementing',
-    verifying: 'Verifying',
-    reviewing: 'Reviewing',
-    completed: 'Completed',
+    queued: 'Waiting to start',
+    planning: 'Working out what you need',
+    implementing: 'Making the change',
+    verifying: 'Running checks',
+    reviewing: 'Looking over what changed',
+    completed: 'Ready for you',
     needs_user_decision: 'Needs your decision',
-    cancelling: 'Cancelling',
-    cancelled: 'Cancelled',
-    failed: 'Failed',
+    cancelling: 'Stopping',
+    cancelled: 'Stopped',
+    failed: 'Could not finish',
 };
-
-function describeEvent(event: RunEvent): string {
-    const data = event.data;
-
-    switch (event.type) {
-        case 'created':
-            return `Run created with the ${String(data.driver)} driver`;
-        case 'lease_acquired':
-            return data.took_over
-                ? `A worker took over after the previous one stopped (fencing token ${String(data.fencing_token)})`
-                : `A worker claimed the run (fencing token ${String(data.fencing_token)})`;
-        case 'status':
-            return `${runLabels[data.from as Run['status']]} → ${runLabels[data.to as Run['status']]}`;
-        case 'workspace_ready':
-            return 'Workspace prepared';
-        case 'context_compiled':
-            return `Project context compiled (${String(data.mode)}): ${(data.included as unknown[]).length} parts, about ${String(data.tokens)} tokens`;
-        case 'operation':
-            return `${String(data.tool)} ${String(data.status)}${data.error ? `: ${String(data.error)}` : ''}`;
-        case 'operation_reconciling':
-            return `Checking whether ${String(data.tool)} took effect before the previous worker stopped`;
-        case 'review':
-            return data.approved
-                ? `Review approved: ${String(data.summary ?? '')}`
-                : `Review found problems: ${String(data.summary ?? '')}`;
-        case 'build_finished':
-            return `The coder finished attempt ${Number(data.attempt) + 1} (its own account, not trusted): ${String(data.account)}`;
-        case 'model_call':
-            return data.adapter
-                ? `Coding agent ${String(data.adapter)} (${String(data.provider)}${data.model ? ` ${String(data.model)}` : ''}) ${String(data.status).replace('_', ' ')}${data.error ? `: ${String(data.error)}` : ''} · ${String(data.turns)} turns, ${String(data.input_tokens)} tokens in, ${String(data.output_tokens)} out${data.cost_usd !== null ? `, $${Number(data.cost_usd).toFixed(2)}` : ''}`
-                : `${String(data.role)} model call (${String(data.provider)} ${String(data.model)}): ${String(data.input_tokens)} tokens in, ${String(data.output_tokens)} out`;
-        case 'failover':
-            return `The ${String(data.from)} provider could not take the task (${String(data.reason)}); the workspace was reset and ${String(data.to)} took over`;
-        case 'reviewer_not_independent':
-            return `Reviewed by the same provider that built the change (${String(data.wanted)} has no credentials)`;
-        default:
-            return event.type;
-    }
-}
 
 const changeSections: {
     key: ChangeSection;
@@ -164,15 +171,15 @@ const changeSections: {
     },
     {
         key: 'may_also_affect',
-        title: 'May also have changed',
+        title: 'This may also touch',
         description:
-            'Parts of the app that are often affected by the ones you asked about.',
+            'Parts of your app that often change together with the ones you asked about.',
     },
     {
         key: 'unexpected',
-        title: 'Also changed',
+        title: "Something I didn't expect to change",
         description:
-            'This request was not about these parts of the app. Check that you want these changes.',
+            'Your request was not about these parts of your app. Check that you want these changes.',
     },
     {
         key: 'other',
@@ -181,37 +188,232 @@ const changeSections: {
     },
 ];
 
-const contextModeLabels: Record<NonNullable<Run['context']>['mode'], string> = {
-    none: 'no project context',
-    flat: 'all project notes',
-    selective: 'the notes for the parts this change touches',
-    selective_without_effects:
-        'the notes for the parts this change touches, without related parts',
-};
+// What backs each line the reviewer wrote. "Not shown in the change" means
+// no changed file belongs to its area, so only the reviewer says it.
+const changeEvidence: Record<RunReview['changes'][number]['evidence'], string> =
+    {
+        tested: 'Tested',
+        in_change: 'Not tested',
+        not_in_change: 'Not shown in the change',
+    };
 
 function evidenceLabel(item: RunReview['preserved'][number]): string {
     const label = ((): string => {
         switch (item.evidence) {
             case 'regression_suspected':
-                return 'possible regression: the review or the change points here';
+                return 'this may have changed';
             case 'tests_failed':
-                return 'tests for this part failed';
+                return 'its tests failed';
             case 'related_tests_passed':
-            // Runs stored before the evidence was made stricter.
-            case 'verified':
-                return `related tests passed (${item.tests} test file${item.tests === 1 ? '' : 's'}); not checked by a test of its own${item.unchanged ? '; this part was not edited' : ''}`;
+                return 'its tests still pass';
             case 'not_edited':
-            case 'untouched':
-                return 'this part was not edited, but other code can still change it; no tests check it';
+                return 'not touched by this change';
             default:
-                return 'not checked';
+                return 'not checked yet';
         }
     })();
 
     return item.review_objected
-        ? `${label}; the review found problems with this change`
+        ? `${label}, but I have doubts about this change`
         : label;
 }
+
+function verifyLabel(item: RunReview['verified'][number]): string {
+    switch (item.evidence) {
+        case 'tested':
+            return 'checked by a test';
+        case 'not_run':
+            return 'a test covers it, but the checks did not pass';
+        case 'not_run_by_checks':
+            return "a test covers it, but my checks don't run that test";
+        case 'claimed':
+            return "a test covers it, but I couldn't confirm it ran";
+        case 'already_true':
+            return 'this was already true, and a test now keeps it that way';
+        case 'no_request':
+        case 'not_refused':
+            return 'its test never saw your app say no';
+        default:
+            return 'not checked yet';
+    }
+}
+
+// The state in one plain line. Colour separates the states; it never
+// borrows the accent, which is kept for the action to take.
+const stateLabel = computed(() => {
+    if (props.featureRequest.reverted_at) {
+        return 'Undone';
+    }
+
+    if (props.featureRequest.commit_sha) {
+        return 'Kept';
+    }
+
+    if (props.run?.question) {
+        return 'Waiting for your answer';
+    }
+
+    // A question gets an answer, not a change to keep.
+    if (props.run?.status === 'completed' && props.run.plan?.answer) {
+        return 'Answered';
+    }
+
+    if (props.featureRequest.made_again_only) {
+        return 'Could not finish';
+    }
+
+    if (props.run) {
+        return runLabels[props.run.status];
+    }
+
+    return {
+        generating: 'Working on it',
+        generated: 'Ready for you',
+        answered: 'Answered',
+        failed: 'Could not finish',
+        cancelled: 'Stopped',
+    }[props.featureRequest.status];
+});
+
+const stateDot = computed(() => {
+    // Undone is settled, not a success: it is never green like a kept change.
+    if (props.featureRequest.reverted_at) {
+        return 'bg-muted-foreground';
+    }
+
+    if (props.featureRequest.commit_sha) {
+        return 'bg-green-600';
+    }
+
+    if (props.run?.question) {
+        return 'bg-amber-500';
+    }
+
+    if (props.run?.status === 'completed' && props.run.plan?.answer) {
+        return 'bg-muted-foreground';
+    }
+
+    const status = props.featureRequest.made_again_only
+        ? 'failed'
+        : (props.run?.status ?? props.featureRequest.status);
+
+    if (['failed', 'needs_user_decision'].includes(status)) {
+        return 'bg-red-600';
+    }
+
+    if (['completed', 'generated'].includes(status)) {
+        return 'bg-green-600';
+    }
+
+    return runInProgress.value || status === 'generating'
+        ? 'bg-amber-500'
+        : 'bg-muted-foreground';
+});
+
+// What stays the same: once the change is reviewed, with how each was
+// checked; before that, the promise from the plan.
+const keptSame = computed(() => {
+    const review = props.run?.review;
+
+    if (review && review.preserved.length > 0) {
+        return review.preserved.map((item) => ({
+            statement: item.statement,
+            checked: ['related_tests_passed', 'not_edited'].includes(
+                item.evidence,
+            ),
+            // Only passing tests earn the green mark, and never while the
+            // review doubts the change; code left alone is weaker evidence
+            // and must not look the same.
+            tested:
+                item.evidence === 'related_tests_passed' &&
+                !item.review_objected,
+            // A part that may have changed is said whatever else is known.
+            warned: ['regression_suspected', 'tests_failed'].includes(
+                item.evidence,
+            ),
+            label: evidenceLabel(item),
+        }));
+    }
+
+    return (props.run?.plan?.preserve ?? []).map((statement) => ({
+        statement,
+        checked: false,
+        tested: false,
+        warned: false,
+        label: null,
+    }));
+});
+
+const caseNames = {
+    base: 'The usual way',
+    alternate: 'Another way',
+    exception: 'Saying no',
+} as const;
+
+// The case the owner is saying is not what they meant, if any.
+const correcting = ref<string | null>(null);
+
+const doneWhen = computed(() => {
+    const review = props.run?.review;
+
+    const criteria = props.run?.plan?.acceptance_criteria ?? [];
+    const cases = props.run?.plan?.cases ?? [];
+
+    // Each criterion is tried the usual way, another way and by being
+    // refused, with one mark for each, so a change tested only on its
+    // easiest path shows it.
+    return criteria.map((criterion, index) => {
+        const marks = cases
+            .filter((item) => item.criterion === index + 1)
+            .map((item) => {
+                const verified = review?.verified.find(
+                    (entry) =>
+                        entry.criterion === criterion &&
+                        entry.kind === item.kind,
+                );
+
+                return {
+                    kind: item.kind,
+                    name: caseNames[item.kind],
+                    says: item.says ?? item.none ?? '',
+                    // A test was written for it before the build, so the
+                    // owner can say it is not what they meant.
+                    written: props.featureRequest.written_cases.some(
+                        (entry) =>
+                            entry.criterion === index + 1 &&
+                            entry.kind === item.kind,
+                    ),
+                    state:
+                        item.says === null
+                            ? ('none' as const)
+                            : verified?.evidence === 'tested' ||
+                                verified?.evidence === 'already_true'
+                              ? ('checked' as const)
+                              : ('open' as const),
+                    label: verified ? verifyLabel(verified) : null,
+                };
+            });
+
+        return {
+            criterion,
+            number: index + 1,
+            cases: marks,
+            checked:
+                review !== null &&
+                review !== undefined &&
+                marks.every((mark) => mark.state !== 'open'),
+        };
+    });
+});
+
+// When nothing in a list has been checked yet, say so once under the
+// heading instead of after every line.
+const keptSameChecked = computed(() =>
+    keptSame.value.some((item) => item.checked),
+);
+const doneWhenChecked = computed(() =>
+    doneWhen.value.some((item) => item.checked),
+);
 
 function changesIn(section: ChangeSection) {
     return (props.run?.review?.changes ?? []).filter(
@@ -224,19 +426,19 @@ function areasIn(section: ChangeSection): ChangedArea[] {
 }
 
 const previewLabels: Record<Preview['status'], string> = {
-    starting: 'Starting',
-    ready: 'Running',
+    starting: 'Getting ready',
+    ready: 'Ready',
     failed: 'Could not start',
     stopped: 'Stopped',
 };
 
 const verificationLabels: Record<Verification['status'], string> = {
-    queued: 'Queued',
+    queued: 'Waiting to start',
     running: 'Running',
-    passed: 'Passed',
-    failed: 'Failed',
+    passed: 'All passed',
+    failed: 'Something failed',
     errored: 'Could not run',
-    unverified: 'Unverified',
+    unverified: 'Passed, with gaps',
 };
 
 const outcomeMarks: Record<
@@ -315,663 +517,1510 @@ function lineClass(line: string): string {
     return '';
 }
 </script>
-
 <template>
-    <Head :title="`Request #${featureRequest.id}`" />
+    <Head :title="featureRequest.background ?? featureRequest.prompt" />
 
-    <div class="flex h-full flex-1 flex-col gap-8 p-4">
-        <div class="space-y-2">
-            <div class="flex items-center gap-3">
-                <Heading :title="featureRequest.prompt" class="mb-0!" />
-                <StatusBadge :status="featureRequest.status" />
-            </div>
-
+    <div
+        class="mx-auto flex max-w-6xl flex-col gap-12 px-4 pt-10 pb-16 sm:px-8"
+    >
+        <header class="max-w-3xl space-y-4">
+            <h1
+                class="font-display text-3xl leading-tight tracking-tight break-words sm:text-4xl"
+            >
+                {{ featureRequest.background ?? featureRequest.prompt }}
+            </h1>
+            <MessageImages :images="featureRequest.images" align="start" />
+            <p
+                class="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground"
+                data-test="run-status"
+            >
+                <span
+                    :class="['size-2 shrink-0 rounded-full', stateDot]"
+                    aria-hidden="true"
+                    data-test="state-dot"
+                />
+                <span class="text-foreground">{{ stateLabel }}</span>
+                <template
+                    v-if="
+                        featureRequest.reverted_at || featureRequest.accepted_at
+                    "
+                >
+                    <span aria-hidden="true">·</span>
+                    {{
+                        when(
+                            (featureRequest.reverted_at ??
+                                featureRequest.accepted_at)!,
+                        )
+                    }}
+                </template>
+            </p>
             <p v-if="parent" class="text-sm text-muted-foreground">
                 Follow-up to
                 <Link
                     :href="showFeatureRequest(parent.id)"
-                    class="underline underline-offset-4"
+                    class="underline underline-offset-4 hover:text-foreground"
                 >
                     “{{ parent.prompt }}”
                 </Link>
                 <template v-if="featureRequest.target_step">
-                    — changes the step “{{ featureRequest.target_step.label }}”
+                    — changes “{{ featureRequest.target_step.label }}”
                 </template>
             </p>
-        </div>
+        </header>
 
         <p
-            v-if="featureRequest.status === 'generating'"
-            class="text-sm text-muted-foreground"
+            v-if="featureRequest.status === 'generating' && !run"
+            class="text-muted-foreground"
             data-test="generating"
         >
-            Generating the change…
+            Working on it…
         </p>
 
-        <Alert v-if="featureRequest.status === 'failed'" variant="destructive">
-            <AlertTitle>Generation failed</AlertTitle>
+        <Alert
+            v-if="featureRequest.status === 'failed' && !run"
+            variant="destructive"
+            class="max-w-2xl"
+        >
+            <AlertTitle>This change could not be made</AlertTitle>
             <AlertDescription>{{ featureRequest.error }}</AlertDescription>
         </Alert>
 
-        <section v-if="run" class="max-w-2xl space-y-4" data-test="run">
-            <div class="flex items-center gap-3">
-                <Heading
-                    variant="small"
-                    title="Build run"
-                    :description="`${run.operations} of ${run.budget.operations} tool operations used · ${run.repairs} of ${run.budget.repairs} repairs · ${run.budget.minutes} minute limit`"
-                />
-                <Badge
-                    :variant="
-                        run.status === 'completed'
-                            ? 'default'
-                            : run.status === 'failed' ||
-                                run.status === 'needs_user_decision'
-                              ? 'destructive'
-                              : 'secondary'
-                    "
-                    data-test="run-status"
+        <Alert
+            v-if="
+                run?.error &&
+                (run.status === 'failed' ||
+                    run.status === 'needs_user_decision')
+            "
+            variant="destructive"
+            class="max-w-2xl"
+        >
+            <AlertTitle>{{
+                run.status === 'failed'
+                    ? 'This change could not be finished'
+                    : 'I stopped before finishing'
+            }}</AlertTitle>
+            <AlertDescription>
+                <!-- The reason already says whose fault it was and what to
+                     do next, so it is the text itself. -->
+                <p data-test="run-failed-reason">{{ run.error }}</p>
+                <Link
+                    v-if="run.plan_ran_out"
+                    :href="billing()"
+                    class="font-medium underline underline-offset-4"
+                    data-test="run-see-plan"
+                    >See your plan</Link
                 >
-                    {{ runLabels[run.status] }}
-                </Badge>
-            </div>
+                <!-- Some failures are the app's own, which a developer
+                     can look at, as the change thread offers too. -->
+                <Link
+                    v-else
+                    :href="
+                        developers(project.id, {
+                            query: { change: featureRequest.id },
+                        })
+                    "
+                    class="font-medium underline underline-offset-4"
+                    data-test="run-ask-developer"
+                    >Ask one of our developers</Link
+                >
+            </AlertDescription>
+        </Alert>
 
-            <Alert
+        <!-- A stopped change always ends in a next step: try it again,
+             go on from the newer try, or ask in other words. -->
+        <div
+            v-if="
+                featureRequest.can_retry ||
+                featureRequest.tried_again ||
+                featureRequest.stopped
+            "
+            class="-mt-6 flex max-w-2xl flex-wrap items-center gap-3"
+            data-test="retry"
+        >
+            <Button
+                v-if="featureRequest.tried_again"
+                class="h-11 sm:h-9"
+                as-child
+                data-test="tried-again"
+            >
+                <Link :href="showFeatureRequest(featureRequest.tried_again)"
+                    >See the newer try</Link
+                >
+            </Button>
+            <Form
                 v-if="
-                    run.error &&
-                    (run.status === 'failed' ||
-                        run.status === 'needs_user_decision')
+                    featureRequest.can_retry && featureRequest.can_keep_trying
                 "
-                variant="destructive"
-            >
-                <AlertTitle>{{
-                    run.status === 'failed'
-                        ? 'The run failed'
-                        : 'The run stopped for your decision'
-                }}</AlertTitle>
-                <AlertDescription>
-                    {{ run.error }}
-                    <template v-if="run.status === 'needs_user_decision'">
-                        You can revise the request, try a stronger model or
-                        involve a person.
-                    </template>
-                </AlertDescription>
-            </Alert>
-
-            <div
-                v-if="run.plan"
-                class="space-y-2 rounded-lg border p-4 text-sm"
-                data-test="run-plan"
-            >
-                <p
-                    v-if="run.plan.understood_as"
-                    class="text-xs text-muted-foreground"
-                    data-test="brief-understood-as"
-                >
-                    Understood as: {{ run.plan.understood_as }}
-                </p>
-                <template v-if="run.plan.current_behavior">
-                    <p class="font-medium">What it does now</p>
-                    <p class="text-muted-foreground">
-                        {{ run.plan.current_behavior }}
-                    </p>
-                </template>
-                <p class="font-medium" v-if="run.plan.current_behavior">
-                    The change
-                </p>
-                <p>{{ run.plan.summary }}</p>
-                <template v-if="run.plan.preserve.length > 0">
-                    <p class="font-medium">Keep as it is</p>
-                    <ul
-                        class="list-disc pl-5 text-muted-foreground"
-                        data-test="brief-preserve"
-                    >
-                        <li
-                            v-for="(statement, index) in run.plan.preserve"
-                            :key="index"
-                        >
-                            {{ statement }}
-                        </li>
-                    </ul>
-                </template>
-                <template v-if="run.plan.acceptance_criteria.length > 0">
-                    <p class="font-medium">Done when</p>
-                    <ul class="list-disc pl-5 text-muted-foreground">
-                        <li
-                            v-for="(criterion, index) in run.plan
-                                .acceptance_criteria"
-                            :key="index"
-                        >
-                            {{ criterion }}
-                        </li>
-                    </ul>
-                </template>
-                <template v-if="run.plan.assumptions.length > 0">
-                    <p class="font-medium">Assumptions</p>
-                    <ul class="list-disc pl-5 text-muted-foreground">
-                        <li
-                            v-for="(assumption, index) in run.plan.assumptions"
-                            :key="index"
-                        >
-                            {{ assumption }}
-                        </li>
-                    </ul>
-                </template>
-            </div>
-
-            <div
-                v-if="run.review"
-                class="space-y-4 rounded-lg border p-4 text-sm"
-                data-test="run-review"
-            >
-                <p class="font-medium">What changed</p>
-                <template v-for="section in changeSections" :key="section.key">
-                    <div
-                        v-if="
-                            changesIn(section.key).length > 0 ||
-                            areasIn(section.key).length > 0
-                        "
-                        class="space-y-2"
-                        :data-test="`review-${section.key}`"
-                    >
-                        <Alert
-                            v-if="section.key === 'unexpected'"
-                            variant="destructive"
-                        >
-                            <AlertTitle>{{ section.title }}</AlertTitle>
-                            <AlertDescription>{{
-                                section.description
-                            }}</AlertDescription>
-                        </Alert>
-                        <template v-else>
-                            <p class="font-medium">{{ section.title }}</p>
-                            <p
-                                v-if="section.description"
-                                class="text-muted-foreground"
-                            >
-                                {{ section.description }}
-                            </p>
-                        </template>
-                        <ul class="space-y-2">
-                            <li
-                                v-for="(change, index) in changesIn(
-                                    section.key,
-                                )"
-                                :key="index"
-                            >
-                                <p class="font-medium">
-                                    {{ change.behavior }}
-                                    <span
-                                        v-if="change.area_name"
-                                        class="font-normal text-muted-foreground"
-                                        >· {{ change.area_name }}</span
-                                    >
-                                </p>
-                                <p class="text-muted-foreground">
-                                    Before: {{ change.before }}
-                                </p>
-                                <p>Now: {{ change.now }}</p>
-                            </li>
-                        </ul>
-                        <p
-                            v-if="areasIn(section.key).length > 0"
-                            class="text-xs text-muted-foreground"
-                        >
-                            Parts touched:
-                            {{
-                                areasIn(section.key)
-                                    .map((area) => area.name)
-                                    .join(', ')
-                            }}
-                        </p>
-                    </div>
-                </template>
-                <div
-                    v-if="run.review.preserved.length > 0"
-                    class="space-y-2"
-                    data-test="review-preserved"
-                >
-                    <p class="font-medium">Meant to stay the same</p>
-                    <ul class="space-y-1">
-                        <li
-                            v-for="(item, index) in run.review.preserved"
-                            :key="index"
-                        >
-                            {{ item.statement }}
-                            <span class="text-xs text-muted-foreground">
-                                · {{ evidenceLabel(item) }}</span
-                            >
-                        </li>
-                    </ul>
-                </div>
-                <p
-                    v-if="run.review.context_updates.length > 0"
-                    class="text-xs text-muted-foreground"
-                    data-test="review-context-updates"
-                >
-                    Updated the app's own notes:
-                    {{ run.review.context_updates.join(', ') }}
-                </p>
-            </div>
-
-            <p
-                v-if="run.context"
-                class="text-xs text-muted-foreground"
-                data-test="run-context"
-            >
-                The builder was given
-                {{ contextModeLabels[run.context.mode] }} (about
-                {{ run.context.tokens }} tokens<template
-                    v-if="run.context.included.length > 0"
-                    >:
-                    {{
-                        run.context.included.map((part) => part.file).join(', ')
-                    }}</template
-                >).
-                <template v-if="run.context.problems.length > 0">
-                    Some notes could not be read:
-                    {{ run.context.problems.join(' ') }}
-                </template>
-            </p>
-
-            <Form
-                v-if="runInProgress && run.status !== 'cancelling'"
-                v-bind="RunCancellationController.store.form(run.id)"
-                v-slot="{ processing }"
-            >
-                <Button
-                    variant="outline"
-                    :disabled="processing"
-                    data-test="cancel-run-button"
-                >
-                    Cancel run
-                </Button>
-            </Form>
-
-            <Collapsible>
-                <CollapsibleTrigger
-                    class="text-sm underline underline-offset-4"
-                    data-test="run-log-toggle"
-                >
-                    Run log ({{ run.events.length }} events)
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                    <ol class="mt-2 divide-y rounded-lg border">
-                        <li
-                            v-for="event in run.events"
-                            :key="event.sequence"
-                            class="flex gap-3 p-2 text-sm"
-                        >
-                            <span
-                                class="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground"
-                                >{{ event.sequence }}</span
-                            >
-                            <span class="break-words">{{
-                                describeEvent(event)
-                            }}</span>
-                        </li>
-                    </ol>
-                </CollapsibleContent>
-            </Collapsible>
-        </section>
-
-        <template v-if="featureRequest.status === 'generated'">
-            <section class="space-y-4" data-test="change-preview">
-                <Heading
-                    variant="small"
-                    title="Change preview"
-                    :description="featureRequest.summary ?? undefined"
-                />
-
-                <p class="text-sm text-muted-foreground">
-                    {{ featureRequest.files.length }} files changed,
-                    <span class="text-green-700 dark:text-green-400"
-                        >+{{ totals.additions }}</span
-                    >
-                    <span class="text-red-700 dark:text-red-400">
-                        −{{ totals.deletions }}</span
-                    >
-                </p>
-
-                <ul class="divide-y rounded-lg border">
-                    <li v-for="file in featureRequest.files" :key="file.path">
-                        <Collapsible>
-                            <CollapsibleTrigger
-                                class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
-                            >
-                                <span class="truncate font-mono text-sm">{{
-                                    file.path
-                                }}</span>
-                                <span class="shrink-0 font-mono text-xs">
-                                    <span
-                                        class="text-green-700 dark:text-green-400"
-                                        >+{{ file.additions }}</span
-                                    >
-                                    <span
-                                        class="text-red-700 dark:text-red-400"
-                                    >
-                                        −{{ file.deletions }}</span
-                                    >
-                                </span>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent>
-                                <pre
-                                    class="overflow-x-auto border-t bg-muted/30 py-2 font-mono text-xs leading-5"
-                                ><div
-                                    v-for="(line, index) in file.diff.split('\n')"
-                                    :key="index"
-                                    :class="['px-3', lineClass(line)]"
-                                >{{ line || ' ' }}</div></pre>
-                            </CollapsibleContent>
-                        </Collapsible>
-                    </li>
-                </ul>
-            </section>
-
-            <section class="max-w-2xl space-y-4" data-test="steps">
-                <Heading
-                    variant="small"
-                    title="Steps"
-                    description="Select a step to ask for a change to it"
-                />
-
-                <ul class="space-y-2">
-                    <li v-for="step in featureRequest.steps" :key="step.key">
-                        <button
-                            type="button"
-                            :class="[
-                                'w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50',
-                                selectedStepKey === step.key &&
-                                    'border-primary ring-1 ring-primary',
-                            ]"
-                            :aria-pressed="selectedStepKey === step.key"
-                            :data-test="`step-${step.key}`"
-                            @click="selectedStepKey = step.key"
-                        >
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm font-medium">{{
-                                    step.label
-                                }}</span>
-                                <Badge variant="outline">{{ step.kind }}</Badge>
-                            </div>
-                            <p
-                                class="mt-1 font-mono text-xs text-muted-foreground"
-                            >
-                                {{ step.symbol }} · {{ step.file }}
-                            </p>
-                            <p class="mt-1 text-sm text-muted-foreground">
-                                {{ step.detail }}
-                            </p>
-                        </button>
-                    </li>
-                </ul>
-
-                <Form
-                    v-if="selectedStep"
-                    v-bind="
-                        FeatureRequestStepChangeController.store.form(
-                            featureRequest.id,
-                        )
-                    "
-                    class="space-y-4 rounded-lg border p-4"
-                    v-slot="{ errors, processing }"
-                >
-                    <input
-                        type="hidden"
-                        name="step"
-                        :value="selectedStep.key"
-                    />
-
-                    <div class="grid gap-2">
-                        <Label for="step-prompt">
-                            Change “{{ selectedStep.label }}”
-                        </Label>
-                        <textarea
-                            id="step-prompt"
-                            name="prompt"
-                            rows="2"
-                            required
-                            class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
-                            placeholder="Only the team owner may do this."
-                        />
-                        <InputError :message="errors.prompt ?? errors.step" />
-                    </div>
-
-                    <Button
-                        :disabled="processing"
-                        data-test="request-step-change-button"
-                    >
-                        Request change
-                    </Button>
-                </Form>
-            </section>
-        </template>
-
-        <section
-            v-if="featureRequest.status === 'generated'"
-            class="max-w-2xl space-y-4"
-            data-test="preview"
-        >
-            <div class="flex items-center gap-3">
-                <Heading
-                    variant="small"
-                    title="Preview"
-                    description="Run the project with this change and try it in your browser"
-                />
-                <Badge
-                    v-if="preview"
-                    :variant="
-                        preview.status === 'ready'
-                            ? 'default'
-                            : preview.status === 'failed'
-                              ? 'destructive'
-                              : 'secondary'
-                    "
-                    data-test="preview-status"
-                >
-                    {{ previewLabels[preview.status] }}
-                </Badge>
-            </div>
-
-            <p
-                v-if="preview?.status === 'starting'"
-                class="text-sm text-muted-foreground"
-            >
-                Installing dependencies and starting the app. This can take a
-                few minutes…
-            </p>
-
-            <Alert v-if="preview?.error" variant="destructive">
-                <AlertTitle>The preview could not start</AlertTitle>
-                <AlertDescription class="whitespace-pre-wrap">{{
-                    preview.error
-                }}</AlertDescription>
-            </Alert>
-
-            <div class="flex flex-wrap items-center gap-2">
-                <Button v-if="preview?.status === 'ready'" as-child>
-                    <a
-                        :href="PreviewController.show.url(preview.id)"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        data-test="open-preview-link"
-                        >Open preview</a
-                    >
-                </Button>
-
-                <Form
-                    v-if="preview?.status !== 'starting'"
-                    v-bind="
-                        FeatureRequestPreviewController.store.form(
-                            featureRequest.id,
-                        )
-                    "
-                    v-slot="{ errors, processing }"
-                >
-                    <Button
-                        :variant="preview ? 'outline' : 'default'"
-                        :disabled="processing"
-                        data-test="start-preview-button"
-                    >
-                        {{
-                            preview?.status === 'ready'
-                                ? 'Restart preview'
-                                : 'Start preview'
-                        }}
-                    </Button>
-                    <InputError class="mt-2" :message="errors.preview" />
-                </Form>
-
-                <Form
-                    v-if="
-                        preview &&
-                        (preview.status === 'ready' ||
-                            preview.status === 'starting')
-                    "
-                    v-bind="PreviewController.destroy.form(preview.id)"
-                    v-slot="{ processing }"
-                >
-                    <Button
-                        variant="ghost"
-                        :disabled="processing"
-                        data-test="stop-preview-button"
-                    >
-                        Stop
-                    </Button>
-                </Form>
-            </div>
-        </section>
-
-        <section
-            v-if="featureRequest.status === 'generated'"
-            class="space-y-4"
-            data-test="verification"
-        >
-            <div class="flex items-center gap-3">
-                <Heading
-                    variant="small"
-                    title="Verification"
-                    description="Apply the change to a fresh copy of the project and run its checks"
-                />
-                <Badge
-                    v-if="verification"
-                    :variant="
-                        verification.status === 'passed'
-                            ? 'default'
-                            : verification.status === 'queued' ||
-                                verification.status === 'running' ||
-                                verification.status === 'unverified'
-                              ? 'secondary'
-                              : 'destructive'
-                    "
-                    data-test="verification-status"
-                >
-                    {{ verificationLabels[verification.status] }}
-                </Badge>
-            </div>
-
-            <Form
-                v-if="!verificationInProgress"
                 v-bind="
-                    FeatureRequestVerificationController.store.form(
+                    FeatureRequestKeepTryingController.store.form(
                         featureRequest.id,
                     )
                 "
                 v-slot="{ errors, processing }"
             >
                 <Button
-                    :variant="verification ? 'outline' : 'default'"
                     :disabled="processing"
-                    data-test="run-verification-button"
+                    class="h-11 select-none sm:h-9"
+                    title="Go on from the work so far and keep fixing it"
+                    data-test="keep-trying-button"
                 >
-                    {{ verification ? 'Run again' : 'Run verification' }}
+                    {{ featureRequest.can_go_on ? 'Go on' : 'Keep trying' }}
                 </Button>
-                <InputError class="mt-2" :message="errors.verification" />
+                <InputError class="mt-2" :message="errors.keep_trying" />
             </Form>
-
-            <p
-                v-if="verificationInProgress"
-                class="text-sm text-muted-foreground"
+            <Form
+                v-if="featureRequest.can_retry"
+                v-bind="
+                    FeatureRequestRetryController.store.form(featureRequest.id)
+                "
+                v-slot="{ errors, processing }"
             >
-                Installing dependencies and running checks. This can take a few
-                minutes…
-            </p>
-
-            <p
-                v-if="verification?.status === 'unverified'"
-                class="text-sm text-muted-foreground"
-            >
-                Every check passed, but no protected acceptance tests apply to
-                this change, so its behaviour is not independently verified.
-            </p>
-
-            <Alert v-if="verification?.error" variant="destructive">
-                <AlertTitle>Verification could not finish</AlertTitle>
-                <AlertDescription>{{ verification.error }}</AlertDescription>
-            </Alert>
-
-            <ul
-                v-if="verification && verification.results.length > 0"
-                class="divide-y rounded-lg border"
-            >
-                <li
-                    v-for="(result, position) in verification.results"
-                    :key="`${verification.id}-${position}`"
+                <Button
+                    :variant="
+                        featureRequest.can_keep_trying ? 'outline' : 'default'
+                    "
+                    :disabled="processing"
+                    class="h-11 select-none sm:h-9"
+                    data-test="retry-button"
                 >
-                    <Collapsible>
-                        <CollapsibleTrigger
-                            class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
-                        >
-                            <span class="flex items-center gap-2 text-sm">
-                                <span
-                                    :class="outcomeMarks[result.outcome].class"
-                                    aria-hidden="true"
-                                    >{{
-                                        outcomeMarks[result.outcome].mark
-                                    }}</span
-                                >
-                                <span class="sr-only">{{
-                                    outcomeMarks[result.outcome].label
-                                }}</span>
-                                {{ result.name }}
-                                <Badge variant="outline">{{
-                                    result.stage
-                                }}</Badge>
-                                <Badge
-                                    v-if="result.stage === 'acceptance'"
-                                    variant="secondary"
-                                    >protected</Badge
-                                >
-                            </span>
-                            <span
-                                class="font-mono text-xs text-muted-foreground"
-                            >
-                                {{ resultTiming(result) }}
-                            </span>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                            <pre
-                                class="max-h-96 overflow-auto border-t bg-muted/30 p-3 font-mono text-xs leading-5 whitespace-pre-wrap"
-                                >{{ result.output || 'No output.' }}</pre>
-                        </CollapsibleContent>
-                    </Collapsible>
-                </li>
-            </ul>
-        </section>
+                    {{
+                        featureRequest.can_keep_trying
+                            ? 'Start over'
+                            : 'Try again'
+                    }}
+                </Button>
+                <InputError
+                    class="mt-2"
+                    :message="errors.retry ?? errors.step"
+                />
+            </Form>
+            <Button variant="ghost" class="h-11 sm:h-9" as-child>
+                <Link :href="showProject(project.id)">Ask in other words</Link>
+            </Button>
+        </div>
 
-        <section v-if="followUps.length > 0" class="max-w-2xl space-y-4">
-            <Heading variant="small" title="Follow-up requests" />
+        <!-- The one thing the page needs from you, so it gets the only
+             filled panel on the page. -->
+        <section
+            v-if="run?.question"
+            class="max-w-3xl space-y-5 rounded-md bg-muted/60 p-5 sm:p-6"
+            data-test="question"
+        >
+            <div class="space-y-2">
+                <h2
+                    class="font-display text-2xl leading-snug tracking-tight break-words"
+                >
+                    {{ run.question.text }}
+                </h2>
+                <p v-if="run.question.why" class="text-muted-foreground">
+                    {{ run.question.why }}
+                </p>
+                <p
+                    v-if="run.question.reversible === false"
+                    class="text-sm text-muted-foreground"
+                    data-test="question-lasting"
+                >
+                    This is hard to change later, so I am asking you.
+                </p>
+            </div>
 
-            <ul class="divide-y rounded-lg border">
-                <li v-for="followUp in followUps" :key="followUp.id">
-                    <Link
-                        :href="showFeatureRequest(followUp.id)"
-                        class="flex items-center justify-between gap-4 p-4 hover:bg-muted/50"
+            <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Form
+                    v-for="option in run.question.options"
+                    :key="option"
+                    v-bind="
+                        FeatureRequestAnswerController.store.form(
+                            featureRequest.id,
+                        )
+                    "
+                    :options="{ preserveScroll: true }"
+                    v-slot="{ processing }"
+                >
+                    <input type="hidden" name="answer" :value="option" />
+                    <input
+                        type="hidden"
+                        name="more_questions"
+                        :value="moreQuestions ? 1 : 0"
+                    />
+                    <Button
+                        :variant="
+                            option === run.question.recommended
+                                ? 'default'
+                                : 'outline'
+                        "
+                        :disabled="processing"
+                        class="h-11 w-full justify-start select-none sm:h-9 sm:w-auto"
+                        :data-test="`answer-${option}`"
                     >
-                        <span class="text-sm">{{ followUp.prompt }}</span>
-                        <StatusBadge :status="followUp.status" />
-                    </Link>
-                </li>
-            </ul>
+                        {{ option }}
+                    </Button>
+                </Form>
+            </div>
+
+            <div
+                class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground"
+            >
+                <span v-if="run.question.recommended"
+                    >I would pick “{{ run.question.recommended }}”.</span
+                >
+                <Form
+                    v-bind="
+                        FeatureRequestAnswerController.store.form(
+                            featureRequest.id,
+                        )
+                    "
+                    :options="{ preserveScroll: true }"
+                    v-slot="{ processing, errors }"
+                >
+                    <input
+                        type="hidden"
+                        name="more_questions"
+                        :value="moreQuestions ? 1 : 0"
+                    />
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        :disabled="processing"
+                        class="h-11 select-none sm:h-8"
+                        data-test="answer-you-decide"
+                    >
+                        You decide
+                    </Button>
+                    <InputError :message="errors.answer" />
+                </Form>
+                <Button
+                    v-if="!moreQuestions"
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    class="h-11 select-none sm:h-8"
+                    data-test="ask-more-questions"
+                    @click="moreQuestions = true"
+                >
+                    Ask me more questions
+                </Button>
+                <span v-else>
+                    After this, I'll ask about the other things I'm unsure of,
+                    one at a time.
+                </span>
+            </div>
         </section>
+
+        <!-- The story of the change on the left; what to do about it on the
+             right, where it stays in view. On a phone the decision comes
+             straight after what changed, before the finer detail. -->
+        <div
+            class="grid gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,1fr)_18rem] [&>*]:min-w-0"
+        >
+            <div class="max-w-3xl space-y-12">
+                <p
+                    v-if="run && runInProgress && !run.plan"
+                    class="text-muted-foreground"
+                >
+                    {{ runLabels[run.status] }}…
+                </p>
+
+                <section
+                    v-if="run?.plan"
+                    class="space-y-3"
+                    data-test="run-plan"
+                >
+                    <p
+                        v-if="run.plan.answer"
+                        class="text-lg leading-relaxed whitespace-pre-line"
+                        data-test="run-answer"
+                    >
+                        {{ run.plan.answer }}
+                    </p>
+                    <p v-else class="text-lg leading-relaxed">
+                        {{ run.plan.summary }}
+                    </p>
+                    <!-- How the change serves the owner's goal -->
+                    <p
+                        v-if="run.plan.goal && !run.plan.answer"
+                        class="flex gap-1.5 text-muted-foreground"
+                        data-test="run-goal"
+                    >
+                        <Target
+                            class="mt-1 size-4 shrink-0"
+                            aria-label="Your goal"
+                        />
+                        {{ run.plan.goal }}
+                    </p>
+                    <p
+                        v-if="
+                            !run.review &&
+                            !run.plan.answer &&
+                            run.plan.current_behavior &&
+                            run.plan.current_behavior !== 'New'
+                        "
+                        class="text-muted-foreground"
+                    >
+                        Now: {{ run.plan.current_behavior }}
+                    </p>
+                    <p v-if="runInProgress" class="text-muted-foreground">
+                        {{ runLabels[run.status] }}…
+                    </p>
+                </section>
+
+                <section
+                    v-if="run?.review"
+                    class="space-y-10"
+                    data-test="run-review"
+                >
+                    <template
+                        v-for="section in changeSections"
+                        :key="section.key"
+                    >
+                        <div
+                            v-if="
+                                changesIn(section.key).length > 0 ||
+                                areasIn(section.key).length > 0
+                            "
+                            class="space-y-3"
+                            :data-test="`review-${section.key}`"
+                        >
+                            <Alert
+                                v-if="section.key === 'unexpected'"
+                                variant="destructive"
+                            >
+                                <AlertTitle>{{ section.title }}</AlertTitle>
+                                <AlertDescription>{{
+                                    section.description
+                                }}</AlertDescription>
+                            </Alert>
+                            <template v-else>
+                                <h2
+                                    class="font-display text-2xl tracking-tight"
+                                >
+                                    {{
+                                        section.key === 'requested'
+                                            ? 'What changes'
+                                            : section.title
+                                    }}
+                                </h2>
+                                <p
+                                    v-if="
+                                        section.key === 'may_also_affect' &&
+                                        section.description
+                                    "
+                                    class="text-muted-foreground"
+                                >
+                                    {{ section.description }}
+                                </p>
+                            </template>
+                            <ul class="divide-y border-y">
+                                <li
+                                    v-for="(change, index) in changesIn(
+                                        section.key,
+                                    )"
+                                    :key="index"
+                                    class="space-y-4 py-6"
+                                >
+                                    <p class="font-medium">
+                                        {{ change.behavior }}
+                                        <span
+                                            v-if="change.area_name"
+                                            class="font-normal text-muted-foreground"
+                                            >· {{ change.area_name }}</span
+                                        >
+                                        <span
+                                            class="ml-1 font-normal text-muted-foreground"
+                                            >·
+                                            {{
+                                                changeEvidence[change.evidence]
+                                            }}</span
+                                        >
+                                    </p>
+                                    <dl class="grid gap-4 sm:grid-cols-2">
+                                        <div class="space-y-1">
+                                            <dt
+                                                class="text-sm text-muted-foreground"
+                                            >
+                                                Before
+                                            </dt>
+                                            <dd class="text-muted-foreground">
+                                                {{ change.before }}
+                                            </dd>
+                                        </div>
+                                        <div class="space-y-1">
+                                            <dt
+                                                class="text-sm text-muted-foreground"
+                                            >
+                                                Now
+                                            </dt>
+                                            <dd>{{ change.now }}</dd>
+                                        </div>
+                                    </dl>
+                                </li>
+                            </ul>
+                            <p
+                                v-if="
+                                    changesIn(section.key).length === 0 &&
+                                    areasIn(section.key).length > 0
+                                "
+                                class="text-muted-foreground"
+                            >
+                                {{
+                                    areasIn(section.key)
+                                        .map((area) => area.name)
+                                        .join(', ')
+                                }}
+                            </p>
+                        </div>
+                    </template>
+                </section>
+            </div>
+
+            <aside
+                v-if="asideShown"
+                class="lg:col-start-2 lg:row-span-2 lg:row-start-1"
+            >
+                <div class="divide-y border-y lg:sticky lg:top-8">
+                    <div
+                        v-if="
+                            featureRequest.can_accept ||
+                            featureRequest.commit_sha
+                        "
+                        class="space-y-3 py-5"
+                        data-test="change-decision"
+                    >
+                        <Form
+                            v-if="featureRequest.still_online"
+                            v-bind="DeploymentController.store.form(project.id)"
+                            :options="{ preserveScroll: true }"
+                            v-slot="{ processing, errors }"
+                            class="space-y-3"
+                            data-test="still-online"
+                        >
+                            <p class="text-muted-foreground">
+                                You undid this change, but it is still online.
+                                Put your app online again to take it off.
+                            </p>
+                            <p
+                                v-if="featureRequest.still_online.others > 0"
+                                class="text-muted-foreground"
+                            >
+                                {{
+                                    featureRequest.still_online.others === 1
+                                        ? 'One other change you kept goes online too.'
+                                        : `${featureRequest.still_online.others} other changes you kept go online too.`
+                                }}
+                            </p>
+                            <input
+                                v-if="featureRequest.still_online.head"
+                                type="hidden"
+                                name="seen"
+                                :value="featureRequest.still_online.head"
+                            />
+                            <Button
+                                :disabled="processing"
+                                class="h-11 w-full select-none sm:h-9"
+                                data-test="publish-button"
+                            >
+                                Put it online again
+                            </Button>
+                            <InputError :message="errors.publish" />
+                        </Form>
+                        <p
+                            v-else-if="featureRequest.reverted_at"
+                            class="text-muted-foreground"
+                        >
+                            You undid this change. Your app works as it did
+                            before.
+                        </p>
+                        <Form
+                            v-else-if="featureRequest.commit_sha"
+                            v-bind="
+                                FeatureRequestReversionController.store.form(
+                                    featureRequest.id,
+                                )
+                            "
+                            v-slot="{ processing, errors }"
+                            class="space-y-3"
+                        >
+                            <p class="text-muted-foreground">
+                                This change is part of your app.
+                            </p>
+                            <Button
+                                variant="outline"
+                                :disabled="processing"
+                                class="h-11 w-full select-none sm:h-9"
+                                data-test="revert-change-button"
+                            >
+                                Undo this change
+                            </Button>
+                            <InputError :message="errors.change" />
+                        </Form>
+                        <Form
+                            v-else
+                            v-bind="
+                                FeatureRequestAcceptanceController.store.form(
+                                    featureRequest.id,
+                                )
+                            "
+                            v-slot="{ processing, errors }"
+                            class="space-y-3"
+                        >
+                            <Button
+                                :disabled="processing"
+                                class="h-11 w-full select-none"
+                                data-test="accept-change-button"
+                            >
+                                Keep this change
+                            </Button>
+                            <p class="text-sm text-muted-foreground">
+                                Your next change starts from here. You can undo
+                                it later.
+                            </p>
+                            <InputError :message="errors.change" />
+                        </Form>
+                        <p
+                            v-if="featureRequest.kept_data"
+                            class="text-muted-foreground"
+                            data-test="kept-data"
+                        >
+                            Anything your app stored because of this change is
+                            still there. Undoing a change never deletes stored
+                            information.
+                        </p>
+                    </div>
+
+                    <Form
+                        v-if="
+                            run && runInProgress && run.status !== 'cancelling'
+                        "
+                        v-bind="RunCancellationController.store.form(run.id)"
+                        v-slot="{ processing }"
+                        class="py-5"
+                    >
+                        <Button
+                            variant="outline"
+                            :disabled="processing"
+                            class="h-11 w-full select-none sm:h-9"
+                            data-test="cancel-run-button"
+                        >
+                            Stop working on this
+                        </Button>
+                    </Form>
+
+                    <section
+                        v-if="
+                            featureRequest.status === 'generated' &&
+                            !featureRequest.reverted_at
+                        "
+                        class="space-y-3 py-5"
+                        data-test="preview"
+                    >
+                        <div class="flex items-baseline justify-between gap-3">
+                            <h2 class="font-medium">Try it</h2>
+                            <span
+                                v-if="preview"
+                                class="text-sm text-muted-foreground"
+                                data-test="preview-status"
+                                >{{ previewLabels[preview.status] }}</span
+                            >
+                        </div>
+                        <p class="text-sm text-muted-foreground">
+                            {{
+                                preview?.status === 'starting'
+                                    ? 'Getting your app ready. This can take a few minutes…'
+                                    : featureRequest.made_again_only
+                                      ? 'Try again first, to make the change afresh. Then you can open it.'
+                                      : 'Open your app with this change, without changing the real one.'
+                            }}
+                        </p>
+
+                        <!-- A copy stopped for sitting idle did start; only
+                             one that failed says so. -->
+                        <Alert
+                            v-if="preview?.status === 'failed' && preview.error"
+                            variant="destructive"
+                            data-test="preview-error"
+                        >
+                            <AlertTitle>Your app could not start</AlertTitle>
+                            <AlertDescription class="whitespace-pre-wrap">{{
+                                preview.error
+                            }}</AlertDescription>
+                        </Alert>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <Button
+                                v-if="preview?.status === 'ready'"
+                                class="h-11 select-none sm:h-9"
+                                as-child
+                            >
+                                <a
+                                    :href="
+                                        PreviewController.show.url(preview.id)
+                                    "
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    data-test="open-preview-link"
+                                    >Open <ExternalLink class="size-3.5"
+                                /></a>
+                            </Button>
+
+                            <!-- A change that must be made again fails the
+                                 same way each time: the retry row above
+                                 makes it again instead. -->
+                            <Form
+                                v-if="
+                                    preview?.status !== 'starting' &&
+                                    !featureRequest.made_again_only
+                                "
+                                v-bind="
+                                    FeatureRequestPreviewController.store.form(
+                                        featureRequest.id,
+                                    )
+                                "
+                                v-slot="{ errors, processing }"
+                            >
+                                <Button
+                                    variant="outline"
+                                    :disabled="processing"
+                                    class="h-11 select-none sm:h-9"
+                                    data-test="start-preview-button"
+                                >
+                                    {{
+                                        preview?.status === 'ready'
+                                            ? 'Restart'
+                                            : 'Try it'
+                                    }}
+                                </Button>
+                                <InputError
+                                    class="mt-2"
+                                    :message="errors.preview"
+                                />
+                            </Form>
+
+                            <Form
+                                v-if="
+                                    preview &&
+                                    (preview.status === 'ready' ||
+                                        preview.status === 'starting')
+                                "
+                                v-bind="
+                                    PreviewController.destroy.form(preview.id)
+                                "
+                                v-slot="{ processing }"
+                            >
+                                <Button
+                                    variant="ghost"
+                                    :disabled="processing"
+                                    class="h-11 select-none sm:h-9"
+                                    data-test="stop-preview-button"
+                                >
+                                    Stop
+                                </Button>
+                            </Form>
+                        </div>
+                    </section>
+
+                    <section
+                        v-if="
+                            featureRequest.status === 'generated' &&
+                            !featureRequest.reverted_at
+                        "
+                        class="space-y-3 py-5"
+                        data-test="verification"
+                    >
+                        <div class="flex items-baseline justify-between gap-3">
+                            <h2 class="font-medium">Checks</h2>
+                            <!-- Once the checks pass, the proof below gives the one
+                                 verdict; a second label here could disagree. -->
+                            <span
+                                v-if="
+                                    verification &&
+                                    !(
+                                        proof.length > 0 &&
+                                        (verification.status === 'passed' ||
+                                            verification.status ===
+                                                'unverified')
+                                    )
+                                "
+                                :class="[
+                                    'text-sm',
+                                    verification.status === 'failed' ||
+                                    verification.status === 'errored'
+                                        ? 'text-destructive'
+                                        : verification.status === 'passed'
+                                          ? 'text-green-700 dark:text-green-400'
+                                          : 'text-muted-foreground',
+                                ]"
+                                data-test="verification-status"
+                                >{{
+                                    verificationLabels[verification.status]
+                                }}</span
+                            >
+                        </div>
+                        <p class="text-sm text-muted-foreground">
+                            <template v-if="verificationInProgress">
+                                Running the checks. This can take a few minutes…
+                            </template>
+                            <template v-else-if="!verification">
+                                I try the change on a fresh copy of your app and
+                                run its checks.
+                            </template>
+                        </p>
+
+                        <Alert v-if="verification?.error" variant="destructive">
+                            <AlertTitle>The checks could not finish</AlertTitle>
+                            <AlertDescription>{{
+                                verification.error
+                            }}</AlertDescription>
+                        </Alert>
+
+                        <ChangeProof :proof="proof" />
+
+                        <Form
+                            v-if="
+                                !verificationInProgress &&
+                                !featureRequest.made_again_only
+                            "
+                            v-bind="
+                                FeatureRequestVerificationController.store.form(
+                                    featureRequest.id,
+                                )
+                            "
+                            v-slot="{ errors, processing }"
+                        >
+                            <Button
+                                :variant="verification ? 'outline' : 'default'"
+                                :disabled="processing"
+                                class="h-11 select-none sm:h-9"
+                                data-test="run-verification-button"
+                            >
+                                {{
+                                    verification
+                                        ? 'Check again'
+                                        : 'Run the checks'
+                                }}
+                            </Button>
+                            <InputError
+                                class="mt-2"
+                                :message="errors.verification"
+                            />
+                        </Form>
+                    </section>
+                </div>
+            </aside>
+
+            <div class="max-w-3xl space-y-12 lg:col-start-1">
+                <section
+                    v-if="run && run.answers.length > 0"
+                    class="space-y-3"
+                    data-test="answers"
+                >
+                    <h2 class="font-display text-2xl tracking-tight">
+                        What you told me
+                    </h2>
+                    <ul class="divide-y border-y">
+                        <li
+                            v-for="(item, index) in run.answers"
+                            :key="index"
+                            class="space-y-1 py-4"
+                        >
+                            <p class="text-muted-foreground">
+                                {{ item.question }}
+                            </p>
+                            <p>
+                                {{ item.answer }}
+                                <span
+                                    v-if="item.decided_by === 'builder'"
+                                    class="text-sm text-muted-foreground"
+                                    >· you let me decide</span
+                                >
+                            </p>
+                        </li>
+                    </ul>
+                </section>
+
+                <section
+                    v-if="run?.plan && run.plan.assumptions.length > 0"
+                    class="space-y-3"
+                    data-test="decisions"
+                >
+                    <h2 class="font-display text-2xl tracking-tight">
+                        Decisions I made for you
+                    </h2>
+                    <p class="text-muted-foreground">
+                        If one is wrong, adjust that part below.
+                    </p>
+                    <ul class="divide-y border-y">
+                        <li
+                            v-for="(assumption, index) in run.plan.assumptions"
+                            :key="index"
+                            class="py-4"
+                        >
+                            {{ assumption.text }}
+                        </li>
+                    </ul>
+                </section>
+
+                <section
+                    v-if="keptSame.length > 0"
+                    class="space-y-3"
+                    data-test="review-preserved"
+                >
+                    <h2 class="font-display text-2xl tracking-tight">
+                        Stays the same
+                    </h2>
+                    <p
+                        v-if="
+                            !keptSameChecked &&
+                            !keptSame.some((item) => item.warned)
+                        "
+                        class="text-muted-foreground"
+                    >
+                        No test checks these yet.
+                    </p>
+                    <ul class="space-y-3" data-test="brief-preserve">
+                        <li
+                            v-for="(item, index) in keptSame"
+                            :key="index"
+                            class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2"
+                        >
+                            <Check
+                                v-if="item.tested"
+                                class="mt-1 size-4 text-green-700 dark:text-green-400"
+                                aria-label="Its tests still pass"
+                            />
+                            <Minus
+                                v-else-if="item.checked"
+                                class="mt-1 size-4 text-muted-foreground"
+                                :aria-label="item.label ?? undefined"
+                            />
+                            <CircleDashed
+                                v-else
+                                class="mt-1 size-4 text-muted-foreground"
+                                aria-label="Not checked yet"
+                            />
+                            <span>
+                                {{ item.statement }}
+                                <span
+                                    v-if="
+                                        item.label &&
+                                        (keptSameChecked || item.warned)
+                                    "
+                                    :class="[
+                                        'text-sm',
+                                        item.warned
+                                            ? 'text-amber-700 dark:text-amber-400'
+                                            : 'text-muted-foreground',
+                                    ]"
+                                    >· {{ item.label }}</span
+                                >
+                            </span>
+                        </li>
+                    </ul>
+                </section>
+
+                <Collapsible
+                    v-if="doneWhen.length > 0"
+                    v-slot="{ open }"
+                    data-test="review-verified"
+                >
+                    <CollapsibleTrigger
+                        class="flex min-h-11 items-center gap-2 text-xl font-semibold tracking-[-0.02em] select-none"
+                    >
+                        Done when
+                        <span class="font-normal text-muted-foreground">{{
+                            doneWhen.length
+                        }}</span>
+                        <ChevronDown
+                            :class="[
+                                'size-5 text-muted-foreground transition-transform duration-quick',
+                                open && 'rotate-180',
+                            ]"
+                        />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent class="mt-3 space-y-3">
+                        <p
+                            v-if="!doneWhenChecked"
+                            class="text-muted-foreground"
+                        >
+                            No test checks these yet.
+                        </p>
+                        <ul class="space-y-3">
+                            <li
+                                v-for="(item, index) in doneWhen"
+                                :key="index"
+                                class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2"
+                            >
+                                <Check
+                                    v-if="item.checked"
+                                    class="mt-1 size-4 text-green-700 dark:text-green-400"
+                                    aria-label="Checked"
+                                />
+                                <CircleDashed
+                                    v-else
+                                    class="mt-1 size-4 text-muted-foreground"
+                                    aria-label="Not checked yet"
+                                />
+                                <span>
+                                    {{ item.criterion }}
+                                    <span
+                                        v-if="item.cases.length > 0"
+                                        class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground"
+                                        data-test="done-when-cases"
+                                    >
+                                        <span
+                                            v-for="mark in item.cases"
+                                            :key="mark.name"
+                                            class="inline-flex items-center gap-1"
+                                            :class="
+                                                mark.state === 'none' &&
+                                                'opacity-60'
+                                            "
+                                            :title="
+                                                mark.label
+                                                    ? `${mark.says} (${mark.label})`
+                                                    : mark.says
+                                            "
+                                        >
+                                            <Check
+                                                v-if="mark.state === 'checked'"
+                                                class="size-3.5 text-green-700 dark:text-green-400"
+                                                aria-hidden="true"
+                                            />
+                                            <CircleDashed
+                                                v-else
+                                                class="size-3.5"
+                                                aria-hidden="true"
+                                            />
+                                            {{ mark.name }}
+                                            <span class="sr-only">{{
+                                                mark.state === 'checked'
+                                                    ? ': checked by a test'
+                                                    : mark.state === 'none'
+                                                      ? `: not needed. ${mark.says}`
+                                                      : `: ${mark.label ?? 'not checked yet'}`
+                                            }}</span>
+                                        </span>
+                                    </span>
+                                    <!-- What each test written before the
+                                         build tries, in the plan's words.
+                                         The owner confirms them here, after
+                                         the build: a wrong one makes the
+                                         change again from their note. -->
+                                    <ul
+                                        v-if="
+                                            item.cases.some(
+                                                (mark) => mark.written,
+                                            )
+                                        "
+                                        class="mt-2 space-y-2 text-sm"
+                                        data-test="written-cases"
+                                    >
+                                        <template
+                                            v-for="mark in item.cases"
+                                            :key="mark.kind"
+                                        >
+                                            <li
+                                                v-if="mark.written"
+                                                class="space-y-2"
+                                            >
+                                                <p>
+                                                    <span
+                                                        class="text-muted-foreground"
+                                                        >{{ mark.name }}:</span
+                                                    >
+                                                    {{ mark.says }}
+                                                    <button
+                                                        v-if="
+                                                            featureRequest.can_correct_cases &&
+                                                            correcting !==
+                                                                `${item.number}-${mark.kind}`
+                                                        "
+                                                        type="button"
+                                                        class="ml-1 min-h-11 text-muted-foreground underline underline-offset-4 select-none hover:text-foreground sm:min-h-0"
+                                                        data-test="not-meant"
+                                                        @click="
+                                                            correcting = `${item.number}-${mark.kind}`
+                                                        "
+                                                    >
+                                                        That's not what I meant
+                                                    </button>
+                                                </p>
+                                                <Form
+                                                    v-if="
+                                                        correcting ===
+                                                        `${item.number}-${mark.kind}`
+                                                    "
+                                                    v-bind="
+                                                        FeatureRequestCaseCorrectionController.store.form(
+                                                            featureRequest.id,
+                                                        )
+                                                    "
+                                                    class="space-y-3"
+                                                    v-slot="{
+                                                        errors,
+                                                        processing,
+                                                    }"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="criterion"
+                                                        :value="item.number"
+                                                    />
+                                                    <input
+                                                        type="hidden"
+                                                        name="kind"
+                                                        :value="mark.kind"
+                                                    />
+                                                    <Label
+                                                        :for="`not-meant-${item.number}-${mark.kind}`"
+                                                        class="sr-only"
+                                                    >
+                                                        What did you mean?
+                                                    </Label>
+                                                    <textarea
+                                                        :id="`not-meant-${item.number}-${mark.kind}`"
+                                                        name="note"
+                                                        rows="2"
+                                                        required
+                                                        class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                                        placeholder="What did you mean?"
+                                                    />
+                                                    <InputError
+                                                        :message="
+                                                            errors.note ??
+                                                            errors.criterion ??
+                                                            errors.kind
+                                                        "
+                                                    />
+                                                    <div class="flex gap-2">
+                                                        <Button
+                                                            :disabled="
+                                                                processing
+                                                            "
+                                                            class="h-11 select-none sm:h-9"
+                                                            data-test="not-meant-submit"
+                                                        >
+                                                            Try again with this
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            class="h-11 select-none sm:h-9"
+                                                            @click="
+                                                                correcting =
+                                                                    null
+                                                            "
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </div>
+                                                </Form>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </span>
+                            </li>
+                        </ul>
+                    </CollapsibleContent>
+                </Collapsible>
+
+                <section
+                    v-if="
+                        featureRequest.status === 'generated' &&
+                        featureRequest.steps.length > 0 &&
+                        !featureRequest.reverted_at
+                    "
+                    class="space-y-3"
+                    data-test="steps"
+                >
+                    <h2 class="font-display text-2xl tracking-tight">
+                        Adjust part of it
+                    </h2>
+                    <p class="text-muted-foreground">
+                        Pick a part to ask for a change to it.
+                    </p>
+
+                    <ul class="divide-y border-y">
+                        <li
+                            v-for="step in featureRequest.steps"
+                            :key="step.key"
+                        >
+                            <button
+                                type="button"
+                                :class="[
+                                    'group flex w-full items-start gap-4 py-4 text-left transition-colors duration-quick select-none',
+                                    selectedStepKey === step.key
+                                        ? 'text-foreground'
+                                        : 'hover:text-foreground',
+                                ]"
+                                :aria-expanded="selectedStepKey === step.key"
+                                :data-test="`step-${step.key}`"
+                                @click="
+                                    selectedStepKey =
+                                        selectedStepKey === step.key
+                                            ? null
+                                            : step.key
+                                "
+                            >
+                                <span class="min-w-0 flex-1 space-y-1">
+                                    <span class="block font-medium">{{
+                                        step.label
+                                    }}</span>
+                                    <span class="block text-muted-foreground">{{
+                                        step.detail
+                                    }}</span>
+                                </span>
+                                <ChevronRight
+                                    :class="[
+                                        'mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-quick group-hover:translate-x-0.5',
+                                        selectedStepKey === step.key &&
+                                            'rotate-90 group-hover:translate-x-0',
+                                    ]"
+                                />
+                            </button>
+
+                            <!-- The form opens under the part it is about,
+                                 not at the end of the list. -->
+                            <Form
+                                v-if="selectedStep?.key === step.key"
+                                v-bind="
+                                    FeatureRequestStepChangeController.store.form(
+                                        featureRequest.id,
+                                    )
+                                "
+                                class="space-y-3 pb-5"
+                                v-slot="{ errors, processing }"
+                            >
+                                <input
+                                    type="hidden"
+                                    name="step"
+                                    :value="selectedStep.key"
+                                />
+                                <Label for="step-prompt" class="sr-only">
+                                    Change “{{ selectedStep.label }}”
+                                </Label>
+                                <textarea
+                                    id="step-prompt"
+                                    name="prompt"
+                                    rows="2"
+                                    required
+                                    class="w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                                    placeholder="Only the team owner may do this."
+                                />
+                                <InputError
+                                    :message="errors.prompt ?? errors.step"
+                                />
+                                <Button
+                                    :disabled="processing"
+                                    class="h-11 select-none sm:h-9"
+                                    data-test="request-step-change-button"
+                                >
+                                    Ask for this change
+                                </Button>
+                            </Form>
+                        </li>
+                    </ul>
+                </section>
+
+                <section v-if="followUps.length > 0" class="space-y-3">
+                    <h2 class="font-display text-2xl tracking-tight">
+                        Follow-up changes
+                    </h2>
+
+                    <ul class="divide-y border-y">
+                        <li v-for="followUp in followUps" :key="followUp.id">
+                            <Link
+                                :href="showFeatureRequest(followUp.id)"
+                                class="flex min-h-11 items-center justify-between gap-4 py-4 transition-colors duration-quick select-none hover:text-muted-foreground"
+                            >
+                                <span>{{ followUp.prompt }}</span>
+                                <StatusBadge :status="followUp.status" />
+                            </Link>
+                        </li>
+                    </ul>
+                </section>
+
+                <Collapsible
+                    v-if="
+                        run || featureRequest.files.length > 0 || verification
+                    "
+                    v-slot="{ open }"
+                    class="border-t pt-6"
+                    data-test="details"
+                >
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-x-4"
+                    >
+                        <CollapsibleTrigger
+                            class="flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground select-none hover:text-foreground sm:min-h-0"
+                            data-test="details-toggle"
+                        >
+                            Details
+                            <ChevronDown
+                                :class="[
+                                    'size-4 transition-transform duration-quick',
+                                    open && 'rotate-180',
+                                ]"
+                            />
+                        </CollapsibleTrigger>
+                        <p
+                            v-if="
+                                run?.review &&
+                                run.review.context_updates.length > 0
+                            "
+                            class="text-sm text-muted-foreground"
+                            data-test="review-context-updates"
+                        >
+                            I also updated what I know about your app.
+                        </p>
+                        <!-- Our failure says so; otherwise a small fix often
+                             needs no notes change, so it is only a pointer. -->
+                        <p
+                            v-if="run?.review?.notes_failed"
+                            class="text-sm text-muted-foreground"
+                            data-test="review-notes-failed"
+                        >
+                            I could not update the notes after this change. This
+                            is our fault.
+                            <Link
+                                :href="showUnderstanding(project.id)"
+                                class="underline underline-offset-4 hover:text-foreground"
+                                >Check them</Link
+                            >
+                        </p>
+                        <p
+                            v-else-if="run?.review?.notes_behind.length"
+                            class="text-sm text-muted-foreground"
+                            data-test="review-notes-behind"
+                        >
+                            <template
+                                v-if="run.review.notes_update.state === 'done'"
+                            >
+                                {{
+                                    run.review.notes_update.updated.length > 0
+                                        ? `I updated the notes on ${run.review.notes_update.updated.join(', ')}.`
+                                        : 'I read the notes again. Nothing in them needed to change.'
+                                }}
+                            </template>
+                            <template
+                                v-else-if="
+                                    run.review.notes_update.state === 'working'
+                                "
+                            >
+                                Updating the notes on
+                                {{
+                                    run.review.notes_behind
+                                        .map((area) => area.name)
+                                        .join(', ')
+                                }}…
+                            </template>
+                            <template v-else>
+                                These notes may now be out of date:
+                                {{
+                                    run.review.notes_behind
+                                        .map((area) => area.name)
+                                        .join(', ')
+                                }}.
+                            </template>
+                            <Link
+                                v-if="
+                                    run.review.notes_update.state !== 'working'
+                                "
+                                :href="showUnderstanding(project.id)"
+                                class="underline underline-offset-4 hover:text-foreground"
+                                >Check them</Link
+                            >
+                        </p>
+                        <!-- Kept changes only: the notes describe the app as
+                             it is. The reason shows when it did not work. -->
+                        <p
+                            v-if="
+                                run?.review?.notes_update.state === 'failed' &&
+                                run.review.notes_update.message
+                            "
+                            class="text-sm text-muted-foreground"
+                            data-test="notes-update-failed"
+                        >
+                            {{ run.review.notes_update.message }}
+                        </p>
+                        <Form
+                            v-if="run?.review?.notes_update.can"
+                            v-bind="
+                                FeatureRequestNotesUpdateController.store.form(
+                                    featureRequest.id,
+                                )
+                            "
+                            :options="{ preserveScroll: true }"
+                            v-slot="{ errors, processing }"
+                        >
+                            <Button
+                                variant="outline"
+                                :disabled="processing"
+                                class="h-11 select-none sm:h-9"
+                                data-test="notes-update"
+                            >
+                                Update these notes
+                            </Button>
+                            <InputError :message="errors.notes" />
+                        </Form>
+                    </div>
+                    <CollapsibleContent class="mt-4 space-y-6 text-sm">
+                        <div
+                            v-if="
+                                run?.plan?.understood_as ||
+                                featureRequest.commit_sha
+                            "
+                            class="space-y-1 text-muted-foreground"
+                        >
+                            <p v-if="run?.plan?.understood_as">
+                                I understood this as:
+                                {{ run.plan.understood_as }}
+                            </p>
+                            <p v-if="featureRequest.commit_sha">
+                                Saved as version
+                                <span class="font-mono">{{
+                                    featureRequest.commit_sha.slice(0, 7)
+                                }}</span
+                                ><template v-if="featureRequest.revert_sha">
+                                    , undone in
+                                    <span class="font-mono">{{
+                                        featureRequest.revert_sha.slice(0, 7)
+                                    }}</span></template
+                                >.
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="featureRequest.files.length > 0"
+                            class="space-y-2"
+                            data-test="change-preview"
+                        >
+                            <p class="font-medium">
+                                The code:
+                                {{ featureRequest.files.length }} files changed,
+                                <span class="text-green-700 dark:text-green-400"
+                                    >+{{ totals.additions }}</span
+                                >
+                                <span class="text-red-700 dark:text-red-400">
+                                    −{{ totals.deletions }}</span
+                                >
+                            </p>
+
+                            <ul class="divide-y rounded-lg border">
+                                <li
+                                    v-for="file in featureRequest.files"
+                                    :key="file.path"
+                                >
+                                    <Collapsible>
+                                        <CollapsibleTrigger
+                                            class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                                        >
+                                            <span
+                                                class="truncate font-mono text-sm"
+                                                >{{ file.path }}</span
+                                            >
+                                            <span
+                                                class="shrink-0 font-mono text-xs"
+                                            >
+                                                <span
+                                                    class="text-green-700 dark:text-green-400"
+                                                    >+{{ file.additions }}</span
+                                                >
+                                                <span
+                                                    class="text-red-700 dark:text-red-400"
+                                                >
+                                                    −{{ file.deletions }}</span
+                                                >
+                                            </span>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <pre
+                                                class="overflow-x-auto border-t bg-muted/30 py-2 font-mono text-xs leading-5"
+                                            ><div
+                                                v-for="(line, index) in file.diff.split('\n')"
+                                                :key="index"
+                                                :class="['px-3', lineClass(line)]"
+                                            >{{ line || ' ' }}</div></pre>
+                                        </CollapsibleContent>
+                                    </Collapsible>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div
+                            v-if="
+                                verification && verification.results.length > 0
+                            "
+                            class="space-y-2"
+                        >
+                            <p class="font-medium">Each check</p>
+                            <ul class="divide-y rounded-lg border">
+                                <li
+                                    v-for="(
+                                        result, position
+                                    ) in verification.results"
+                                    :key="`${verification.id}-${position}`"
+                                >
+                                    <Collapsible>
+                                        <CollapsibleTrigger
+                                            class="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                                        >
+                                            <span
+                                                class="flex items-center gap-2 text-sm"
+                                            >
+                                                <span
+                                                    :class="
+                                                        outcomeMarks[
+                                                            result.outcome
+                                                        ].class
+                                                    "
+                                                    aria-hidden="true"
+                                                    >{{
+                                                        outcomeMarks[
+                                                            result.outcome
+                                                        ].mark
+                                                    }}</span
+                                                >
+                                                <span class="sr-only">{{
+                                                    outcomeMarks[result.outcome]
+                                                        .label
+                                                }}</span>
+                                                {{ result.name }}
+                                            </span>
+                                            <span
+                                                class="font-mono text-xs text-muted-foreground"
+                                            >
+                                                {{ resultTiming(result) }}
+                                            </span>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <pre
+                                                class="max-h-96 overflow-auto border-t bg-muted/30 p-3 font-mono text-xs leading-5 whitespace-pre-wrap"
+                                                >{{
+                                                    result.output ||
+                                                    'No output.'
+                                                }}</pre>
+                                        </CollapsibleContent>
+                                    </Collapsible>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="run && run.log.length > 0" class="space-y-2">
+                            <p class="font-medium" data-test="run-log-toggle">
+                                What I did
+                            </p>
+                            <ol class="space-y-1 text-muted-foreground">
+                                <li
+                                    v-for="entry in run.log"
+                                    :key="entry.sequence"
+                                    class="break-words"
+                                >
+                                    {{ entry.text }}
+                                </li>
+                            </ol>
+                        </div>
+                    </CollapsibleContent>
+                </Collapsible>
+            </div>
+        </div>
     </div>
 </template>

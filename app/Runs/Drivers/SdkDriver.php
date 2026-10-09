@@ -2,21 +2,29 @@
 
 namespace App\Runs\Drivers;
 
+use App\Actions\Decisions\ActOnDecision;
+use App\Actions\Runs\ExtractCandidateChange;
 use App\Actions\Runs\RecordModelUsage;
 use App\Actions\Runs\RunCodingAgent;
+use App\Actions\Runs\WriteBrief;
 use App\Actions\Workspaces\RunWorkspaceCommand;
 use App\Enums\AgentOutcomeStatus;
+use App\Enums\AgentTier;
+use App\Enums\ModelRole;
 use App\Features\AcceptanceSelector;
 use App\Models\Run;
 use App\Models\RunEvent;
+use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Agents\CodingAgentManager;
 use App\Runs\Exceptions\BudgetExhausted;
 use App\Runs\Exceptions\ConstructionFailed;
 use App\Runs\Plan;
+use App\Runs\RepairTier;
 use App\Runs\Review;
 use App\Runs\ReviewEvidence;
 use App\Runs\ToolSession;
+use Illuminate\Support\Str;
 
 /**
  * Plans and reviews like the agent driver, but builds with a coding agent
@@ -39,6 +47,10 @@ class SdkDriver extends AgentDriver
         protected RunCodingAgent $runCodingAgent,
         protected CodingAgentManager $agents,
         protected RunWorkspaceCommand $runWorkspaceCommand,
+        protected ExtractCandidateChange $extractCandidateChange,
+        protected WriteBrief $writeBrief,
+        protected RepairTier $repairTier,
+        protected ActOnDecision $actOnDecision,
     ) {
         parent::__construct($acceptanceSelector, $recordModelUsage);
     }
@@ -47,11 +59,41 @@ class SdkDriver extends AgentDriver
     {
         $workspace = $run->workspace ?? throw new ConstructionFailed(__('The run has no workspace.'));
 
+        // A background tidy-up goes to the light model first, on a smaller
+        // budget, and so does a repair of one problem a check can judge.
+        $tidy = ($run->featureRequest->tidy['tier'] ?? null) === 'light';
+        $escalate = $this->escalation($run);
+        // Once a repair went to the strong model, the repairs after it stay
+        // there: the usual model already could not finish.
+        $strong = ($escalate['tier'] ?? null) === AgentTier::Strong->value
+            || ($escalate === null && $run->events()->where('type', 'escalated')->where('data->tier', AgentTier::Strong->value)->exists());
+        // A request the decision model is sure is trivial is first built by
+        // the light model too, once that decision is switched on to act.
+        $trivial = $escalate === null && ! $strong && ! $tidy && $run->repairs === 0 && $this->actOnDecision->handle($run, 'complexity', 'trivial');
+        $light = $escalate === null && ! $strong && ($tidy || $trivial || $this->repairTier->light($run));
+
+        if ($escalate !== null) {
+            $run->recordEvent('escalated', $escalate);
+        }
+
         $outcome = $this->runCodingAgent->handle($run, $tools->lease(), $workspace, new AgentTask(
-            prompt: $this->buildPrompt($run, $plan)."\n\n".$this->workingRules(),
+            prompt: $this->writeBrief->task($run, $plan),
+            instructions: $this->writeBrief->rules(),
+            owner: $run->featureRequest->project->owner,
             maxTurns: (int) config('builder.agents.max_turns'),
-            maxBudgetUsd: (float) config('builder.agents.max_budget_usd'),
+            maxBudgetUsd: (float) ($tidy ? config('builder.verification.shortcuts.tidy.max_budget_usd') : config('builder.agents.max_budget_usd')),
             timeoutSeconds: (int) config('builder.construction.budgets.minutes') * 60,
+            tier: match (true) {
+                $strong => AgentTier::Strong,
+                $light => AgentTier::Light,
+                default => AgentTier::Usual,
+            },
+            // The other agent, or the strong model, starts fresh with the
+            // whole brief and the problems, rather than inside the session
+            // that stalled.
+            resume: $resume = $escalate === null ? $this->resumeFor($run) : null,
+            // A repair stays with the agent whose session it continues.
+            prefer: $escalate['to'] ?? $resume['adapter'] ?? null,
         ));
 
         $this->restoreProtectedPaths($run);
@@ -61,10 +103,71 @@ class SdkDriver extends AgentDriver
                 throw new BudgetExhausted(__('The agent used up its turns or budget before finishing.'));
             }
 
-            throw new ConstructionFailed(__('The agent could not make the change: :reason', ['reason' => $outcome->error ?? $outcome->errorKind]));
+            // The agent's own words name our tools and are for us; the
+            // owner hears whose fault it is and what to do.
+            $run->recordEvent('agent_failed', ['kind' => $outcome->errorKind, 'error' => Str::limit((string) $outcome->error, 2000)]);
+
+            throw new ConstructionFailed($outcome->errorKind === AgentOutcome::RUNNER_LOST
+                ? __('This is our fault: the computer working on your change restarted, so the AI could not finish. Nothing in your app changed. Try again.')
+                : __('This is our fault: the AI stopped before it finished the change. Nothing in your app changed. Try again.'));
         }
 
         return (string) $outcome->summary;
+    }
+
+    /**
+     * After "escalate_after" repairs that did not pass, hand the next repair
+     * to the other agent (§11): new eyes on the same problems. With no other
+     * agent to take it (only one is set up, or the other's provider keeps
+     * failing), the same agent's strong model takes it, when one is set. It
+     * happens once; later repairs continue with whichever agent and model
+     * built last, until the repairs run out.
+     *
+     * @return array{from: string, to: string, tier?: string}|null
+     */
+    protected function escalation(Run $run): ?array
+    {
+        if ($run->feedback === null || $run->repairs !== (int) config('builder.agents.escalate_after') + 1) {
+            return null;
+        }
+
+        $from = $this->lastBuild($run)->data['adapter'] ?? null;
+
+        if (! is_string($from)) {
+            return null;
+        }
+
+        $to = array_values(array_diff($this->runCodingAgent->available(), [$from]))[0] ?? null;
+
+        return match (true) {
+            $to !== null => ['from' => $from, 'to' => $to],
+            $this->agents->hasStrongModel($from) => ['from' => $from, 'to' => $from, 'tier' => AgentTier::Strong->value],
+            default => null,
+        };
+    }
+
+    /**
+     * For a repair pass, get the session the change was built in and what
+     * to tell the agent there: only the problems, since it already has the
+     * brief. Most of a pass's cost is the agent reading the app, and a
+     * continued session has read it already.
+     *
+     * @return array{adapter: string, session: string, prompt: string}|null
+     */
+    protected function resumeFor(Run $run): ?array
+    {
+        if ($run->feedback === null) {
+            return null;
+        }
+
+        $data = $this->lastBuild($run)->data ?? [];
+        $followUp = $this->writeBrief->followUp($run);
+
+        if (! is_string($data['adapter'] ?? null) || ! is_string($data['session'] ?? null) || $followUp === null) {
+            return null;
+        }
+
+        return ['adapter' => $data['adapter'], 'session' => $data['session'], 'prompt' => $followUp];
     }
 
     /**
@@ -90,7 +193,13 @@ class SdkDriver extends AgentDriver
 
         $model = $reviewer['model'] ?? null;
 
-        return $this->reviewWith($run, $evidence, $provider, is_string($model) && $model !== '' ? $model : null);
+        // A review on the default reviewer beats no review when the other
+        // provider cannot serve it; the switch is logged.
+        return $this->reviewWith(
+            $run,
+            $evidence,
+            [$provider => is_string($model) && $model !== '' ? $model : null] + ModelRole::Reviewer->providers(),
+        );
     }
 
     /**
@@ -98,17 +207,25 @@ class SdkDriver extends AgentDriver
      */
     protected function builtBy(Run $run): ?string
     {
-        /** @var RunEvent|null $event */
-        $event = $run->events()
-            ->where('type', 'model_call')
-            ->where('data->role', 'coder')
-            ->where('data->status', AgentOutcomeStatus::Completed->value)
-            ->latest('sequence')
-            ->first();
-
-        $provider = $event?->data['provider'] ?? null;
+        $provider = $this->lastBuild($run)?->data['provider'] ?? null;
 
         return is_string($provider) ? $provider : null;
+    }
+
+    /**
+     * Get the log entry of the latest agent attempt that built the change.
+     */
+    protected function lastBuild(Run $run): ?RunEvent
+    {
+        /** @var RunEvent|null */
+        return $run->events()
+            ->where('type', 'model_call')
+            ->where('data->role', 'coder')
+            // A pass that ran out of turns or budget is gone on from too,
+            // when the owner asks it to keep trying.
+            ->where(fn ($query) => $query->where('data->status', AgentOutcomeStatus::Completed->value)->orWhereIn('data->error_kind', self::BUDGET_ERRORS))
+            ->reorder('sequence', 'desc')
+            ->first();
     }
 
     /**
@@ -126,23 +243,24 @@ class SdkDriver extends AgentDriver
         /** @var list<string> $protected */
         $protected = array_values(array_diff(config('builder.construction.protected_paths', []), ['.git']));
 
+        $baseline = $this->extractCandidateChange->baseline($workspace);
+
+        // Noted, so the repair brief can tell the agent to leave them alone.
+        $changed = array_values(array_unique(array_filter(explode("\n", trim(
+            $this->runWorkspaceCommand->handle($workspace, ['git', 'diff', '--name-only', $baseline, '--', ...$protected], 60)->output."\n"
+            .$this->runWorkspaceCommand->handle($workspace, ['git', 'ls-files', '--others', '--exclude-standard', '--', ...$protected], 60)->output,
+        )))));
+
+        if ($changed !== []) {
+            $run->recordEvent('protected_paths_restored', ['paths' => $changed]);
+        }
+
+        // Against the recorded baseline, so commits the agent made do not
+        // count as the original: remove what is there, put the baseline back.
         foreach ($protected as $path) {
-            $this->runWorkspaceCommand->handle($workspace, ['git', 'checkout', '-q', 'HEAD', '--', $path], 60);
+            $this->runWorkspaceCommand->handle($workspace, ['git', 'rm', '-rqf', '--ignore-unmatch', '--', $path], 60);
+            $this->runWorkspaceCommand->handle($workspace, ['git', 'checkout', '-q', $baseline, '--', $path], 60);
             $this->runWorkspaceCommand->handle($workspace, ['git', 'clean', '-fdq', '--', $path], 60);
         }
-    }
-
-    /**
-     * How an SDK agent should work, besides the brief.
-     */
-    protected function workingRules(): string
-    {
-        return <<<'RULES'
-        ## How to work
-
-        You are working in the application's repository. Follow its AGENTS.md and Laravel's conventions. Add or update feature tests for the behaviour you build, run them with `php artisan test`, and fix failures. Never change tests/Acceptance, .env, vendor or .git: those changes are thrown away. Keep the notes in .builder/ up to date as described in AGENTS.md or, if it says nothing, by updating the notes of the areas you change.
-
-        When you are done, reply with a short summary of what you changed. Your summary is not taken as proof: the change is verified and reviewed independently.
-        RULES;
     }
 }

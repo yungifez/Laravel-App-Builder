@@ -19,18 +19,21 @@ class Evidence
 
     /**
      * Run the project's checks (the verification checks in config/builder.php).
+     * A check that needs a file the project lacks is left out, as
+     * verification leaves it out: it says nothing about the change.
      *
      * @return list<array{name: string, outcome: string, exit_code: int, output: string, failed_tests: list<string>}>
      */
     public static function checks(Workbench $workbench): array
     {
-        /** @var list<array{name: string, command: list<string>, timeout: int}> $checks */
+        /** @var list<array{name: string, command: list<string>, timeout: int, needs?: string}> $checks */
         $checks = config('builder.verification.checks', []);
+        $applicable = array_filter($checks, fn (array $check) => ! isset($check['needs']) || $workbench->run(['test', '-e', $check['needs']], 30)->exitCode === 0);
 
-        return array_map(
+        return array_values(array_map(
             fn (array $check) => self::result($check['name'], $workbench->run($check['command'], $check['timeout'])),
-            $checks,
-        );
+            $applicable,
+        ));
     }
 
     /**

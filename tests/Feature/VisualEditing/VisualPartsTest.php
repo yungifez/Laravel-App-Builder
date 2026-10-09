@@ -1,0 +1,210 @@
+<?php
+
+namespace Tests\Feature\VisualEditing;
+
+use App\Actions\Projects\CreateProject;
+use App\Models\Preview;
+use App\Models\Project;
+use App\Models\User;
+use App\Models\Workspace;
+use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\FakesWorkspaces;
+use Tests\Concerns\PreparesRuns;
+use Tests\TestCase;
+
+/**
+ * Copying a part of the page, or taking it out, in the design editor.
+ */
+class VisualPartsTest extends TestCase
+{
+    use FakesWorkspaces, PreparesRuns, RefreshDatabase;
+
+    protected const CARD = <<<'VUE'
+    <template>
+        <div class="flex gap-4 p-4 text-sm">
+            <h1 class="text-xl">Plans</h1>
+            <p v-if="active">Pick one</p>
+            <p v-else>Nothing yet</p>
+        </div>
+    </template>
+
+    VUE;
+
+    protected const FILE = 'resources/js/pages/Plans.vue';
+
+    protected ProjectRepository $repository;
+
+    protected User $owner;
+
+    protected Project $project;
+
+    protected Preview $preview;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Queue::fake();
+        $this->fakeWorkspaces();
+        $this->repository = app(ProjectRepository::class);
+        $this->owner = User::factory()->create(['name' => 'Ada Owner', 'email' => 'ada@example.com']);
+        $this->project = app(CreateProject::class)->handle($this->owner, 'Acme', $this->makeProjectSource([
+            self::FILE => self::CARD,
+        ]), draftNotes: false);
+        $this->repository->import($this->project);
+        $this->preview = Preview::factory()->editable($this->editedHead())->ready()->create([
+            'project_id' => $this->project->id,
+            'workspace_id' => Workspace::factory()->create(['user_id' => $this->owner->id])->id,
+        ]);
+    }
+
+    public function test_the_owner_copies_a_part_and_the_copy_is_picked_and_can_be_undone()
+    {
+        $copied = str_replace("<h1 class=\"text-xl\">Plans</h1>\n", "<h1 class=\"text-xl\">Plans</h1>\n        <h1 class=\"text-xl\">Plans</h1>\n", self::CARD);
+
+        $this->actingAs($this->owner)
+            ->post(route('visual-parts.store', $this->project), $this->part('3:9'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($copied, $this->file());
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertSame('duplicate', $edit->kind());
+        $this->assertSame([4, 9], [$edit->line, $edit->column]);
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->hasFlash('moved', ['target' => self::FILE.':4:9', 'instance' => false])
+                ->where('edits.0.kind', 'duplicate'));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::CARD, $this->file());
+
+        $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+        $this->assertSame($copied, $this->file());
+    }
+
+    public function test_the_owner_removes_a_part_and_can_put_it_back()
+    {
+        $this->actingAs($this->owner)
+            ->delete(route('visual-parts.destroy', $this->project), $this->part('3:9'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(str_replace("        <h1 class=\"text-xl\">Plans</h1>\n", '', self::CARD), $this->file());
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertSame('remove', $edit->kind());
+        $this->assertSame([2, 5], [$edit->line, $edit->column]);
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page->where('edits.0.removed', self::FILE.':3:9'));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::CARD, $this->file());
+    }
+
+    public function test_the_owner_adds_a_new_part_after_a_part_and_the_new_part_is_picked_and_can_be_undone()
+    {
+        $added = str_replace("<h1 class=\"text-xl\">Plans</h1>\n", "<h1 class=\"text-xl\">Plans</h1>\n        <button type=\"button\" class=\"rounded-md border px-4 py-2 text-sm font-medium\">Button</button>\n", self::CARD);
+
+        $this->actingAs($this->owner)
+            ->post(route('new-parts.store', $this->project), [...$this->part('3:9'), 'part' => 'button'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($added, $this->file());
+
+        $edit = $this->project->visualEdits()->sole();
+        $this->assertSame('add', $edit->kind());
+        $this->assertSame('button', $edit->tag);
+        $this->assertSame([4, 9], [$edit->line, $edit->column]);
+
+        $this->get(route('projects.show', $this->project))
+            ->assertInertia(fn (Assert $page) => $page
+                ->hasFlash('moved', ['target' => self::FILE.':4:9', 'instance' => false])
+                ->where('edits.0.kind', 'add')
+                ->where('edits.0.base', $edit->base_revision)
+                ->where('edits.0.commit', $edit->commit_sha));
+
+        $this->post(route('visual-edits.reversion.store', $edit))->assertSessionHasNoErrors();
+        $this->assertSame(self::CARD, $this->file());
+
+        $this->delete(route('visual-edits.reversion.destroy', $edit))->assertSessionHasNoErrors();
+        $this->assertSame($added, $this->file());
+    }
+
+    public function test_a_new_link_goes_home_until_the_owner_points_it_elsewhere()
+    {
+        $this->actingAs($this->owner)
+            ->post(route('new-parts.store', $this->project), [...$this->part('3:9'), 'part' => 'link'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertStringContainsString("<h1 class=\"text-xl\">Plans</h1>\n        <a href=\"/\" class=\"underline underline-offset-4\">New link</a>\n", $this->file());
+        $this->assertSame('a', $this->project->visualEdits()->sole()->tag);
+    }
+
+    public function test_only_the_offered_kinds_of_part_can_be_added()
+    {
+        $this->actingAs($this->owner)
+            ->post(route('new-parts.store', $this->project), [...$this->part('3:9'), 'part' => 'script'])
+            ->assertSessionHasErrors('part');
+
+        $this->assertSame(self::CARD, $this->file());
+    }
+
+    public function test_a_part_shown_in_turn_with_another_is_neither_copied_nor_removed()
+    {
+        $this->actingAs($this->owner)
+            ->post(route('visual-parts.store', $this->project), $this->part('4:9'))
+            ->assertSessionHasErrors(['edit' => 'This part cannot be copied here. Ask me to copy it instead.']);
+
+        $this->delete(route('visual-parts.destroy', $this->project), $this->part('5:9'))
+            ->assertSessionHasErrors(['edit' => 'This part cannot be removed here. Ask me to remove it instead.']);
+
+        $this->post(route('new-parts.store', $this->project), [...$this->part('4:9'), 'part' => 'text'])
+            ->assertSessionHasErrors(['edit' => 'Nothing can be added after this part here. Ask me to add it instead.']);
+
+        $this->assertSame(self::CARD, $this->file());
+        $this->assertSame(0, $this->project->visualEdits()->count());
+    }
+
+    public function test_only_people_who_may_change_the_app_can_copy_or_remove_its_parts()
+    {
+        $this->actingAs(User::factory()->create())
+            ->delete(route('visual-parts.destroy', $this->project), $this->part('3:9'))
+            ->assertForbidden();
+
+        $this->assertSame(self::CARD, $this->file());
+    }
+
+    /**
+     * The request for one part of the page, by line and column.
+     *
+     * @return array<string, mixed>
+     */
+    protected function part(string $at): array
+    {
+        return [
+            'preview' => $this->preview->uuid,
+            'target' => self::FILE.':'.$at,
+            'revision' => $this->preview->revision,
+        ];
+    }
+
+    protected function file(): ?string
+    {
+        return $this->repository->show($this->project, $this->editedHead(), self::FILE);
+    }
+
+    /**
+     * Get the newest commit of what the owner edits: the app's design
+     * draft while one waits, else the app.
+     */
+    protected function editedHead(): string
+    {
+        return $this->repository->head($this->project, app(DesignDrafts::class)->find($this->project)?->designBranch());
+    }
+}

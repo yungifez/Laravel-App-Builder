@@ -46,25 +46,26 @@ const pinInputContainerRef = useTemplateRef('pinInputContainerRef');
 const modalConfig = computed<TwoFactorConfigContent>(() => {
     if (props.twoFactorEnabled) {
         return {
-            title: 'Two-factor authentication enabled',
+            title: 'Two-step sign-in is on',
             description:
-                'Two-factor authentication is now enabled. Scan the QR code or enter the setup key in your authenticator app.',
+                'From now on I ask for a code when you sign in. Your authenticator app shows it.',
             buttonText: 'Close',
         };
     }
 
     if (showVerificationStep.value) {
         return {
-            title: 'Verify authentication code',
-            description: 'Enter the 6-digit code from your authenticator app',
+            title: 'Enter the code from your app',
+            description:
+                'Type the 6-digit code your authenticator app shows now',
             buttonText: 'Continue',
         };
     }
 
     return {
-        title: 'Enable two-factor authentication',
+        title: 'Turn on two-step sign-in',
         description:
-            'To finish enabling two-factor authentication, scan the QR code or enter the setup key in your authenticator app',
+            'Scan this square code with an authenticator app on your phone, such as Google Authenticator',
         buttonText: 'Continue',
     };
 });
@@ -114,7 +115,7 @@ watch(
         <DialogContent class="sm:max-w-md">
             <DialogHeader class="flex items-center justify-center">
                 <div
-                    class="mb-3 w-auto rounded-full border border-border bg-card p-0.5 shadow-sm"
+                    class="mb-3 w-auto rounded-full border border-border bg-card p-0.5"
                 >
                     <div
                         class="relative overflow-hidden rounded-full border border-border bg-muted p-2.5"
@@ -197,7 +198,7 @@ watch(
                                 class="absolute inset-0 top-1/2 h-px w-full bg-border"
                             />
                             <span class="relative bg-card px-2 py-1"
-                                >or, enter the code manually</span
+                                >or type this key into the app</span
                             >
                         </div>
 

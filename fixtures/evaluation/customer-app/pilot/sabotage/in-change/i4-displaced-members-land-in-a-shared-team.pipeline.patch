@@ -1,0 +1,13 @@
+diff --git a/app/Actions/Teams/DeleteTeam.php b/app/Actions/Teams/DeleteTeam.php
+index f22e61d..36fcec6 100644
+--- a/app/Actions/Teams/DeleteTeam.php
++++ b/app/Actions/Teams/DeleteTeam.php
+@@ -19,7 +19,7 @@ class DeleteTeam
+             User::query()
+                 ->where('current_team_id', $team->id)
+                 ->each(function (User $user) {
+-                    $personalTeam = $user->teams()->where('personal_team', true)->first();
++                    $personalTeam = $user->teams()->where('personal_team', false)->first();
+ 
+                     $user->forceFill(['current_team_id' => $personalTeam?->id])->save();
+                 });

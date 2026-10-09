@@ -1,0 +1,271 @@
+<?php
+
+namespace Tests\Feature\Features;
+
+use App\Enums\FeatureRequestStatus;
+use App\Enums\RunStatus;
+use App\Features\WorkerConnection;
+use App\Jobs\DecideFeatureRequest;
+use App\Jobs\ExecuteRun;
+use App\Models\FeatureRequest;
+use App\Models\Project;
+use App\Models\Run;
+use App\Models\User;
+use App\Runs\Plan;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
+use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Mcp\Server\Registrar;
+use Laravel\Passport\Passport;
+use Tests\TestCase;
+
+class WorkYourselfTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected User $owner;
+
+    protected Project $project;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Queue::fake([ExecuteRun::class, DecideFeatureRequest::class]);
+        $this->owner = User::factory()->create();
+        $this->project = Project::factory()->for($this->owner, 'owner')->create(['name' => 'Bright Cleaning']);
+    }
+
+    public function test_the_owner_takes_over_a_change_we_are_planning_and_keeps_its_answers()
+    {
+        $answers = [['question' => 'Who can see it?', 'answer' => 'Members']];
+        $ours = $this->change(RunStatus::Planning, FeatureRequestStatus::Generating, attributes: ['answers' => $answers]);
+        $run = $ours->latestRun()->firstOrFail();
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('change.featureRequest.can_work_yourself', true)
+                ->where('change.run.yours', null));
+
+        $response = $this->post(route('feature-requests.worker.store', $ours));
+
+        // The same change goes on, so the owner is not asked again.
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]));
+        $this->assertSame(1, $this->project->featureRequests()->count());
+        $run->refresh();
+        $this->assertSame('worker', $run->driver);
+        $this->assertSame(RunStatus::Planning, $run->status);
+        $this->assertSame($answers, $run->answers);
+        $this->assertTrue($run->events()->where('type', 'handed_to_owner')->exists());
+        Queue::assertNothingPushed();
+
+        // The next page shows the connection once.
+        $page = $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('worker.run', $run->uuid));
+        $token = $page->inertiaProps('worker.token');
+        $this->assertIsString($token);
+        $this->assertSame(1, $run->tokens()->count());
+        $this->tool('check_status', $token)->assertOk();
+
+        // The connection shows from the hand-over, while the change is
+        // still planned, so it is never lost to a reload; the token itself
+        // shows only the once.
+        $this->flushHeaders()->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $ours->uuid]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('change.run.yours.waiting', true)
+                ->where('worker', null));
+    }
+
+    public function test_a_change_we_are_writing_starts_again_for_the_owners_tool()
+    {
+        $ours = $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating);
+
+        $response = $this->actingAs($this->owner)->post(route('feature-requests.worker.store', $ours));
+
+        $theirs = $this->project->featureRequests()->latest('id')->firstOrFail();
+        $run = $theirs->latestRun()->firstOrFail();
+
+        $response->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]));
+        $this->assertSame($ours->id, $theirs->retry_of_id);
+        $this->assertSame('worker', $run->driver);
+        $this->assertSame(RunStatus::Cancelled, $ours->latestRun()->firstOrFail()->status);
+        Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
+
+        // Kept apart from the session, so a poll that ends during the
+        // hand-over cannot lose it, and only for the owner.
+        $this->assertNull(app(WorkerConnection::class)->take(User::factory()->create()));
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]))
+            ->assertInertia(fn (Assert $page) => $page->where('worker.run', $run->uuid));
+    }
+
+    public function test_the_thread_says_how_to_connect_while_it_waits_for_their_change()
+    {
+        $theirs = $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker');
+
+        $this->actingAs($this->owner)
+            ->get(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('change.run.yours.waiting', true)
+                ->where('change.run.yours.address', route('mcp.task'))
+                ->where('change.run.yours.app_address', route('mcp.app', ['project' => $this->project->uuid]))
+                ->where('change.run.yours.name', 'bright-cleaning'));
+    }
+
+    public function test_the_claude_app_signed_in_at_the_apps_address_gets_the_change_handed_over()
+    {
+        $theirs = $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker', ['plan' => $this->plan('Teams have a description.')]);
+
+        $brief = $this->appTool($this->owner, 'get_task')->assertOk()->json('result.content.0.text');
+
+        $this->assertStringContainsString('Teams have a description.', (string) $brief);
+        $this->assertSame($theirs->latestRun()->firstOrFail()->id, Run::query()->where('driver', 'worker')->sole()->id);
+    }
+
+    public function test_the_claude_app_waits_until_the_change_handed_over_is_planned()
+    {
+        // While we still plan it, there is nothing to build yet.
+        $this->change(RunStatus::Planning, FeatureRequestStatus::Generating, 'worker');
+
+        $this->appTool($this->owner, 'get_task')->assertOk()->assertSee('No change waits for you now.');
+    }
+
+    public function test_the_claude_app_takes_the_oldest_change_first_and_only_its_persons()
+    {
+        $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker', ['plan' => $this->plan('Teams have a description.')]);
+        $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker', ['plan' => $this->plan('Teams have a colour.')]);
+
+        $brief = (string) $this->appTool($this->owner, 'get_task')->json('result.content.0.text');
+        $this->assertStringContainsString('Teams have a description.', $brief);
+        $this->assertStringNotContainsString('Teams have a colour.', $brief);
+
+        $this->appTool(User::factory()->create(), 'get_task')->assertForbidden();
+    }
+
+    public function test_connecting_again_closes_the_earlier_connection_and_keeps_the_change()
+    {
+        $theirs = $this->change(RunStatus::Implementing, FeatureRequestStatus::Generating, 'worker');
+        $run = $theirs->latestRun()->firstOrFail();
+
+        $this->actingAs($this->owner)->post(route('feature-requests.worker.store', $theirs));
+        $first = app(WorkerConnection::class)->take($this->owner)['token'] ?? null;
+
+        $this->post(route('feature-requests.worker.store', $theirs))
+            ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $theirs->uuid]));
+        $second = app(WorkerConnection::class)->take($this->owner)['token'] ?? null;
+
+        $this->assertSame(1, $this->project->featureRequests()->count());
+        $this->assertSame(1, $run->tokens()->count());
+        $this->tool('check_status', $first)->assertUnauthorized();
+        $this->tool('check_status', $second)->assertOk();
+        Queue::assertNothingPushed();
+    }
+
+    public function test_a_stopped_change_can_be_written_by_the_owner()
+    {
+        $stopped = $this->change(RunStatus::Failed, FeatureRequestStatus::Failed);
+
+        $this->actingAs($this->owner)
+            ->post(route('feature-requests.worker.store', $stopped))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('worker', $this->project->featureRequests()->latest('id')->firstOrFail()->latestRun()->firstOrFail()->driver);
+    }
+
+    public function test_a_planned_change_goes_to_the_owners_tool_from_its_plan_without_planning_again()
+    {
+        $plan = ['summary' => 'Teams have a description.', 'acceptance_criteria' => [], 'cases' => [], 'written_tests' => [], 'written_files' => [], 'assumptions' => [], 'tasks' => [], 'steps' => [], 'acceptance' => [], 'solution_key' => null];
+        $answers = [['question' => 'Who can see it?', 'answer' => 'Members']];
+
+        foreach ([[RunStatus::Failed, FeatureRequestStatus::Failed], [RunStatus::Implementing, FeatureRequestStatus::Generating]] as [$status, $requestStatus]) {
+            $change = $this->change($status, $requestStatus, attributes: ['plan' => $plan, 'answers' => $answers]);
+            $ours = $change->latestRun()->firstOrFail();
+
+            $this->actingAs($this->owner)
+                ->post(route('feature-requests.worker.store', $change))
+                ->assertRedirect(route('projects.show', ['project' => $this->project, 'change' => $change->uuid]));
+
+            $run = $change->refresh()->latestRun()->firstOrFail();
+            $this->assertNotSame($ours->id, $run->id);
+            $this->assertSame(['worker', RunStatus::Implementing, $plan, $answers], [$run->driver, $run->status, $run->plan, $run->answers]);
+            $this->assertSame(0, FeatureRequest::query()->where('retry_of_id', $change->id)->count());
+            // Their tool writes the whole change, so no code is laid on for it.
+            $this->assertFalse($run->events()->where('type', 'resumed')->firstOrFail()->data['made_so_far']);
+            $this->assertSame(FeatureRequestStatus::Generating, $change->status);
+            $this->assertTrue($ours->refresh()->status->finished());
+            Queue::assertPushed(ExecuteRun::class, fn (ExecuteRun $job) => $job->run->is($run));
+        }
+    }
+
+    public function test_a_made_change_or_one_waiting_for_an_answer_is_not_handed_over()
+    {
+        $made = $this->change(RunStatus::Completed, FeatureRequestStatus::Generated);
+        $asking = $this->change(RunStatus::NeedsUserDecision, FeatureRequestStatus::Generating, attributes: ['question' => ['text' => 'Who can see it?', 'why' => '', 'options' => ['Everyone', 'Members'], 'recommended' => 'Members']]);
+
+        foreach ([$made, $asking] as $change) {
+            $this->actingAs($this->owner)
+                ->post(route('feature-requests.worker.store', $change))
+                ->assertSessionHasErrors('worker');
+        }
+
+        $this->assertSame(2, $this->project->featureRequests()->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_only_the_owner_can_hand_a_change_over()
+    {
+        $ours = $this->change(RunStatus::Planning, FeatureRequestStatus::Generating);
+
+        $this->actingAs(User::factory()->create())
+            ->post(route('feature-requests.worker.store', $ours))
+            ->assertForbidden();
+
+        $this->assertSame(0, Run::query()->where('driver', 'worker')->count());
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function change(RunStatus $status, FeatureRequestStatus $requestStatus, string $driver = 'scripted', array $attributes = []): FeatureRequest
+    {
+        $featureRequest = FeatureRequest::factory()->for($this->project)->create(['status' => $requestStatus, 'prompt' => 'Give teams a description.']);
+        Run::factory()->for($featureRequest)->create(['status' => $status, 'driver' => $driver] + $attributes);
+
+        return $featureRequest;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function plan(string $summary): array
+    {
+        return (new Plan(summary: $summary, acceptanceCriteria: ['It works.'], tasks: ['Do it.']))->toArray();
+    }
+
+    /**
+     * Call one of the app's tools as the Claude app would, signed in as
+     * the person.
+     */
+    protected function appTool(User $user, string $tool): TestResponse
+    {
+        auth()->forgetGuards();
+        Passport::actingAs($user, [Registrar::OAUTH_SCOPE]);
+
+        return $this->postJson(route('mcp.app', ['project' => $this->project->uuid]), ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => []]]);
+    }
+
+    /**
+     * Call one of the change's tools as the owner's Claude Code or Codex would.
+     */
+    protected function tool(string $tool, string $token): TestResponse
+    {
+        auth()->forgetGuards();
+
+        return $this->withHeaders(['Authorization' => "Bearer {$token}"])
+            ->postJson(route('mcp.task'), ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => $tool, 'arguments' => []]]);
+    }
+}

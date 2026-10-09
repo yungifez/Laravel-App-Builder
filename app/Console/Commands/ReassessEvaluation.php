@@ -110,7 +110,7 @@ class ReassessEvaluation extends Command
         /** @var list<array{name: string, stage: string, outcome: string, output?: string}> $verificationResults */
         return [...$review, 'preserved' => $assessPreservation->handle(
             $plan,
-            ChangeClassification::fromArray($classification),
+            ChangeClassification::fromArray($classification + ['observed' => null, 'notes_behind' => []]),
             $context,
             $verificationResults,
             new Review((bool) ($review['approved'] ?? false), (string) ($review['summary'] ?? ''), $findings),

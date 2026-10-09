@@ -18,7 +18,7 @@ class FakeCodingAgent implements CodingAgent
     public array $tasks = [];
 
     /**
-     * @param  Closure(Workspace, AgentTask): AgentOutcome  $behaviour
+     * @param  Closure(Workspace, AgentTask, (Closure(): void)|null): AgentOutcome  $behaviour
      */
     public function __construct(
         protected string $provider,
@@ -30,10 +30,10 @@ class FakeCodingAgent implements CodingAgent
         return $this->provider;
     }
 
-    public function run(Workspace $workspace, AgentTask $task): AgentOutcome
+    public function run(Workspace $workspace, AgentTask $task, ?Closure $whileRunning = null): AgentOutcome
     {
         $this->tasks[] = $task;
 
-        return ($this->behaviour)($workspace, $task);
+        return ($this->behaviour)($workspace, $task, $whileRunning);
     }
 }

@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceCommand;
 use App\Workspaces\Exceptions\WorkspaceBusyException;
 use App\Workspaces\WorkspaceManager;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -27,13 +28,16 @@ class RunWorkspaceCommand
      * of their workspaces, so one customer app cannot take over the hosts.
      *
      * Environment variables are given to the command only and never stored.
+     * "whileRunning" is called while the command runs; when it throws, the
+     * command is stopped and nothing is recorded.
      *
      * @param  list<string>  $command
      * @param  array<string, string>  $environment
+     * @param  (Closure(): void)|null  $whileRunning
      *
      * @throws WorkspaceBusyException when no command slot frees up in time.
      */
-    public function handle(Workspace $workspace, array $command, ?int $timeoutSeconds = null, array $environment = []): WorkspaceCommand
+    public function handle(Workspace $workspace, array $command, ?int $timeoutSeconds = null, array $environment = [], ?Closure $whileRunning = null): WorkspaceCommand
     {
         if ($workspace->status !== WorkspaceStatus::Ready || $workspace->driver_id === null) {
             throw new InvalidArgumentException("Workspace [{$workspace->id}] is not ready.");
@@ -47,7 +51,7 @@ class RunWorkspaceCommand
             ->releaseAfter($timeoutSeconds + 60)
             ->block((int) config('workspaces.commands.wait_seconds'))
             ->then(
-                fn () => $this->run($workspace, $command, $timeoutSeconds, $environment),
+                fn () => $this->run($workspace, $command, $timeoutSeconds, $environment, $whileRunning),
                 fn () => throw WorkspaceBusyException::forOwner($workspace->user_id),
             );
     }
@@ -65,11 +69,12 @@ class RunWorkspaceCommand
      *
      * @param  list<string>  $command
      * @param  array<string, string>  $environment
+     * @param  (Closure(): void)|null  $whileRunning
      */
-    protected function run(Workspace $workspace, array $command, int $timeoutSeconds, array $environment): WorkspaceCommand
+    protected function run(Workspace $workspace, array $command, int $timeoutSeconds, array $environment, ?Closure $whileRunning): WorkspaceCommand
     {
         $result = $this->workspaces->driver($workspace->driver)
-            ->exec((string) $workspace->driver_id, $command, $timeoutSeconds, $environment);
+            ->exec((string) $workspace->driver_id, $command, $timeoutSeconds, $environment, $whileRunning);
 
         $workspace->update(['last_activity_at' => now()]);
 
@@ -79,6 +84,7 @@ class RunWorkspaceCommand
             'command' => $command,
             'exit_code' => $result->exitCode,
             'timed_out' => $result->timedOut,
+            'lost' => $result->lost,
             'duration_ms' => $result->durationMs,
             'output' => $this->tail($result->output, $limit),
             'error_output' => $this->tail($result->errorOutput, $limit),

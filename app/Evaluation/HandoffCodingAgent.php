@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Runs\Agents\AgentOutcome;
 use App\Runs\Agents\AgentTask;
 use App\Runs\Contracts\CodingAgent;
+use Closure;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -26,7 +27,7 @@ class HandoffCodingAgent implements CodingAgent
         return 'anthropic';
     }
 
-    public function run(Workspace $workspace, AgentTask $task): AgentOutcome
+    public function run(Workspace $workspace, AgentTask $task, ?Closure $whileRunning = null): AgentOutcome
     {
         if ($workspace->driver !== 'local' || $workspace->driver_id === null) {
             throw new RuntimeException('The hand-off coding agent works only in local workspaces.');

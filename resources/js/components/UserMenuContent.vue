@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3';
-import { LogOut, Settings } from '@lucide/vue';
+import { Link, router, usePage } from '@inertiajs/vue3';
+import { Activity, LogOut, Settings } from '@lucide/vue';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import TechnicalDetailsItem from '@/components/TechnicalDetailsItem.vue';
 import UserInfo from '@/components/UserInfo.vue';
 import { logout } from '@/routes';
+import { attention } from '@/routes/operations';
 import { edit } from '@/routes/profile';
 import type { User } from '@/types';
 
@@ -21,6 +23,8 @@ const handleLogout = () => {
 };
 
 defineProps<Props>();
+
+const page = usePage();
 </script>
 
 <template>
@@ -32,22 +36,34 @@ defineProps<Props>();
     <DropdownMenuSeparator />
     <DropdownMenuGroup>
         <DropdownMenuItem :as-child="true">
-            <Link class="block w-full cursor-pointer" :href="edit()" prefetch>
-                <Settings class="mr-2 h-4 w-4" />
+            <Link class="w-full cursor-pointer" :href="edit()" prefetch>
+                <Settings class="size-4" />
                 Settings
+            </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem v-if="page.props.auth.operator" :as-child="true">
+            <Link
+                class="w-full cursor-pointer"
+                :href="attention()"
+                data-test="operations-link"
+            >
+                <Activity class="size-4" />
+                Operations
             </Link>
         </DropdownMenuItem>
     </DropdownMenuGroup>
     <DropdownMenuSeparator />
+    <TechnicalDetailsItem />
+    <DropdownMenuSeparator />
     <DropdownMenuItem :as-child="true">
         <Link
-            class="block w-full cursor-pointer"
+            class="w-full cursor-pointer"
             :href="logout()"
             @click="handleLogout"
             as="button"
             data-test="logout-button"
         >
-            <LogOut class="mr-2 h-4 w-4" />
+            <LogOut class="size-4" />
             Log out
         </Link>
     </DropdownMenuItem>

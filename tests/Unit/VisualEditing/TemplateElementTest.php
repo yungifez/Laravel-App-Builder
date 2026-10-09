@@ -1,0 +1,127 @@
+<?php
+
+namespace Tests\Unit\VisualEditing;
+
+use App\VisualEditing\TemplateElement;
+use PHPUnit\Framework\TestCase;
+
+class TemplateElementTest extends TestCase
+{
+    protected const TEMPLATE = <<<'VUE'
+        <template>
+            <div class="flex gap-4" data-x='a > b'>
+                <Button
+                    variant="outline"
+                    class="w-full"
+                    @click="save"
+                >Save</Button>
+                <span :class="{ 'opacity-50': busy }">Busy</span>
+                <p :class="cn('text-sm p-2', props.class)">Hi</p>
+                <hr />
+            </div>
+        </template>
+        VUE;
+
+    public function test_it_finds_a_static_class_at_the_line_and_column()
+    {
+        $element = TemplateElement::at(self::TEMPLATE, 2, 5);
+
+        $this->assertSame('div', $element->tag);
+        $this->assertSame('flex gap-4', $element->classes['value']);
+        $this->assertTrue($element->editable());
+        $this->assertStringContainsString('<div class="flex gap-6" data-x=\'a > b\'>', $element->withClasses(self::TEMPLATE, 'flex gap-6'));
+    }
+
+    public function test_it_reads_attributes_across_lines_on_a_component()
+    {
+        $element = TemplateElement::at(self::TEMPLATE, 3, 9);
+
+        $this->assertSame('Button', $element->tag);
+        $this->assertSame('w-full', $element->classes['value']);
+        $this->assertSame('@click="save"'."\n        >", substr(self::TEMPLATE, $element->end - 23, 23));
+    }
+
+    public function test_a_class_binding_is_editable_only_through_a_literal_cn_string()
+    {
+        $bound = TemplateElement::at(self::TEMPLATE, 8, 9);
+        $helper = TemplateElement::at(self::TEMPLATE, 9, 9);
+
+        $this->assertFalse($bound->editable());
+        $this->assertNull($bound->classes);
+        $this->assertTrue($helper->editable());
+        $this->assertSame('text-sm p-2', $helper->classes['value']);
+        $this->assertStringContainsString("cn('text-sm p-4', props.class)", $helper->withClasses(self::TEMPLATE, 'text-sm p-4'));
+    }
+
+    public function test_an_element_without_classes_gets_a_class_attribute()
+    {
+        $element = TemplateElement::at(self::TEMPLATE, 10, 9);
+
+        $this->assertTrue($element->editable());
+        $this->assertStringContainsString('<hr class="my-4" />', $element->withClasses(self::TEMPLATE, 'my-4'));
+    }
+
+    public function test_a_class_attribute_left_with_no_classes_goes_and_none_is_added_empty()
+    {
+        $button = TemplateElement::at(self::TEMPLATE, 3, 9);
+        $helper = TemplateElement::at(self::TEMPLATE, 9, 9);
+        $rule = TemplateElement::at(self::TEMPLATE, 10, 9);
+
+        $this->assertStringContainsString("<Button\n            variant=\"outline\"\n            @click=\"save\"", $button->withClasses(self::TEMPLATE, ''));
+        $this->assertStringContainsString("cn('', props.class)", $helper->withClasses(self::TEMPLATE, ''));
+        $this->assertSame(self::TEMPLATE, $rule->withClasses(self::TEMPLATE, ' '));
+    }
+
+    public function test_nothing_is_found_where_no_tag_starts()
+    {
+        $this->assertNull(TemplateElement::at(self::TEMPLATE, 2, 6));
+        $this->assertNull(TemplateElement::at(self::TEMPLATE, 99, 1));
+    }
+
+    public function test_it_reads_a_blade_start_tag_whose_php_holds_a_closing_bracket()
+    {
+        $blade = <<<'BLADE'
+            <div {{ $attributes->merge(['id' => 'x']) }} class="p-4 @container">
+                <span @class(['font-bold' => $count > 1]) class="text-sm">Hi</span>
+                <p class="mt-2 {{ $user->active ? 'text-green-600' : '' }}">On</p>
+                <x-button wire:click="save" @click="open = true" class="w-full">Save</x-button>
+            </div>
+            BLADE;
+
+        $box = TemplateElement::at($blade, 1, 1);
+        $this->assertSame(['div', 'p-4 @container', true], [$box->tag, $box->classes['value'], $box->editable()]);
+        $this->assertSame(strpos($blade, "\n") + 0, $box->end);
+
+        // Classes the app chooses with Blade are left to the coding agent.
+        $this->assertFalse(TemplateElement::at($blade, 2, 5)->editable());
+        $this->assertFalse(TemplateElement::at($blade, 3, 5)->editable());
+
+        $button = TemplateElement::at($blade, 4, 5);
+        $this->assertSame(['x-button', 'w-full', true], [$button->tag, $button->classes['value'], $button->editable()]);
+    }
+
+    public function test_the_first_entry_of_a_blade_class_list_is_edited_when_it_holds_in_every_state()
+    {
+        $blade = <<<'BLADE'
+            <li @class(['flex gap-2 p-4', 'font-bold' => $active, 'opacity-50' => $done])>A</li>
+            <li @class(["rounded-md", $extra])>B</li>
+            <li @class(['font-bold' => $active, 'p-4'])>C</li>
+            <li @class([$base, 'p-4'])>D</li>
+            <li @class(["p-{$size}"])>E</li>
+            BLADE;
+
+        $item = TemplateElement::at($blade, 1, 1);
+        $this->assertSame(['flex gap-2 p-4', true], [$item->classes['value'], $item->editable()]);
+        $this->assertStringStartsWith("<li @class(['flex gap-2 p-8', 'font-bold' => \$active", $item->withClasses($blade, 'flex gap-2 p-8'));
+
+        $quoted = TemplateElement::at($blade, 2, 1);
+        $this->assertSame(['rounded-md', true], [$quoted->classes['value'], $quoted->editable()]);
+        $this->assertStringContainsString('<li @class(["rounded-lg", $extra])>B</li>', $quoted->withClasses($blade, 'rounded-lg'));
+
+        // An entry with a condition, or classes the app works out, are the
+        // app's to choose.
+        foreach ([3, 4, 5] as $line) {
+            $this->assertFalse(TemplateElement::at($blade, $line, 1)->editable(), "line {$line}");
+        }
+    }
+}

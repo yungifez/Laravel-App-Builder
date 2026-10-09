@@ -16,6 +16,21 @@ trait PreparesRuns
     use BuildsInLocalWorkspaces;
 
     /**
+     * Get the files that make a source a Laravel app with Inertia and Vue,
+     * which is what the builder imports.
+     *
+     * @return array<string, string>
+     */
+    protected function laravelApp(): array
+    {
+        return [
+            'artisan' => "#!/usr/bin/env php\n<?php\n",
+            'composer.json' => json_encode(['require' => ['laravel/framework' => '^13.0', 'inertiajs/inertia-laravel' => '^3.0']], JSON_THROW_ON_ERROR),
+            'package.json' => json_encode(['dependencies' => ['vue' => '^3.5', '@inertiajs/vue3' => '^3.0']], JSON_THROW_ON_ERROR),
+        ];
+    }
+
+    /**
      * Write a small project source and return its directory.
      *
      * @param  array<string, string>  $files

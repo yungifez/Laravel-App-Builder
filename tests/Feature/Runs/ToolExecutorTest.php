@@ -173,6 +173,10 @@ PATCH;
             '.git/config' => 'is protected',
             'vendor/autoload.php' => 'is protected',
             '.env' => 'is protected',
+            'phpunit.xml' => 'is protected',
+            'tests/Pest.php' => 'is protected',
+            'phpstan.neon' => 'is protected',
+            '.github/workflows/tests.yml' => 'is protected',
             '../outside.php' => 'must stay inside the project',
             'app/../../outside.php' => 'must stay inside the project',
             '/etc/passwd' => 'must be relative to the project root',
@@ -315,7 +319,7 @@ PATCH], expectedRevision: 0);
 
     public function test_the_run_stops_when_its_operation_or_time_budget_is_used()
     {
-        config(['builder.construction.budgets.operations' => 2]);
+        config(['builder.construction.budgets.operations' => 2, 'builder.construction.budgets.minutes' => 20]);
         [$run, $lease] = $this->implementingRun();
 
         $this->tools->execute($lease, 'op-1', 'list_files');

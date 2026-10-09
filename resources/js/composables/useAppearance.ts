@@ -79,6 +79,10 @@ export function initializeTheme(): void {
     const savedAppearance = getStoredAppearance();
     updateTheme(savedAppearance || 'system');
 
+    // The server draws the first page from the cookie, so it follows the
+    // choice saved here and the next page does not start in the other theme.
+    setCookie('appearance', savedAppearance || 'system');
+
     // Set up system theme change listener...
     mediaQuery()?.addEventListener('change', handleSystemThemeChange);
 }

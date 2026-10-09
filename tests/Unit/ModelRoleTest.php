@@ -11,12 +11,10 @@ class ModelRoleTest extends TestCase
     {
         config([
             'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'frontier-model'],
-            'builder.models.coder' => ['provider' => 'openai', 'model' => 'economical-model'],
             'builder.models.reviewer' => ['provider' => 'gemini', 'model' => 'review-model'],
         ]);
 
         $this->assertSame(['anthropic', 'frontier-model'], [ModelRole::Planner->provider(), ModelRole::Planner->model()]);
-        $this->assertSame(['openai', 'economical-model'], [ModelRole::Coder->provider(), ModelRole::Coder->model()]);
         $this->assertSame(['gemini', 'review-model'], [ModelRole::Reviewer->provider(), ModelRole::Reviewer->model()]);
     }
 
@@ -24,10 +22,23 @@ class ModelRoleTest extends TestCase
     {
         config([
             'ai.default' => 'openai',
-            'builder.models.coder' => ['provider' => null, 'model' => ''],
+            'builder.models.reviewer' => ['provider' => null, 'model' => ''],
         ]);
 
-        $this->assertSame('openai', ModelRole::Coder->provider());
-        $this->assertNull(ModelRole::Coder->model());
+        $this->assertSame('openai', ModelRole::Reviewer->provider());
+        $this->assertNull(ModelRole::Reviewer->model());
+    }
+
+    public function test_a_role_fails_over_to_the_other_providers_that_have_a_key()
+    {
+        config([
+            'builder.models.planner' => ['provider' => 'anthropic', 'model' => 'frontier-model'],
+            'builder.models.failover' => ['openai', 'anthropic', 'gemini'],
+            'ai.providers.openai.key' => 'openai-test-key',
+            'ai.providers.anthropic.key' => 'anthropic-test-key',
+            'ai.providers.gemini.key' => null,
+        ]);
+
+        $this->assertSame(['anthropic' => 'frontier-model', 'openai' => null], ModelRole::Planner->providers());
     }
 }

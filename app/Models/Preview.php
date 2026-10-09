@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Enums\PreviewStatus;
+use App\Models\Concerns\HasPublicId;
+use App\VisualEditing\DesignDrafts;
 use Carbon\CarbonImmutable;
 use Database\Factories\PreviewFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -11,15 +13,22 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * A running copy of the project with a feature request's change applied,
- * served on its own host so it cannot share the control plane's origin.
+ * A running copy of the project, served on its own host so it cannot share
+ * the control plane's origin. It runs a feature request's change, or, with
+ * no feature request, the project at a revision. An editable preview marks
+ * each element with its source, for point-and-edit.
  *
  * Owners reach it through a short-lived, single-use grant that becomes a
  * session cookie scoped to the preview host.
  *
  * @property int $id
- * @property int $feature_request_id
+ * @property string $uuid Names the row in links and requests
+ * @property int $project_id
+ * @property int|null $feature_request_id
  * @property int|null $workspace_id
+ * @property string|null $revision The project commit a project preview runs
+ * @property bool $editable Whether elements carry their source location
+ * @property bool $watching Whether the frontend build runs in watch mode, so a rebuild only moves the changed files in
  * @property string $host The preview's subdomain label
  * @property PreviewStatus $status
  * @property int|null $port
@@ -29,18 +38,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $session_hash
  * @property CarbonImmutable|null $session_expires_at
  * @property string|null $error
+ * @property bool $no_longer_fits The app changed after the change was made, so the change could not be put onto it
  * @property CarbonImmutable|null $ready_at
+ * @property CarbonImmutable|null $rebuilt_at
  * @property CarbonImmutable|null $last_seen_at
  * @property CarbonImmutable|null $expires_at
  * @property CarbonImmutable|null $stopped_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['workspace_id', 'host', 'status', 'port', 'upstream_url', 'grant_hash', 'grant_expires_at', 'session_hash', 'session_expires_at', 'error', 'ready_at', 'last_seen_at', 'expires_at', 'stopped_at'])]
+#[Fillable(['project_id', 'feature_request_id', 'revision', 'editable', 'watching', 'rebuilt_at', 'workspace_id', 'host', 'status', 'port', 'upstream_url', 'grant_hash', 'grant_expires_at', 'session_hash', 'session_expires_at', 'error', 'no_longer_fits', 'ready_at', 'last_seen_at', 'expires_at', 'stopped_at'])]
 class Preview extends Model
 {
     /** @use HasFactory<PreviewFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.
@@ -54,7 +67,11 @@ class Preview extends Model
             'port' => 'integer',
             'grant_expires_at' => 'datetime',
             'session_expires_at' => 'datetime',
+            'editable' => 'boolean',
+            'watching' => 'boolean',
+            'no_longer_fits' => 'boolean',
             'ready_at' => 'datetime',
+            'rebuilt_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'expires_at' => 'datetime',
             'stopped_at' => 'datetime',
@@ -62,13 +79,46 @@ class Preview extends Model
     }
 
     /**
-     * Get the feature request whose change the preview runs.
+     * Get the project the preview runs.
+     *
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * Get the feature request whose change the preview runs, if any.
      *
      * @return BelongsTo<FeatureRequest, $this>
      */
     public function featureRequest(): BelongsTo
     {
         return $this->belongsTo(FeatureRequest::class);
+    }
+
+    /**
+     * Get the change that design edits on the preview go into: the change
+     * for a copy of one, else the draft that waits on the app, if any.
+     */
+    public function designing(): ?FeatureRequest
+    {
+        if ($this->feature_request_id !== null) {
+            return $this->featureRequest;
+        }
+
+        return $this->editable ? app(DesignDrafts::class)->find($this->project) : null;
+    }
+
+    /**
+     * Get the branch the preview runs and design edits on it go to: the
+     * change's design branch, or the draft's while one waits on the app,
+     * else the branch the owner works on.
+     */
+    public function branch(): string
+    {
+        return $this->designing()?->designBranch() ?? $this->project->branch();
     }
 
     /**
@@ -79,6 +129,22 @@ class Preview extends Model
     public function workspace(): BelongsTo
     {
         return $this->belongsTo(Workspace::class);
+    }
+
+    /**
+     * Get the environment the app runs with. The keys for the app's outside
+     * services come first, so the preview's own settings win: a preview
+     * never sends real email.
+     *
+     * @return array<string, string>
+     */
+    public function environment(): array
+    {
+        /** @var array<string, string> $environment */
+        $environment = [...$this->project->serviceEnvironment(), ...config('builder.preview.environment', [])];
+        $environment['APP_URL'] = rtrim($this->url(), '/');
+
+        return $environment;
     }
 
     /**

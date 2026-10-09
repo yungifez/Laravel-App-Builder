@@ -1,6 +1,6 @@
 # Architecture
 
-**Version 18.** This document consolidates the direction in [direction/](direction/)
+**Version 37.** This document consolidates the direction in [direction/](direction/)
 into one architecture. Version 7 adds the "convention over generation"
 reassessment ([§24](#24-convention-over-generation-reassessment)), aligns the
 product ontology, removes implementation details from the product model, and
@@ -30,12 +30,90 @@ factories. Version 15 makes visual editing concrete
 ([§26.12](#2612-visual-properties-on-a-tailwind-substrate-version-15)):
 human-readable properties, written as clean Tailwind with the app's own
 merge, no model call. **Version 16 sets the V1 plan ([§27](#27-v1-plan-version-16)), which wins
-over §21 and §26 for V1.** Version 17 adds the Codex SDK as the OpenAI
-failover agent (§27.4), and positioning with a standard for judging
-competitors by effect, not label (§27.10). Version 18 hosts the control plane
-on Laravel Cloud and the runtimes and previews on runner servers managed with
-Forge ([§28](#28-hosting-control-plane-on-laravel-cloud-runtimes-on-forge-version-18)),
-which answers the sandbox provider decision for V1. When they disagree, the direction documents state intent
+over §21 and §26 for V1.** Version 17 adds the Grandma-first rule and its
+translation layer ([§28](#28-grandma-first-the-translation-layer-version-17)): no
+internal noun in the default UI, and the differentiators that follow from
+maintained product understanding, ranked for after V1. Version 18 frames people
+in the loop as leverage, not fallback ([§29](#29-human-judgment-where-it-has-leverage-version-18)):
+developer guidance lives in the notes and reaches every later change. Version 19 names the
+product a software stewardship platform ([§30](#30-software-stewardship-version-19)):
+three primitives (notes, Change Records, evidence) and no new entities. Version 20 adds
+that complexity moves upward ([§31](#31-complexity-moves-upward-version-20)): knowledge
+is not enforcement, constraints graduate into checks, and human interventions are
+measured. Version 21 makes tests the bridge between product meaning and code
+([direction 22](direction/22-tests-as-the-semantic-bridge.md)): Effects gain
+evidence from test execution ([§6](#effects), [§26.4](#264-effects)), verification is
+scoped by risk and never by diff size, and publishing always runs the full checks
+([§12](#12-verification)). Version 22 makes assumptions first-class inside and
+one question outside ([direction 23](direction/23-assumptions.md),
+[§7](#when-to-ask-the-decision-check)): existing assumptions are questioned before new
+ones, evidence resolves what it can, and the owner sees the one question where
+being wrong matters most. Version 23 makes the engine a lightweight goal-directed
+control plane over a real Laravel application
+([direction 24](direction/24-goal-directed-control-plane.md)): Laravel is most of
+the formal system ([§1](#1-principles), [§4](#4-two-ontologies)), every change runs
+a closed loop that compares the result with the goal ([§9](#9-the-change-pipeline)),
+and symbolic planners and duplicated models of the app are ruled out
+([§20](#20-deliberately-not-built-yet)). Version 24 makes pricing Grandma-first
+([direction 25](direction/25-pricing-for-grandma.md), [§16](#16-model-gateway-and-credentials)):
+one unified price by default, and pay as you go for power users. Version 25 makes V1
+the smallest complete evolution loop ([direction 26](direction/26-evolution-loop-and-design-contract.md)):
+publishing ends in smoke checks and a plain health state, product concepts keep stable
+keys shared by tests and Change Records, soft requirements climb the same ladder from
+checks to judgment ([§12](#12-verification)), and each app gets a design contract
+([§7](#design-context)); the demo is evolution, not generation ([§27](#27-v1-plan-version-16)). Version 26 moves
+every workspace into its own disposable box from any provider behind the runtime contract
+([direction 27](direction/27-workspace-boxes.md), [§11](#adapters)): keys, git credentials
+and our instructions stay outside the box, and local development only stands in for it. Version 27 puts
+publishing behind the same kind of contract ([direction 28](direction/28-publishing-hosts.md),
+[§27.1](#271-what-proves-the-differentiation)): any host can serve a published app, and Grandma's apps
+publish to Laravel Cloud by default. Version 28 adds delegation by certainty
+([direction 29](direction/29-delegation.md), [§9](#delegation-by-certainty)): for reliability,
+the planner states the data shape once, deterministic scaffolds build the parts
+it fixes, one coding agent keeps every seam, and small models only repair what a
+local check can judge. Version 29 ties compatibility to whether anyone uses the app
+([direction 30](direction/30-backwards-compatibility.md), [§9](#compatibility-follows-the-apps-life)):
+an app that has never been online is changed in place, and a live app moves its
+data forward with a migration before it keeps an old way alongside the new one.
+The owner sees this as a switch and can set it either way. Version 30 adds
+ready-made services ([§17](#outside-services-and-their-keys)): the owner pastes
+the keys for payments or email, and the app is changed to use them.
+Version 31 puts every worker, ours or the owner's own Claude Code or Codex,
+behind one boundary ([direction 31](direction/31-external-workers.md),
+[§11](#workers-one-boundary-for-ours-and-theirs)): a brief that is written
+to be read, and a few MCP tools scoped to one change by a token. The secret
+is our machinery, not the owner's knowledge of their own app.
+Version 32 makes more of the proof independent of the model
+([direction 32](direction/32-deterministic-verification-engines.md),
+[§12](#12-verification)): the app is run with and without the change, so a
+test the change added counts only when it fails without the change, and what
+the app saves and sends is recorded while its tests run. One failure at a
+time is then caused where the change sends or saves, to show what the app
+leaves behind. None of this keeps the owner waiting.
+Version 33 adds the boundary rules
+([direction 33](direction/33-architecture-boundaries-and-chaos.md),
+[§12](#12-verification)): the recorder names the part of the request each
+effect ran in, and the change's code may not save or send while Laravel
+checks who may act, checks the input or builds the answer. The files that
+decide how the app is checked are protected from coding workers.
+Version 34 decides formats once
+([direction 34](direction/34-format-policy.md),
+[§9](#formats-decided-once-then-generated)): a phone number, a postal code
+or an amount of money is a field type with a few settings, kept in the
+notes, and the scaffold generates its rule, stored form and tests.
+Version 35 keeps the Product Behavior Graph as hidden machinery, not a screen
+([§6](#6-product-behavior-graph)): owners do not browse a map of their app.
+They see a plain sentence under each change, a question when a change breaks
+one of their rules, and answers to their own questions. The graph stays
+deferred ([§26.8](#268-deferred-and-what-would-bring-each-back)).
+Version 36 adds the Codex SDK as the OpenAI failover agent (§27.4), and
+positioning with a standard for judging competitors by effect, not label
+([§27.10](#2710-positioning-and-competitors-version-36)). Version 37 hosts the
+control plane on Laravel Cloud and the runtimes and previews on runner servers
+managed with Forge
+([§32](#32-hosting-control-plane-on-laravel-cloud-runtimes-on-forge-version-37)),
+which answers the sandbox provider decision for V1.
+When they disagree, the direction documents state intent
 and this document states the current design; raise the disagreement rather than
 silently following either.
 
@@ -66,7 +144,11 @@ silently following either.
 - [Outcomes, measurement and falsification](#25-outcomes-measurement-and-falsification)
 - [V0: what we build now](#26-v0-what-we-build-now-version-10)
 - [V1 plan](#27-v1-plan-version-16)
-- [Hosting: control plane on Laravel Cloud, runtimes on Forge](#28-hosting-control-plane-on-laravel-cloud-runtimes-on-forge-version-18)
+- [Grandma first: the translation layer](#28-grandma-first-the-translation-layer-version-17)
+- [Human judgment where it has leverage](#29-human-judgment-where-it-has-leverage-version-18)
+- [Software stewardship](#30-software-stewardship-version-19)
+- [Complexity moves upward](#31-complexity-moves-upward-version-20)
+- [Hosting: control plane on Laravel Cloud, runtimes on Forge](#32-hosting-control-plane-on-laravel-cloud-runtimes-on-forge-version-37)
 
 ## 1. Principles
 
@@ -80,6 +162,10 @@ silently following either.
    costs more than the interruption.
 3. **Generative models create new information; deterministic tooling propagates
    known information.** Before choosing a model, ask whether a model is needed.
+   Use a model to resolve ambiguity once; use deterministic systems to enforce
+   and verify what was resolved. When software can answer a question (which
+   routes exist, which policy protects an action, which tests run this code,
+   what changed), never ask a model to infer it.
 4. **Our orchestration works at the product level; the agent's works at the
    engineering level.** We decide what changes, what is already known, what
    context and limits apply, and whether the result is acceptable. The agent
@@ -98,6 +184,13 @@ silently following either.
    a rule, package, adapter, verifier or template.
 9. **Say "unknown" rather than guess.** Every user-visible statement carries its
    provenance.
+10. **Laravel is most of the formal system.** Routes, middleware, policies and
+    gates, form requests, models and relationships, migrations, events, jobs,
+    commands, container bindings, configuration and tests are the source of
+    implementation truth. Real software structure outranks our interpretation
+    of it. The product layer holds only what Laravel cannot know: the goal, why
+    something exists, what is assumed, what the owner decided, what must stay
+    true, which behaviours matter to the owner, and what changed in meaning.
 
 ## 2. Positioning: convention over generation
 
@@ -146,8 +239,8 @@ silently following either.
 One system, one application model, two very different users. No modes.
 
 - **Target A, the non-technical owner.** Builds, inspects, understands, approves
-  and maintains an application without learning any software concept. Audits
-  behaviour by browsing, not by asking an AI.
+  and maintains an application without learning any software concept. Checks
+  behaviour by reading what each change does, not by browsing a map of the app.
 - **Target B, the power vibe coder.** Wants visibility and control, but still
   wants AI to do most of the implementation. Drills from behaviour to rules,
   data, permissions, where it happens, implementation, tests and source without
@@ -166,9 +259,12 @@ Depth preference is remembered per user from what they expand. Provenance
 badges appear at every level: "✓ checked by a test", "from your app's code",
 "our description (may be out of date)", "unknown".
 
-Top-level navigation is framework-free and is a set of queries over the Product
-Behavior Graph: **What people can do · What happens automatically · Your data ·
-People & permissions · Connections · History**.
+Top-level navigation is framework-free. It is not a browsable inventory of the
+app (What people can do · Your data · People & permissions · …): owners think
+in outcomes, and a map of the app is reading they do not want. When the graph
+exists, its facts reach the owner only as answers to their own questions, such
+as "Who can see invoices?" ([§6](#6-product-behavior-graph)). Level 2 and
+deeper stay available for Target B.
 
 ## 4. Two ontologies
 
@@ -204,6 +300,13 @@ Rules for the seam:
   (`laravel.route:appointments.cancel`,
   `laravel.policy:App\Policies\AppointmentPolicy@cancel`). Level 4 renders them
   through the profile.
+- **Do not formalize what Laravel already formalizes.** A product rule
+  ("Managers cannot refund over $500") points at the policy or gate that
+  enforces it and the tests that prove it; there is no second authorization
+  model. The same holds for validation (form requests), data (migrations,
+  schema introspection, relationships), background work (events, listeners,
+  jobs, configuration) and impact (test impact analysis, imports, the Vite
+  module graph, listeners, bindings). A copy is kept only to present it.
 - **Do not build a generic multi-framework system.** There is exactly one stack
   profile. The seam exists so that the product model does not become
   Laravel-shaped, not so that we can swap stacks soon.
@@ -216,7 +319,7 @@ USER
 PRODUCT LAYER        views over the Product Behavior Graph, behaviour diffs,
   │                  visual editor, previews, approvals, history
 CONTROL PLANE        (Laravel; this repository)
-  ├── Product Behavior Graph        persistent, derived, small
+  ├── Product Behavior Graph        deferred; hidden machinery when built (§6)
   ├── Project Context               intent, decisions, design, invariants; exported to the app repo
   ├── Change pipeline               classify → operations → execute → verify → explain
   ├── Execution router              per stage, by evidence
@@ -228,7 +331,7 @@ CONTROL PLANE        (Laravel; this repository)
           │
 EXECUTION ADAPTERS
   ├── Agent adapter    claude-agent-sdk · openai · script   (vendor types stop here)
-  └── Runtime adapter  our containers/VMs · bought sandboxes · local runner
+  └── Runtime adapter  any box provider, chosen in config · local runner
           │
 PROJECT RUNTIME      reproducible workspace: repo, PHP, Composer, Node, Postgres,
                      browser, tests, preview server, the runner, builder/introspect
@@ -238,6 +341,26 @@ PROJECT RUNTIME      reproducible workspace: repo, PHP, Composer, Node, Postgres
 
 The persistent representation of what the application does. Small, derived from
 code, rebuilt incrementally, never edited by hand.
+
+**Status (version 35): deferred, and not built.** No graph tables exist.
+Project notes in Markdown and the verification engines do this work today
+([§26.8](#268-deferred-and-what-would-bring-each-back) says what brings it
+back). Hand-written behaviour diffs are the cheap test. Owners must read them
+and catch problems with them. If owners skip them, the graph does not help
+either. When it is built, it is machinery that the owner never browses. It
+reaches the owner in three places only:
+
+1. **Under each change**: one or two plain sentences that say what now
+   behaves differently ("Customers now get an email when a booking is
+   cancelled").
+2. **As a protection**: a question when a change breaks one of the owner's
+   rules ("This change lets customers cancel late. Keep it?").
+3. **As answers**: replies to the owner's own questions ("Who can see
+   invoices?").
+
+Provenance classes (below) decide what may become a hard protection. The owner
+does not see the class names. Facts the owner can act on are shown; AI
+interpretations and unknowns stay behind Details.
 
 ### Contents
 
@@ -266,8 +389,14 @@ engineering graph, built on demand ([Context Compiler](#8-context-compiler)).
 
 ### Behaviour identity and grouping
 
-- A behaviour is one entry handler plus what it causes. It gets an opaque, stable
-  key the first time it is discovered, and an **anchor** (route name, job class,
+- A behaviour is one entry handler plus what it causes. It gets a stable key
+  the first time it is discovered (a readable slug such as `booking.cancel`;
+  journeys and invariants get the same kind of key, such as
+  `tenant.data-isolation`). Tests name the keys they cover and Change Records
+  name the keys they touch, so later runtime evidence can attach to them
+  without a new mapping (direction 26). The key is only a name: what it
+  refers to stays in the notes and in Laravel's own routes, policies and
+  tests, never in a second model of the app. It also gets an **anchor** (route name, job class,
   schedule id or command signature) that re-finds it on each rebuild. Renames
   made by known transforms move the anchor; other re-matches are confirmed, so
   history is never silently broken.
@@ -389,6 +518,21 @@ may also affect billing"), with a strength, a reason and a source. They are
 relevance hints for context, review and verification, never a dependency graph.
 V0 keeps them in capability files; see [§26.4](#264-effects).
 
+Each Effect says why we believe it, from one of four kinds of evidence:
+
+- **Observed:** test execution. A behaviour owns tests; test impact analysis
+  (Pest TIA) records what each test executes; code changed for one behaviour
+  selects tests that belong to another. This is the strongest kind, because it
+  comes from running the application, not from a model.
+- **Static:** framework structure (route → controller, policy → model,
+  event → listener, action → job, component → imported component).
+- **Historical:** accepted changes that repeatedly touched both areas.
+- **Product semantic:** the owner, an expert or a model says the two may
+  interact. Useful, but the weakest.
+
+Observed evidence only covers what tests exercise. A missing test hides a
+relationship, so the absence of evidence never means "no effect" (§12).
+
 ### Storage
 
 Postgres, relational tables plus `jsonb`. No graph database: queries are at most
@@ -418,8 +562,9 @@ contextual questions over time, never through a questionnaire, and never in
 project-management vocabulary. The goal is the feeling "this understands what I
 am building", not "this made me a product manager".
 
-> **Version 10:** V0 stores context as Markdown files in the application
-> (`.builder/`, [§26.3](#263-context-as-markdown-in-the-application)). The
+> **Version 10:** V0 stores context as Markdown files, kept in our database
+> and copied into each workspace
+> ([§26.3](#263-context-as-markdown-in-the-application)). The
 > table below is the later stage, built only when Markdown limits us.
 
 ### Schema (V0)
@@ -478,8 +623,23 @@ outside the platform.
 In the interpret stage, the planner lists the product decisions the task depends
 on. For each one it states whether Project Context answers it, the default it
 would choose, which consequence categories a wrong guess touches, and whether a
-prototype would make the question easier to answer. A deterministic gate then
-decides:
+prototype would make the question easier to answer.
+
+**Existing assumptions come first.** Before it looks for new ambiguity, the
+planner checks, in order: recorded assumptions relevant to the task, those the
+request contradicts, those that became more consequential, and those more of
+the product now depends on. Only then does it look for new ones. "Earlier I
+was working on the assumption that each customer belongs to one location. This
+feature may change that" feels like continuity; a fresh question does not.
+
+**Evidence before questions.** An assumption that code, tests, framework
+introspection, test impact analysis or earlier Change Records can settle is
+settled that way and becomes a fact. The owner is never asked what the
+application can answer.
+
+**Priority is consequence, not uncertainty:** consequence if wrong × difficulty
+to reverse × relevance to this task, with the model's uncertainty only as a
+modifier. A deterministic gate then decides:
 
 | Situation                                                                                                                                            | Action                                                                                                                                                              |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -487,16 +647,40 @@ decides:
 | Engineering decision (controllers, queues, validation, migrations, policies, tests)                                                                  | Decide by convention. Never ask.                                                                                                                                    |
 | Unanswered, wrong guess touches data model, money, permissions, destructive behaviour, external integrations, legal expectations or a major workflow | **Ask before building.** One concise question, multiple choice with a recommended default.                                                                          |
 | Unanswered, easier to judge after seeing it, or low consequence                                                                                      | **Build with the default**, record it as `proposed`, and ask for confirmation in the review ("I set it up so cleaners are assigned automatically. Is that right?"). |
-| Several high-consequence unknowns                                                                                                                    | Ask the minimum set that avoids likely rework, one at a time, most consequential first.                                                                             |
+| Several high-consequence unknowns                                                                                                                    | Ask the most consequential one. The rest wait behind "Ask me more questions", one at a time.                                                                        |
 
 The rule underneath: ask when the cost of a wrong assumption is meaningfully
 greater than the cost of interrupting. The consequence categories come from the
 decision's reach in the Product Behavior Graph and the change class, so the gate
 is mostly mechanical; the model only proposes the decision list and defaults.
+Today the planner tags its one question with what a wrong guess touches,
+whether the owner could switch options later without losing data, money or
+access, and whether the choice is easier to judge after trying the change. The
+run stops only for a hard-to-reverse choice in one of the consequences listed
+in `builder.construction.questions.ask_about`. Otherwise it builds on the
+recommended option and lists that option with the change's other decisions.
+
+**Decisions are sorted by code, not by the model.** The planner tags each
+assumption the same way: what it touches, whether it can be undone, and
+whether it is easier to judge after trying the change. Each text is one short
+line. `Assumption::level()` makes one worth a glance when it touches any
+consequence or cannot be undone; the rest are quiet. The thread gets them in
+reading order: glance ones first, those that cannot be undone first among
+them, then by the most serious consequence (`Consequence::seriousness()`).
+The page does no sorting. What must be decided first stays the one question
+and its gate.
 
 ### Not annoying people
 
-- At most one question before building, for a typical request.
+- **One question by default, depth on demand.** At most one question before
+  building ("One thing I want to confirm"), with "Ask me more questions" for
+  owners who want the rest. No beginner and expert modes: the same page, at two
+  depths.
+- The same pattern serves discovery ("One thing I want to understand"),
+  building ("One thing I want to confirm"), evolution ("Something we assumed
+  earlier may have changed") and expert review ("These are the assumptions most
+  likely to affect this decision"). They are one question: what is the most
+  important thing I do not know yet?
 - Always multiple choice, with a recommended option and "you decide".
 - Never an engineering question; never a question already answered.
 - Post-build confirmations are bundled into the change review, next to the
@@ -683,6 +867,24 @@ Facts derived from the code belong in the Product Behavior Graph, not in Project
 Context. Package guarantees are `package_contract`. Not every sentence becomes
 memory: only durable, product-relevant statements are written.
 
+**Every statement keeps its kind,** so inferences never drift into truth:
+_fact_ (observed or verified: `derived`), _decision_ (the owner chose:
+`confirmed`), _assumption_ (treated as true for now: `proposed` or
+`ai_interpretation`), _guidance_ (a developer recommends), _invariant_ (must
+stay true: a confirmed `constraint`), and _effect_ (may interact). The owner
+never sees these words.
+
+**An assumption's life** is unconfirmed → confirmed (it becomes a decision),
+rejected (a `retracted` entry, and the areas built on it are re-planned), or
+superseded. Nothing is promoted without the owner or evidence.
+
+**Assumption debt** is not the number of unconfirmed assumptions. It is an
+important unconfirmed assumption that more and more of the product depends on,
+counted from the areas and Change Records that used it. When it grows, the
+assumption is raised once, before it gets harder to change: "Quick question
+before this gets harder to change: can a customer ever use more than one
+location?"
+
 ### Versioning
 
 Append-only. A change of mind writes a new entry that supersedes the old one;
@@ -705,9 +907,11 @@ behaviour, permission, workflow and terminology mismatches, and design drift.
 
 ### Contradictions
 
-Two kinds: intent against behaviour ("you said only owners manage billing, but
-administrators can change payment methods"), and new intent against older intent
-at another scope. Both appear as a plain question with two answers, "keep how
+Three kinds: intent against behaviour ("you said only owners manage billing, but
+administrators can change payment methods"), new intent against older intent
+at another scope, and a new request against an earlier assumption ("Something
+we assumed earlier may have changed: your app assumed one location, and you are
+adding a second"). Both appear as a plain question with two answers, "keep how
 it works now" (updates intent) or "change the app to match" (starts a change),
 inline on the behaviour card, in the change review, and in a short "needs your
 decision" list. Neither side is ever corrected automatically.
@@ -723,6 +927,19 @@ component defaults; "large interaction targets" becomes component size
 defaults. What cannot (tone, density intent) goes into agent briefs for UI work
 and sets the visual editor's defaults. The user is never asked to restate
 aesthetic direction.
+
+**Each app has a design contract** (direction 26): a design note, kept like
+every other note, written in constitution form: principles, then rules,
+patterns, tokens, examples and forbidden patterns. It is beefy in coverage and
+short in prose, because the coder reads it on every UI change. A new app's
+contract starts from the design direction the owner picks when creating it
+(one of a few, shown as looks, never as a form about design). Its tokens are
+the app's Tailwind `@theme`, and the coder uses them rather than inventing
+values. Invariants such as "do not add a new pattern when an existing one
+solves the problem" and "do not raise density unless it helps the owner's
+next decision" are part of it. Parts of the contract graduate into checks
+([§12](#12-verification)); what cannot be checked goes to the reviewer. The
+builder's own UI follows the same form in its repository `DESIGN.md`.
 
 ### Hidden agile
 
@@ -770,6 +987,19 @@ Memory is written rarely and cheaply; it is never a rewrite of a summary.
    evidence; an inference is stored as proposed.
 4. **Consolidation** (merging duplicates, marking superseded entries) runs as an
    occasional batch job with a small model.
+5. **Exploring an imported app** is optional. The owner chooses it on the
+   Understanding page after reading its cost in tokens and dollars. Importing
+   never starts it. The facts come without a model:
+    - the code by framework convention (tables, models, emails, jobs,
+      policies, form requests, packages);
+    - the routes with their middleware;
+    - the app's own tests run with coverage, with the code each test file ran.
+
+    The facts are capped, so the cost shown stays true. One planner-tier call
+    words them. A rule is kept only when it names the app file that enforces
+    it. Each part shows how many tests run its code. The owner ticks the parts
+    that are right, and only ticked parts become notes. The coverage is kept,
+    so the page shows what checks each part from then on.
 
 Budget: at most one small-model call per change request for memory. Strong
 models are never used for memory upkeep.
@@ -818,6 +1048,8 @@ Behavior Graph, capability metadata.
 **Algorithm (V0):**
 
 1. Scopes = the target behaviours + their capabilities + the application.
+   Neighbouring behaviours named by the targets' Effects add only their rules,
+   strongest evidence first (§6); never their whole capability.
 2. Resolve effective Project Context for those scopes (§7). Always include every
    confirmed rule, constraint and decision in scope, whatever their size: these
    are what prevent failed trajectories. Include design context only for UI
@@ -833,6 +1065,9 @@ Behavior Graph, capability metadata.
    truncated.
 7. **Log exactly what was included:** entry ids and tokens per section, for the
    experiments in §25.
+8. **Keep each statement's kind** (§7 Provenance): unconfirmed assumptions are
+   rendered as assumptions, never mixed into DECIDED, so the agent cannot
+   mistake an inference for a decision.
 
 Precedents (§7) are compiled only for the interpret stage, as the decisions
 attached to the target scopes, capped. The build stage gets only the chosen
@@ -842,14 +1077,27 @@ dimensions match the work.
 Application essentials form a stable prefix, cached per commit and context
 version. No embeddings or retrieval system in V0: the scope hierarchy is the
 retrieval strategy until an experiment shows it is not enough. The agent can
-still query more through MCP (`context.query`, `introspect.query`,
-`capability.describe`, `transform.apply`, `package.request`, `verify.run`) and
-explore the repository freely; the pack guides, it never imprisons.
+still ask for more through the worker tools
+([§11](#workers-one-boundary-for-ours-and-theirs)) and explore the repository
+freely; the pack guides, it never imprisons. The pack reaches the worker as
+compiled text only: what was included and why stays with us.
 
 The deeper engineering graph for a task is still built on demand in the runtime
 by `builder/introspect --around=<behavior-key>` and discarded after the run.
 
 ## 9. The change pipeline
+
+The pipeline is a closed loop, not a plan executed once. For each substantial
+change the engine knows the **goal** (the outcome wanted), the **current
+behaviour**, the **assumptions** it is making, what to **preserve**, and the
+**effects** worth checking. The agent **acts** inside those limits; the engine
+**observes** with deterministic evidence (introspection, tests, test impact,
+static analysis, the build), **verifies** that the goal is now true and the
+preserved behaviour still holds, and repairs or replans when it is not. The
+accepted result is **recorded** as a Change Record, which is the execution
+trace from intent to verified result (§30.1). Comparing the state with the
+goal after every step is the useful part of goal-directed agents; a formal
+planning language is not needed (§20).
 
 ```
 request (chat, behaviour card, or visual selection)
@@ -860,7 +1108,7 @@ request (chat, behaviour card, or visual selection)
  → deterministic operations                           no model
  → agent tasks                                        execution router → agent adapter
  → normalization                                      curated Rector set + Pint
- → verification                                       §12
+ → verification                                       §12; fail → repair or replan
  → behaviour diff, assumptions to confirm → preview → approvals
  → learn: normalization hits, residuals, failures → candidate queue
 ```
@@ -893,6 +1141,253 @@ operations:
 Deterministic operations run first, agent tasks run on the result, then
 normalization, then verification. Every operation shows its engine in the run
 log. The share of work done without a model is a tracked metric.
+
+### Compatibility follows the app's life
+
+Keeping old behaviour working costs code, tests and attention. It is worth it
+only when something real depends on the old behaviour. So every plan and every
+agent task says which of two stages the app is in:
+
+| Stage        | Known by                                            | What the agent does                                                                                                                                                                                         |
+| ------------ | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Never online | started here from the template, and never published | Changes things in place. Renames, reshapes and removes columns, routes and screens directly. Adds no fallbacks, aliases, old names or "legacy" paths.                                                       |
+| Online       | published at least once, or brought in from outside | Moves forward with a migration that carries the existing data to the new shape. Keeps an old way only when something outside the app depends on it (a saved link, another service calling it), and says so. |
+
+- An imported app counts as online. It may already serve people elsewhere, and
+  guessing wrong there loses data. Starting here is the only proof it has not.
+- Migrations stay additive in both stages: the agent adds a migration, it never
+  edits one that ran. Previews and workspaces have already run the old ones.
+- The stage is a fact the engine knows (the project and its deployments), not
+  a model judgement, so it is deterministic.
+- It is a feature the owner sees, not a hidden rule. "What I know" shows a
+  switch, "Keep old information and links working", with the reason for its
+  current state. The owner can set it either way, for example when nobody
+  uses an imported app yet, and "Decide for me" hands it back to the stage.
+- Every change says which way it was built, and why, next to how it was
+  checked. The choice is recorded on the run when it is planned, so a later
+  switch does not rewrite what an earlier change says.
+- Once published, the stored-data warning when publishing and this rule
+  work together: the migration moves the data, and the owner is told before it
+  runs on the live app.
+
+### Delegation by certainty
+
+Work is split by how certain it is, not by file type. The goal is
+reliability: fewer mismatches between the parts of one change. Cost and speed
+follow from it, and are never traded against it.
+
+1. **The planner states the data shape once.** For a change that stores
+   something new, the plan carries a typed data shape: each record, its
+   fields with types and whether they are required, the fixed choices of an
+   enum, the relations, and who may create, change or remove it. The shape is
+   the single source for every part below, so a field cannot be `phone` in
+   the migration and `phone_number` in the form.
+2. **Deterministic scaffolds build what the shape fixes.** With no model,
+   the `scaffold` operation derives the migration, the model's casts and
+   relations, the factory, the form request's rules, the policy's methods,
+   the resource routes and the tests that guard access ("a guest cannot
+   create a booking"). Types map to rules and columns by a fixed table
+   (`string, required, max 255` → `required|string|max:255`, a `string`
+   column, a factory sentence). The mapping table is tested like any
+   deterministic engine ([§10](#10-deterministic-engines)).
+3. **One coding agent does behaviour and wiring on the result.** What
+   happens on confirm, emails, the screens and edge cases stay with one
+   agent, which reads the scaffold as ordinary code and may change it. It
+   keeps every seam in one head.
+4. **Small models only repair what a local check can judge.** One PHPStan
+   error on one line, a formatting failure, one failing test the model can
+   run again. The check decides whether the repair worked, so a cheap model
+   is safe there and a wrong answer costs one retry
+   ([§11](#execution-router)).
+
+**What is built.** The planner says whether the change stores a new kind of
+record (`new_records`). Only then, after its own question and when the
+message is more than a question, a second agent (`ShapePlanner`, same
+tier) is asked for `data_shape`, from the plan's summary, criteria and
+tasks and the app's models. It is separate because one format holding both
+was too large for the AI service. Its time is kept as a `shape_planned`
+event, and a dropped shape as `shape_dropped`. The shape holds
+each new record with
+typed fields (`string`, `text`, `integer`, `decimal`, `boolean`, `date`,
+`datetime`, `email`, `choice` with its values, `belongs_to` with the model
+it links to). `Plan::dataShape` keeps a shape only when it holds together; a
+broken one is dropped, and the agent then writes those parts as before.
+Before the coding agent starts, `ScaffoldDataShape` writes the migration,
+model, factory and store form request for each record the app does not
+have yet (`App\Scaffolding\Scaffold`, with the type table in `FieldType`).
+It follows the app's own way of naming fillable fields, never writes over a
+file, and skips a record whose model or create migration exists. Each
+record may also say who may view, create, update and delete it: `everyone`,
+`signed_in`, or `creator` (only the person who added it, through its first
+link to `User`). Then the scaffold also writes the policy and a test per
+rule that checks it through the gate ("a guest cannot see a booking", "only
+the person who added a booking can change it"). The form request asks the
+policy, so without access in the shape nobody may create one until the
+agent writes a policy. The brief lists the files under "Files already written from
+the data shape", and the run records them as a `scaffolded` event. A worker
+outside our boxes gets no scaffold, since it works in its own copy. The owner reads the
+shape first among the decisions made for them ("I decided … for you"):
+`ShapeWording` puts the planner's labels for each record and field into fixed
+sentences ("For each booking I keep: who booked, when it starts and a note if
+there is one. Only the person who added a booking can see, change or remove
+it."), so no code name reaches them. Each new record also gets the
+controller actions that add, change and remove one (`store`, `update`,
+`destroy`), with an update form request. Each action asks the policy through
+its form request or the gate. Who added a record is set from the signed-in
+user, and each action sends the person back. Its resource routes go into the
+app's `routes/web.php` in the file's own style (`RouteFile`, which reads the
+file as PHP tokens). A route only signed-in people may use goes in the first
+`auth` group that sets no prefix, name or domain. A route anyone may use goes
+at the end. Where the app has no such group, or already has a route or
+controller by that name, nothing of it is written over or added. The run's
+`scaffolded` event and the brief say what was left and why. The screens stay
+with the coding agent, since they depend on how the app draws its own. Not
+built yet: shapes for records the app already has.
+
+**Rejected: sub-agents by file type.** "A small agent writes the request
+class" moves the risk to the hand-off. To brief it, the larger agent must
+already decide the fields, rules and permissions, which is the hard part; the
+small agent then adds a seam where names and rules drift. It also needs the
+same context the larger agent read, or it guesses. The coding agents we run
+already delegate inside their own harness, which we do not control.
+
+**Owners see the shape.** The data shape is shown in plain words before
+building ("For each booking I keep: who booked, when, and whether it is
+pending, confirmed or cancelled. Only you can confirm."). It is asked about
+only when it is hard to change later ([§7](#when-to-ask-the-decision-check));
+otherwise it is shown with the change, like any assumption.
+
+**Measured, not assumed.** Per change: which scaffolded files the coding
+agent later changed, and why; review findings about mismatches between
+parts; and repairs by small models that a check then refused. A scaffold
+that the agent keeps rewriting is a wrong mapping, fixed in the table, not
+worked around in prompts.
+
+**Status.** V1 plans carry steps (a kind, a file and a symbol), not a typed
+data shape, and there is no `scaffold` operation yet. The first slice: the
+planner returns the shape for data steps, the change card shows it, and a
+scaffold writes only the migration and the form request before the coding
+agent starts.
+
+### Formats: decided once, then generated
+
+Direction 34 ([direction 34](direction/34-format-policy.md)) asks that the
+format of a structured value (a phone number, a postal code, an ISBN, an
+amount of money) is decided once and then generated, not written again by
+each coding agent. This extends delegation by certainty: the fixed type
+table above already turns `email` into a column, a rule, a cast and a
+factory value. A format is one more row in that table, with a few settings.
+
+**A format is a field type with settings.** We do not add a separate policy
+object or language. `FieldType` gains `phone`, `postal_code`, `url`, `isbn`,
+`country`, `money` and `percentage`, beside the existing `email`, `date` and
+`datetime`. A field in the data shape gains `format`: a short map of the
+settings its type needs, and nothing more:
+
+| Type          | Settings                               | Stored as                                                  | Checked by                                        |
+| ------------- | -------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------- |
+| `phone`       | `regions` (ISO codes, or `any`)        | E.164 string                                               | the phone library's rule and cast                 |
+| `postal_code` | `regions`                              | uppercase, one inner space                                 | our table per region, with a loose `any` rule     |
+| `url`         | `schemes` (`https`, or `http,https`)   | the string as typed                                        | Laravel's `url:` rule                             |
+| `isbn`        | `variants` (`10`, `13` or both)        | digits and `X`, no hyphens                                 | our checksum rule                                 |
+| `country`     | none                                   | ISO 3166 alpha-2                                           | `in:` our code list                               |
+| `money`       | `currency` (ISO 4217, or `per_record`) | integer minor units, and a currency column when per record | `integer`, `min:0` unless negatives are asked for |
+| `percentage`  | none                                   | `decimal(5,2)`                                             | `between:0,100`                                   |
+| `pattern`     | `pattern`, `examples`                  | the string as typed                                        | `regex:`, and every example must pass it          |
+
+`pattern` is the escape hatch for the app's own codes ("ABC-2026-00123").
+The planner must give two examples that the pattern accepts. The scaffold
+checks them, so a pattern that refuses its own examples never reaches the
+app. A known type is never written as a `pattern`.
+
+**Libraries own the standards; we own the choice.** Phone numbers use
+`propaganistas/laravel-phone` (libphonenumber), installed in the owner's app
+the first time a phone field is made. It passes the package checks
+([§24.2](#242-recurring-concerns-and-where-they-should-come-from)) like any other
+dependency. Postal codes, ISBN checksums and the country list are small
+tables and rules we keep, because no maintained Laravel package covers them
+better. Money stays integers and Laravel's `Number::currency()` for display;
+no money package.
+
+**What the scaffold writes.** From the same row: the column, the rule in the
+form request, the cast that stores the canonical form, the factory value,
+and a rule class in `app/Rules` where Laravel has none (`ValidIsbn`,
+`ValidPostalCode`). Messages go through the translator as plain sentences
+(`$fail('The :attribute must be a valid ISBN.')->translate()`), as the
+starter kits write theirs, so an app with `lang/` files can translate them
+and an app without them reads well. Input is tolerant: the form accepts
+spaces, hyphens and brackets, and the cast normalises. The scaffold writes no
+input masks. The screens stay with the coding agent, which receives each
+field's type, settings and an example of what a person may type.
+
+**Where a decision is kept.** In the notes, so it is per branch, undone with
+the change, and readable by the owner. `project.md` holds a "Formats"
+section for the whole app ("Phone numbers: any country"). An area's
+`capabilities/*.md` may override it ("Shipping addresses: any country").
+A field's own setting is in the data shape and the code. To find a field's
+setting, we look at the field, then its area, then the project. Each line
+says where it came from: `owner` (answered), `project` or `area`
+(inherited), `app` (read from the app's existing rules) or `standard` (the
+type has one form, such as ISBN). A model guess is never stored as a
+decision. It stays an assumption until the owner keeps it. The
+`context_entries` table in §7 would hold these too, but it is not built,
+and the notes are enough.
+
+**When to ask.** Most formats need no question:
+
+- A type with one standard (`isbn`, `url`, `country`, `percentage`) is
+  decided by the standard.
+- A region type (`phone`, `postal_code`) with a region in the field, the
+  area or the project uses it.
+- A region type with no region known is built loose (`any`). This is shown
+  as one assumption, at the glance level: "Accepts phone numbers from any
+  country · Change". Loose first is safe, because tightening later is a
+  checked change (below), and loose never refuses a real customer.
+- When the area and the project disagree (the project says Canada, the
+  shipping area says the United States), the area wins, because it is more
+  specific. When two sources at the same level disagree, the field is built
+  loose and the conflict is an assumption. It is never settled by a score.
+
+The planner asks first only when the existing gate says so: `money` with
+no currency known touches `money`, so its currency is a question. The
+options come from code, not from the model: the project's currency if one
+is noted, then "Each record has its own currency". The answer is written to
+`project.md` and is not asked again.
+
+**Tightening is a data change.** Widening a format (Canada to any country)
+is safe. Narrowing it, on a column that has rows, can make saved records
+invalid. When the change is checked, before the owner keeps it,
+verification runs the new rule over the running preview's rows and counts
+the ones that fail. Only the count leaves the app. With a count above zero,
+the change keeps the old rule until the owner says otherwise, in plain
+words ("12 saved phone numbers are not from Canada, and the stricter rule
+would turn them away from now on"). With no running preview or no saved
+values, the proof says why nothing was counted.
+
+**Tests come from the table.** Each type has fixed examples: valid,
+invalid, and typed-to-stored pairs ("(250) 555-1234" stores as
+"+12505551234"). The scaffold writes one feature test per record that posts
+them through the record's own route. The form-input probe uses the same
+examples as its valid and wrong-kind values, so a format is probed with
+values that matter, not random strings.
+
+**The agent is held to it.** The brief lists each formatted field and says
+to use the generated rule. A check reads the change's new lines: a `regex:`
+or `preg_match` on a field whose type has a format is a review finding
+("the change wrote its own check for a phone number").
+
+**Chaos and the reviewer judge context.** Code decides the mechanical part:
+the type, the settings, the rule, the stored form and the tests. The
+reviewer (a model) judges what code cannot: two related fields with
+different formats (a billing and a shipping country), a format that is too
+strict for the business described in the notes, or an override that looks
+like a mistake. A format that refuses real input shows up in the errors
+we take in from the published app, and becomes a fix request.
+
+**Not built in the first slice:** formats for fields the app already has
+(read from its rules), keeping the original input beside the canonical one,
+display formatting by locale, tax and registration numbers, and province or
+state codes. These follow when a real app needs them.
 
 ## 10. Deterministic engines
 
@@ -978,6 +1473,55 @@ grades its own work.
   reproducible workspace with our tools, previews and verification.
   Provider-hosted sandboxes can be added later as adapters that declare fewer
   capabilities. A local runner (the user's machine) is a runtime adapter too.
+- **One box per workspace, from any provider.** In production each workspace
+  is its own disposable box: a microVM or an equally strong boundary, never a
+  container that shares a kernel with other customers
+  ([research](../research/workspace-sandboxes.md)). A provider is a runtime
+  adapter selected in `config/workspaces.php`. No code outside that adapter
+  names a vendor, and changing provider changes configuration, not the
+  pipeline. The contract asks only for what every provider offers: create from
+  an image, run a command with a timeout that stops its whole process tree,
+  read and write files, expose a service URL, and destroy. Snapshots, suspend
+  and resume are declared capabilities, never assumptions.
+- **What a box holds:** the customer's repository, the language toolchains and
+  the agent CLI. It never holds control-plane code, our `.env`, database
+  access, provider keys, git credentials or our prompts. The customer's code
+  and tests run in the box, so the customer's code can read anything the box
+  holds.
+- **What stays outside the box:** git goes through the control plane, with a
+  credential scoped to one repository and one branch. Model calls go through
+  the model gateway ([§16](#16-model-gateway-and-credentials)). Outbound
+  traffic is denied, except to package registries and the gateway.
+- **The agent loop runs in the box,** as the SDK agents do today. The
+  alternative is a loop in the control plane that only sends tool calls to the
+  box. It would keep even the harness out, but it rebuilds what the SDKs
+  already do well. We revisit it only if the gateway boundary proves too weak.
+- **How the control plane and a box talk.** The runner in the box
+  (`resources/box-runner`) connects out, so the box accepts no connections
+  and needs nothing from its provider but outbound network. Commands (run a
+  program, write or read a file, unpack the project, start a service) and
+  their results travel over HTTPS, each command claimed exactly once, with a
+  token that opens only that runner's commands. Reverb (Laravel's WebSocket
+  server) only rings the runner's doorbell when work arrives, including a
+  request to stop a command. When the socket is down, the runner polls, so
+  work is delayed, never lost. Commands run as an unprivileged user, and the
+  runner itself as root, so code in the box cannot read the runner's token or
+  stop it. The `runner` workspace driver implements the whole workspace
+  contract this way. A provider adapter only creates boxes, destroys them and
+  says where a box's services are reachable.
+- **Local development stands in for boxes and never replaces them.** In Sail,
+  the `runner` service plays the box through the `static` provider: one runner
+  that is already running, with no project mount, no `.env` and no database,
+  so local runs cross the same boundary. It holds every local workspace under
+  one user, so it is for our trusted fixtures only. The `local` driver still
+  runs workspaces inside the control plane's container. Agents refuse to run
+  there unless `WORKSPACE_LOCAL_AGENTS` allows it for trusted apps.
+- **The `docker` provider tries the box lifecycle locally.** It makes one
+  container per workspace through a small box service that alone holds the
+  Docker socket and can only create, list and remove labelled box containers.
+  Each box gets a runner token derived from its name, so it opens only its own
+  commands. Containers share the host kernel, so this never replaces a
+  microVM provider.
 - **The runner** is a TypeScript process in the runtime that hosts the agent
   engines and speaks the runtime protocol to the control plane over an outbound
   connection: tasks (`transform`, `agent`, `prepare`) in; numbered events
@@ -990,6 +1534,217 @@ grades its own work.
   artifacts and commits (plan, brief, behaviour diff, verification results),
   never raw transcripts.
 
+### Workers: one boundary for ours and theirs
+
+A **worker** is anything that writes the code for one change: our Claude or
+Codex agent in a box, the owner's own Claude Code or Codex on their machine,
+or a developer they hire. All workers sit outside the control plane and get
+the same thing: one brief, a few task-scoped tools, and a place to hand the
+change back ([direction 31](direction/31-external-workers.md)).
+
+**Assume the worker's human reads everything.** The brief, the tool names,
+every tool answer and our working rules can be read by the person who runs
+the worker. So nothing that would do harm when read goes to a worker. The
+moat is not a secret prompt. It is what the brief is compiled from and what
+happens after the hand-off: the project's accumulated understanding, the
+choice of what matters for this change, the deterministic engines, and the
+verification that the worker cannot edit. A competitor who learns that briefs
+have "goal, preserve, verify" has learned nothing that they can use.
+
+**What is secret, what is compiled, what is open.** The owner's knowledge
+about their own app is the owner's data, not our secret. The builder already
+shows it to them, and it is in every workspace today. Hiding it from their
+own worker gains nothing. The secrets are our machinery and other customers.
+
+| Kind                                                       | In this codebase                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Server only**                                            | Routing: adapter order, models, light models, effort, circuit and prices (`config/builder.php`). The planner's and reviewer's instructions (`app/Ai/Agents`). Decision-model probabilities, confidence and thresholds (`Decision`). What the compiler included and why (`ContextPack` `included`, `outline`, `problems`). How Effects are counted and when they appear. Run telemetry and cost (`run_events`). Other runs, other projects, other customers. |
+| **Compiled output** (made for this task, then handed over) | The goal and the owner's request. What the app does now. Preserve and verify items. The notes of the target areas, their tests and "may also affect" hints with a reason in words. The names of the other areas. Decisions already made that apply. The files to look at.                                                                                                                                                                                   |
+| **Open on purpose** (being open builds trust)              | The tests that must pass. Verification results with their output. Review findings, sent back as problems to fix. Why a question goes to the owner, and the owner's answer. The assumptions the change makes.                                                                                                                                                                                                                                                |
+
+Worker text uses neutral words: area, rule, decision, check, "may also
+affect". It never uses Effect, Context Compiler, capability, confidence or
+score, and it never names a builder or a platform
+([§19](#19-learning-and-privacy)). A hint says why it matters ("the booking
+tests run this code too"), never a number.
+
+**Critique of the proposed Worker Gateway.** A separate gateway service is
+not needed. Each of its duties already has a Laravel home:
+
+| Duty                    | Where it lives                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| Check the active task   | The token belongs to one `Run`. A tool refuses when the run is not `implementing`.                |
+| Enforce scope           | No tool takes an id, a project or a path to data. The scope is the token's run.                   |
+| Clean the answers       | Tools return text made by one renderer (the brief's). They never return models, arrays or config. |
+| Rate limit              | A named `RateLimiter` per token.                                                                  |
+| Record requests         | Each call is a `RunEvent` (`worker_query`), in the log that runs already keep.                    |
+| Strip internal metadata | Nothing internal is loaded into an answer in the first place.                                     |
+
+So the "gateway" is one route group: a `laravel/mcp` server, behind
+`auth:sanctum` and `throttle`. Each tool is a thin wrapper over an existing
+action. This is the first-party way, and it keeps the boundary small enough
+to review.
+
+**Agnostic by design.** Claude Code and Codex both read a task file and both
+call MCP servers over HTTP. So the boundary is exactly two things:
+
+1. **The brief as a Markdown file.** Today it is `buildPrompt` plus
+   `workingRules` in `task.json` (`.git/agent-task`). It becomes `TASK.md`
+   there, rendered from `Plan` and `ContextPack`. It also answers the
+   `get_task` tool, for a worker that has no file.
+2. **The MCP tools below.** No tool is shaped for one vendor.
+
+Our own agents become the first external worker. The runner in the box gets
+the same brief and a token for the same tools. So the boundary is tested on
+every run, not only when an owner connects Claude Code. Adapters then differ
+only in how they start the agent, resume it and read its usage
+([§11 Adapters](#adapters)).
+
+**The first tools (minimum for the experiment).**
+
+| Tool                                           | Does                                                                                                                                                                                                                                                                                                           | Reuses                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `get_task`                                     | Returns the brief, with the owner's answers so far and the problems from the last check.                                                                                                                                                                                                                       | `Plan`, `CompileContext`, `buildPrompt`, `Run::$feedback`    |
+| `ask_about_product(question, area?)`           | Answers from the notes of the task's areas. A named area outside the task is an **expansion**: only its rules and decisions are returned, capped, and the expansion is logged. No model in the first experiment: it returns the matching sections of the notes.                                                | `ProjectContext`, `ProjectNotes`                             |
+| `ask_owner(question, options, recommendation)` | Stops for the owner. This is the existing question flow: the run goes to `needs_user_decision` and the owner answers in the builder. The worker calls `get_task` later for the answer. The worker never records product truth: the answer is kept by us and reaches the notes only through an accepted change. | `Run::$question`, `question_limit`, `answers`                |
+| `submit_change(patch, summary, assumptions)`   | Takes a diff against the base commit in the brief. We apply it in our own workspace, then run our verification and review. The checks the worker says it ran are for information only.                                                                                                                         | `ApplyPatch`, `ExtractCandidateChange`, verification, review |
+| `check_status`                                 | Says where the change is. When a check failed, it gives the problems to fix, in the same words as `Run::$feedback`.                                                                                                                                                                                            | `CompleteRunVerification`                                    |
+
+After the first experiment: `preview_activity` (emails sent and problems met,
+from the preview of the submitted change) and `open_preview` (a single-use
+grant link). There is no `list_*`, `search_*` or `dump_*` tool, and none is
+planned.
+
+**Authorization.** Sanctum personal access tokens, with the `Run` as the
+tokenable model (`HasApiTokens` on `Run`). This adds one table:
+`personal_access_tokens`.
+
+- **Abilities:** one, `task`. It opens only this change's tools.
+- **Expiry:** the token lapses after `agents.workers.minutes`. When the run
+  ends or is cancelled, it is cut to `agents.workers.ended_minutes` (never
+  lengthened), so the worker can still learn how the change ended. It then
+  reads only `check_status` and `get_task`'s ended answer; every tool that
+  writes, tries or previews refuses a change not waiting for it. An undo, a
+  disconnect or a hand-back revokes it at once, as does a new connection.
+  It stays valid while the change is checked and reviewed: the
+  worker calls `check_status` then, and hands back a fix when the change
+  goes back to it.
+- **Notes:** the worker's copy of the app has no `.product-notes`. Its brief
+  tells it to describe each area it changed in its summary, and notes in a
+  handed-back patch are left out, so they never clash with ours. After the
+  patch is applied, the reviewer's model (`NotesKeeper`) rewrites the notes
+  of the areas the change touched, from the change and the summary
+  (`KeepWorkerNotes`). They are read back like our own agent's notes and
+  kept only when the change is accepted. If the model fails, the notes stay
+  as they were and the run records `notes_not_updated`; the change goes on.
+  `builder.agents.workers.keep_notes` turns this off.
+- **A new try:** when the change tries a stopped one again, the brief lists
+  what its checks reported and its review's blocking findings. This holds
+  for our own agent too.
+- **Box runs:** the runner gets the token in its environment, like the
+  provider keys, never in `task.json`. The box runner's own token
+  (`AuthenticateRunner`) stays separate. It opens that runner's commands, not
+  the tools.
+- **Local Claude Code or Codex:** this is power-user depth
+  ([§3](#3-users-and-progressive-disclosure)). The owner picks "Work on this
+  yourself" on a change. We show the token once, inside ready-to-paste
+  commands: `claude mcp add --transport http …` with an `Authorization`
+  header, and the matching `codex` MCP settings. The worker never gets the
+  owner's session, password, account token or provider keys, and the token
+  opens only this one change.
+
+**Why no one can enumerate.** A token reaches one run, so one project and one
+line of work. No tool takes an identifier, so there is nothing to walk. An
+expansion returns one named area's rules and decisions, capped, and at most
+`workers.expansions` per run. Every call is logged and throttled. No query
+can reach another project, and tests prove it. Inside the project, a worker
+can at most rebuild the notes the owner can already read. Only the owner
+can make a connection, so every worker works for the owner. Our own
+developers do not use these tools: they read an owner's question in
+operations ([§29.3](#29-human-judgment-where-it-has-leverage-version-18)).
+
+**Models, values and runtime state.**
+
+- **Models (existing):** `Run` is the task. `FeatureRequest` is the change.
+  `Workspace`, `Preview` and `Verification` stay as they are.
+- **Models (new):** only the Sanctum token table.
+- **Worker queries:** `RunEvent`s. They need no new table.
+- **Values:** `Plan`, `ContextPack` and a brief renderer are readonly values.
+  The renderer is the only code that writes worker text, so it is the one
+  place to review and to lint.
+- **Runtime state:** MCP sessions and agent sessions. A repair pass resumes
+  the agent's own session (Claude `resume`, Codex `resumeThread`) and sends
+  only the problems to fix. When the session is gone, the agent starts fresh
+  with the whole brief.
+
+**Local and remote.** The brief names the base commit. The worker hands back
+a patch, not a push, so it needs no git credential. We apply the patch
+three-way in our workspace. A conflict goes back as a problem to fix. Our
+repository, branch and credentials never leave the control plane
+([§11 Adapters](#adapters)). The preview of a submitted change is an ordinary
+preview of our workspace ([§15](#15-previews)). A local worker may also run
+the app on its own machine, but only our preview and verification count.
+
+**Query logs improve the compiler.** Each `worker_query` records the area
+asked about and whether it was in the brief. When questions keep reaching an
+area that the brief left out, the area was a missed target. These counts are
+candidates for `CompileContext`, reviewed like any other rule
+([§19](#19-learning-and-privacy)). The same count is a cost signal: every
+question means a round trip that a better brief would save
+([§25.2](#252-the-economic-metric-cost-per-accepted-change)).
+
+**Not now (over-engineering at this stage):**
+
+- a separate gateway service or process;
+- OAuth or a device flow (Passport) for workers;
+- signed capability tokens of our own;
+- graph or embedding queries;
+- a model that answers product questions;
+- a field-level redaction engine;
+- a git server or proxy for local workers;
+- streaming preview traces.
+
+Each comes back only when the experiment shows the need.
+
+**Testable now, with what exists.**
+
+- A Sanctum token on a `Run` opens its tools, and a token of another run, of
+  another project or of a finished run is refused.
+- `laravel/mcp`'s test helpers call each tool.
+- The fake runner (`tests/Fixtures/fake-agent-runner.mjs`) submits a patch,
+  and verification runs on it.
+- A **brief lint** fails the build when worker text contains a forbidden word
+  (builder, platform, control plane, a configured model id, confidence,
+  score, Effect) or any internal field.
+- `worker_query` events are recorded.
+
+**Status.** Partly built.
+
+- **Built:**
+    - `WriteBrief` is the only code that writes worker text, and a brief lint
+      tests it.
+    - A Sanctum token on `Run` (`GrantWorkerAccess`) opens the `laravel/mcp`
+      server at `/mcp/task` (`routes/ai.php`). The server has `get_task`,
+      `submit_change` and `check_status`. When the run ends the token is cut
+      to a short read-only window, so the worker can learn how it ended.
+    - The `worker` construction driver (`WorkerDriver`) plans and reviews like
+      `sdk`. It waits in `implementing` until a worker hands back a patch.
+    - Each patch is the whole change against the owner's commit. It is applied
+      three-way on a clean baseline. A patch that does not apply goes back to
+      the worker with git's reason. `runs:reconcile` leaves a waiting run
+      alone.
+    - "Use my own Claude Code or Codex" (`HandChangeToOwner`) is offered on a
+      change we are making or one that stopped. The change starts again with
+      the `worker` driver. The thread shows the connect command and what to
+      ask, once. "Connect again" closes the earlier token.
+- **Next:**
+    1. Point our own runner at the token and the tools.
+    2. Add `ask_about_product` and `ask_owner`.
+- **Open:**
+    - A waiting run has no time limit yet; the owner can cancel it.
+    - A worker's change is reviewed by the default reviewer, which is logged
+      as not independent.
+
 ### Execution router
 
 | Stage                                            | Starts with                                                       | Escalation                                                     |
@@ -998,7 +1753,33 @@ grades its own work.
 | Classify, map to capabilities, name UI, annotate | cheap model                                                       | stronger model on low confidence                               |
 | Deterministic operations                         | no model                                                          | go semantic when unsure                                        |
 | Implement                                        | coding engine per task class                                      | after 2 failed repairs: stronger model or a different provider |
+| Repair that a local check can judge              | cheap model, one error at a time                                  | after 1 refused repair: back to the implementing agent         |
 | Independent review                               | only when triggered, on a different provider than the implementer | —                                                              |
+
+**Light repairs (built).** `RepairTier` sends a repair to each agent's
+`light_model` when the checks sent back exactly one new problem a check can
+judge: one failed test in the test report, one new problem in a check that
+failed before the change too, or a check whose `light_repair` setting
+matches (any formatting failure; static analysis output with "Found 1
+error"). Several problems, several failing checks, a timeout or a check that
+does not say how many problems it found go to the usual model. The pass
+continues the agent's session, so the light model reads only the problem.
+After a light repair that did not pass, the next repair goes to the usual
+model; the coder's `model_call` event records its `tier` (light, usual or strong).
+`builder.agents.light_repairs` turns it off.
+
+**Another agent after two failed repairs (built).** A repair continues the
+session of the agent that built last, so it is tried first. After
+`builder.agents.escalate_after` repairs (two) that did not pass, the next
+repair goes once to the next agent in `builder.agents.order`. It starts
+fresh with the whole brief and the problems, not inside the session that
+stalled, and the run records an `escalated` event (never shown to the
+owner). Later repairs continue the new agent's session. When no other agent
+can take it (only one is set, or the others' circuits are open), the repair
+goes once to the same agent's `strong_model`, if one is set, and starts
+fresh. The event then says `tier: strong`. Its work is priced at the strong
+model's own rate, or left unpriced when it has none. Without a strong model,
+repairs stay on the usual model in their session.
 
 **Review triggers:** the behaviour diff touches permissions, money, deletion,
 external communication, tenant data or migrations; the covering tests are weak;
@@ -1017,12 +1798,64 @@ high-risk change.
 
 ### Runs
 
+**Pictures with a request.** An owner can attach up to four pictures (a
+screenshot, a sketch, a design) to a request or a follow-up, by the attach
+button, by pasting, or by dropping them on the message box. PNG, JPEG, WebP
+and GIF are taken; SVG is not, since it can hold code. They are kept on the
+request images disk under the project, shown back only to people who may
+see the project, and served with a policy that runs nothing. The workspace
+gets them inside `.git/attachments`, so the coder can look at them but they
+never enter the change, and the coder's prompt lists them. The planner and
+reviewer are given them as image attachments through the AI SDK, so the
+plan and the review follow what the pictures show. A retry keeps them.
+`builder.construction.images` sets the count, size and disk.
+
 The existing run model stays: states queued → planning → implementing →
 verifying → reviewing → completed, plus needs_user_decision, cancelling →
 cancelled and failed; a lease with a fencing token per run; budgets (operations,
-minutes, repairs); cancellation; the reconciler. Fencing moves from individual
+minutes, repairs, AI spend); cancellation; the reconciler. A request that only asks about
+the app ends at planning: the planner's `answer` is shown, the run moves from
+planning to completed and the request is "answered", with no workspace change,
+verification or review. Fencing moves from individual
 tool calls to runtime tasks when agents run in the runtime; the per-tool-call
-journal remains for the scripted engine and tests.
+journal remains for the scripted engine and tests. A lease is renewed while a
+coding agent works, not only at tool calls. When a renewal finds the lease lost
+or the run cancelled, the agent and its whole process group are stopped at
+once: fencing refuses a stale worker's writes to our records, but only
+stopping the process keeps it out of a workspace another worker took over.
+
+**Every stop on money or limits has a next step.** Before each planning or
+building step the run checks our daily spend, the plan's monthly use and the
+change's own spend. Each stop tells the owner what to do next:
+
+| Stop                         | Set by                                                                                                                 | The owner sees                                                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Our daily AI spend           | `BUILDER_DAILY_SPEND_USD` (10; 0 is off)                                                                               | "This is our fault": new work is paused, and the time it starts again in the owner's time zone. Once lifted, the stop says so and offers "Try again".                 |
+| The plan's monthly AI use    | `MeasureUsage` against the plan                                                                                        | The date it starts again and a "See your plan" link. Once lifted, "Try again".                                                                                        |
+| One change's AI spend        | `BUILDER_RUN_MAX_USD` (25; 0 is off), also tool operations, minutes and the agent's own `BUILDER_AGENT_MAX_BUDGET_USD` | "Keep trying" goes on from where it stopped with the same amount again, when the workspace and plan are still there. Otherwise "Try again" or ask for a smaller part. |
+| Our AI account out of credit | the provider's credit error                                                                                            | "This is our fault", try again later. Operators see "AI account out of credit" in Operations.                                                                         |
+
+A new request is refused before it is saved while our spend is paused or the
+plan is used up, so no stopped change is left behind. Every other stopped
+change offers "Try again", "Ask in other words" or a link to the newer try.
+
+**Every stop has one reason, and the reason says what to do.** Every way a
+run can stop is a case of `StopReason`. Each case gives the owner's
+sentence, says whether the fault is ours ("This is our fault"), and names
+one `NextStep`: try again, Settings, answer or contact. The page offers
+only that step, so a stop that waits for an answer shows "Answer" and no
+"Try again". A run cannot stop without a reason. `RepeatedFailure` gives
+each reason advice for when it stops the same way twice, or excludes it
+with a written reason. `StopReasonTest` fails, naming the case, when a
+reason has no wording, fault, step or advice. A request with no change made
+yet follows its run's stop (`TransitionRun`): it fails, unless the stop waits
+for an answer, and goes back to being made when the same run goes on. An AI
+service that answers "too many requests" but says the account is out of
+credit stops as out of credit. Our account running out of credit, or the
+AI service refusing how we asked, is ours to fix: one more try may find it
+fixed, so the first stop still offers "Try again". When the next try stops
+the same way, the owner reads that we are fixing it and that what they
+asked for stays, and "Ask one of our developers" comes first.
 
 ## 12. Verification
 
@@ -1040,9 +1873,9 @@ behaviour diff decides which semantic checks apply.
     - new job: retry, backoff and failure behaviour;
     - new mail or SMS: approval gate, and previews force the `log` mailer;
     - lockfile changes: dependency policy.
-3. **Tests:** the full Pest suite; protected acceptance tests generated from the
+3. **Tests:** the full suite (Pest, or PHPUnit in imported apps); protected acceptance tests generated from the
    plan's criteria before coding (by a model other than the coder, confirmed by
-   the owner in plain language, frozen); Pest browser tests on touched screens.
+   the owner in plain language after the build, frozen); Pest browser tests on touched screens.
 4. **Invariants** as Pest tests, many from helpers our capability packages ship
    (for example `assertTenantIsolated(Project::class)`).
 5. **Independent review** by a different provider, when triggered.
@@ -1051,6 +1884,1015 @@ Only DERIVED, CONFIRMED and PACKAGE CONTRACT statements feed hard gates. AI
 interpretations and proposals produce warnings and review prompts only. Purely
 visual edits get light verification: build, `vue-tsc`, a visual smoke test, and
 a behaviour diff showing that no behaviour changed.
+
+**As built: the semantic checks.** Each one reads the files as the change
+leaves them, with a parser or a script in the workspace, never a model. A
+finding goes back to the coder as a blocking finding while repairs are left.
+When the coder cannot fix it, or the owner wants what it found, the owner
+keeps it in the change's proof ("If that is what you want, say so"), per
+finding (`AcceptFindings`). Each is on by default and has its own switch.
+
+- **Migrations** (`MigrationChecks`, `BUILDER_MIGRATION_CHECK`): when a change
+  adds a migration, the workspace runs `migrate`, undoes the added migrations,
+  seeds and runs `migrate` again. A step that fails, or an existing migration
+  the change edited, is sent back ("add a new migration instead"). After the
+  undo, `migrate --pretend` gives the SQL. Drops, renames, type changes,
+  NOT NULL without a default and, on PostgreSQL only, an index or unique
+  constraint built without `CONCURRENTLY` are sent back with the safe way
+  (`->online()`). The owner reads them as what happens to stored information.
+- **Queued work** (`QueuedWork`, `BUILDER_QUEUED_CHECK`): a new class that is
+  queued (a job, listener, mail or notification) must say how many times it is
+  tried, how long it waits between tries, and what happens when it gives up
+  (`failed()`).
+- **Records that belong to someone** (`OwnedRecords`, `BUILDER_OWNER_CHECK`):
+  a new table with an owner column (`builder.verification.owners.columns`,
+  such as `user_id` or `team_id`) needs a policy that reads that column or a
+  global scope on its model. A table with no model is skipped.
+- **Packages** (`PackagePolicy`, `BUILDER_PACKAGE_POLICY`): a lockfile change
+  is compared before and after. A package the change asks for by name must be
+  on the allowlist, every new package must have an allowed licence, and it
+  must come from the public registry. The lists are in
+  `builder.verification.packages`.
+- **Messages to people** (`NewMessages`, `BUILDER_MESSAGE_APPROVAL`): a new
+  mail, or a notification with a new mail or SMS channel, is not sent back,
+  since the owner may want it. The change cannot be kept until the owner says
+  they want what it sends. A later change that sends something new asks again.
+- **Laravel structure** (`ArchPresets`): a check that runs Pest's `laravel`
+  and `security` architecture presets from a temporary test outside the app's
+  tests, when the app has Pest 3 or later. Only problems the change adds go
+  back. Our own conventions get no preset, because the engine follows
+  Laravel's conventions for any app and assumes no style (direction 33).
+  The `laravel` preset already refuses `env()` in the app's classes.
+  `AppConventions` measures where each app keeps its saves and sends, so a
+  controller that saves is fine in an app that does that. `OwnedRecords`
+  checks authorization on records that belong to someone. Not covered:
+  authorization on routes that touch no owned table, and the size of a
+  controller.
+- **Going online** (`ProductionCaches`): a check that runs Laravel's config,
+  route, event and view caches in the verification copy, as a host does when
+  it puts the app online. It never runs in the preview, which keeps reading
+  the live files, and it clears the caches however it ends. It runs the four
+  framework caches, not `optimize`, because packages add steps to that one
+  that may reach a database or the internet. It prints one line for each cache
+  that fails, and only problems the change adds go back. The owner reads, for
+  example, "Your app would not go online with this change: two pages share a
+  name."
+  When the app could not go online before the change either, the line has
+  "Fix it". It asks for the fix as its own change on the app as it is, with
+  what the check printed for the builder, and a second tap opens the same one.
+- **Strict models** (`StrictModels`, `BUILDER_STRICT_MODELS`): when the change
+  adds or changes tests and app code, a check runs those tests again with
+  Laravel's strict model modes on. A PHPUnit extension turns them on after each
+  test's setup, with handlers that note each problem instead of throwing. The
+  extension lives in `.builder/strict`, which workspaces never copy and
+  `git apply` skips, and the check removes it however it ends. A value that
+  mass assignment silently drops, or an attribute the model and its table do
+  not have, sends the change back when it happens in a file the change touched
+  or on a model it touched. A relation loaded one record at a time is only a
+  note for the agent: it is about speed, and apps with automatic eager loading
+  do fine. Only the change's tests run, because the whole suite again doubled
+  the time on the fixture.
+
+**Scope by risk, never by diff size.** "Small" is a property of meaning: a
+three-line authorization change is riskier than a 200-line isolated component.
+
+| Change                                                                                                                  | Verification                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| While the agent works                                                                                                   | Tests selected by test impact analysis, and cheap static checks: fast feedback.                                                                                                            |
+| Local and low-risk (only classes or only notes; no rule, schema, permission, billing or cross-area Effect)              | May commit on targeted checks.                                                                                                                                                             |
+| Any other kept change                                                                                                   | Targeted checks plus the full suite, before "Keep this change".                                                                                                                            |
+| Authentication, authorization, tenancy, billing, migrations, middleware, configuration, dependencies, or unknown impact | The full suite, whatever the size.                                                                                                                                                         |
+| Publishing (the integration boundary)                                                                                   | **The full checks on the exact commit, always**, however many small commits led to it. Then smoke checks at the app's address: a push is "sent", and only an app that answers is "online". |
+
+Lack of evidence broadens verification: strong observed impact allows narrow
+checks, partial evidence widens them, and unknown impact runs everything. Test
+impact analysis is the fast path, never the trust boundary.
+
+**A checkpoint is not an accepted change.** Agents commit freely inside their
+disposable workspace; only an accepted change reaches the project, after its
+verification. The Change Record, not the commit, is the unit of acceptance.
+The change is always the diff against the baseline commit recorded when the
+workspace was prepared, and that commit ID lives in our database, outside
+anything the agent can rewrite. Acceptance commits only the state that was
+checked: when the app moved on after the check, the change is built and
+checked again on the current app, never merged unchecked onto newer commits.
+
+**Evidence is what ran, not what anyone says ran.** The suite check writes a
+JUnit report. A verify item counts as tested only when the test named for it
+is in a file the change touches and the report shows it ran and passed. A
+named test that is missing, skipped or misnamed is a blocking finding. A
+suite without a report leaves the reviewer's claim as a claim, shown to the
+owner as not confirmed.
+
+**As built: tests written first, by another model.** After the plan and before
+the coder starts, `WriteTestsFirst` asks a test writer (`TestWriter`, on the
+reviewer tier through `ModelRole::Reviewer`) for one test per verify item:
+the base, alternate and exception cases. It reads the plan, the data shape,
+the routes and up to two of the app's own feature tests, and never sees the
+coder's work. `WrittenTests` checks its answer without a model. Each file is
+new, under `tests/`, run by the suite and parses. Each item has exactly one
+named test that exists in its file. An exception item's test must assert a
+refusal: a 4xx answer, validation errors, a guest sent to sign in, a thrown
+exception or a failed command. The checks later require the app to refuse it,
+and the coder may not change the test, so a test that expects success could
+never be met. The planner plans an answer that shows something else ("sees no
+times") as an alternate, not an exception. The files stay within
+`verification.written_first.max_files` and `max_bytes`. A refused answer is
+asked for again with every rule it broke, up to `attempts` times. Then the run
+goes on without written tests (`tests_not_written`), and the coder writes them
+as before. The coder's brief lists the tests and says not to change them.
+They are frozen by being written back as written after the coder finishes
+(`written_tests_restored`), as protected files are, not by refusing its
+writes. Each item's evidence is then its written test, not the reviewer's
+claim. `BUILDER_TESTS_WRITTEN_FIRST` turns it off. The owner confirms the tests
+after the build, not before: asking first would stop every change. "Done
+when" shows each case a test was written for, in the plan's words. "That's
+not what I meant" on one, with a note, makes the change again the way trying
+again does (`CorrectWrittenCase`). The new run starts with the owner's answer
+("Is this what you meant: …? No. …"), so the planner plans that case again
+from their words. The answer does not count against the questions the
+planner may ask, and the run records `case_corrected`. A worker driver builds
+in its own copy, so its task gives the written files whole, to add as written
+and hand back unchanged. After its patch is applied, each written test is
+compared with the plan (`WriteTestsFirst::changed`). Putting one back would
+not help: the worker's code was made to pass its own version. So a changed
+test sends the change back with the test's name (`written_tests_changed`), and
+stops it for the owner when no tries are left. A written file the patch leaves
+out is put back as written. A written test can itself be wrong, and since the
+coder may not change it, it would use up every try and stop a change whose code
+is right. So when the same written test fails with the same message on two
+checks in a row, while the coder's own tests and every other check pass
+(`StuckWrittenTests`), the change goes back with `written_test_wrong`. Before
+that try, the test writer corrects only that test, once
+(`WriteTestsFirst::rewrite`). It sees the plan's item, the redacted failure,
+the app's addresses and the files the change touched. The same
+`WrittenTests::check` rules apply, and the test keeps its name and its file's
+other tests. A test that fails a different way each try is left alone: the
+code is still moving. The correction is recorded (`written_test_rewritten`,
+with the test and the failure), and the coder hears of it. The proof shows it
+to the owner as a gap, since the new test was written with the code in view. A
+corrected test that again fails the same way twice stops the change for the
+owner, naming the test (`written_test_still_fails`). JUnit failures keep their
+message, without the test's name or where it stopped, so the same failure on
+two tries reads the same.
+
+**Exception: a first version writes its tests beside the coder.** For a
+project's first change, built by our own coder (`sdk`), the tests are written
+while the coder works, not before it. The first version shows sooner. Later
+changes keep tests first, because there the tests guide the coder most. The run
+records `tests_beside_asked` and queues `WriteTestsBeside` on the checks queue,
+which is idle while a first version is built. When the coder ends, the run takes
+the job's tests (`tests_beside`) and puts them in where written tests are put
+back today, before `build_finished` and the checks (`tests_beside_placed`). The
+plan is saved with them, so repairs see them. A written file at a path the coder
+already made is dropped with its tests, and the coder's tests count instead.
+The coder's brief has no written tests, so it writes its own as for any change.
+The job and the run claim the write with one cache key. When the job has not
+started, the run writes the tests itself; it also stops waiting after
+`beside_wait_seconds`. When the job fails or is refused, the run asks again
+itself, so it stops with the same next step as before.
+`BUILDER_TESTS_WRITTEN_BESIDE=false` turns it off.
+
+**The change is judged, not the app it started from.** Format and lint
+checks run only on the files the change added or modified
+(`files` on the check). When a whole-app check fails, it runs again on the
+starting commit in the same workspace: the change is taken out with
+`git apply --reverse`, the check runs, and the change is put back. A failing
+test or output line that is also there before the change is the app's old
+problem. Only the new problems go back to the coder, and a change whose only
+problems are old ones goes on to review. The result keeps both outcomes
+(`at_start`, `new_problems`), and the owner sees "failing before this change
+too". A change to the package files skips the comparison, as the starting
+commit would need other packages installed.
+
+**Our failures never cost a repair.** A command no runner took, or one that
+never answered, a workspace that did not start, or a crash in our own code
+stops the checks as interrupted. They run again, up to
+`builder.verification.retries` times, and the coder never hears of it. When
+they still cannot run, the run stops and says it is our fault. Only problems
+the coder can fix count against the repairs budget
+(`BUILDER_RUN_MAX_REPAIRS`, 4 by default).
+
+**Common safety mistakes are found by pattern, on added lines only.** The
+review scans the lines a change adds for unescaped Blade output (`{!! !!}`),
+`v-html`, queries built from values mixed into their text, models open to
+every field, committed `.env` files, and live secret keys written into any
+file, such as a Stripe or AWS key or a private key
+(`builder.verification.safety_scan`). Each one found is a blocking finding
+that names the line and the safe way. Code the app already had is never
+held against a change. A comment on the line, or the line above, that says
+why it is safe lets it through: a reason a person can read and question. A
+secret key is never let through this way, because anyone with the code can
+use it. The owner sees the clean result as one line of the change's proof.
+
+The same scan finds secret settings sent to the browser. One case is a `VITE_`
+setting named like a key, secret, token or password, in `.env.example`, in
+config or in the frontend code: Vite builds its value into the JavaScript every
+visitor downloads. The other case is a secret read with `config()` or `env()`
+that goes to a page: in shared Inertia props (`HandleInertiaRequests`), in a
+Blade view, or as a value inside an `Inertia::render()` or `inertia()` call. A
+secret handed to a client on the server, beside such a call, is not found.
+Settings made for browsers (Reverb's and Pusher's app keys, Cashier's
+`STRIPE_KEY`, and publishable, public, search and maps keys) are listed in
+`builder.verification.browser_settings`. A new one goes there, and no comment
+lets a secret through. The built files are not searched for the value: the
+verification copy's settings come from `.env.example`, which keeps secrets
+empty, so the search would almost never find one.
+
+The scan also finds a redirect or a file path taken from the request. A
+redirect to such an address (`redirect()`, `->to()`, `->away()`,
+`Inertia::location()`) lets a link to the app send people to any site. A file
+read, served or removed by such a path (`Storage`, `response()->download()`,
+`file_get_contents()` and the like) lets people reach any file, such as `.env`,
+even after a fixed folder (`'reports/'.$name`). Neither has a comment escape.
+Only mechanical forms pass: the app's own addresses (`redirect()->route()`,
+`->intended()`, `back()`, `url()->previous()`), a redirect that starts with a
+fixed path such as `'/search?q='` (not just `https://` or `//`), a name wrapped in `basename()`, and a field
+the change's own lines allow only known values for, with an `in:` rule or
+`Rule::in()`.
+
+The same holds for a shell command or an outside address taken from the
+request. A command with such a value in its text (`exec()`, `shell_exec()`,
+`Process::run()` and the like) lets people run any command on the server. It
+passes when it is an array of arguments, which runs without a shell, unless the
+program itself comes from the request. A value in `escapeshellarg()` also
+passes. An address the server calls (`Http::get()` and the other verbs,
+`curl_init()`) lets people reach the server's own network or cloud settings. It
+passes when it starts with a fixed host. Calling the person's own address can
+be the feature, such as a "test my webhook" button, so it is still found, and
+the fix tells the coder to allow only https and refuse private and loopback
+addresses after resolving the host.
+
+**Shortcuts in PHP code are found by an analyser, on added lines only.**
+When a change touches the app's PHP code (not its tests), verification runs
+the Sloppy analyser (`heyosseus/sloppy`, a pinned PHAR in the box image,
+never added to the app) over the files it touched. It reads the code with a
+parser, without running it or asking a model, so the same code always gets
+the same answer. Four of its rules are held against a change: an error caught
+and ignored (SL107), a relation read once per item in a loop (SL203), a query
+inside a loop (SL204) and `Model::all()` (SL210). Its size and structure rules
+are too noisy on real code to send a change back for, so they are not run.
+Shortcuts on lines the change added are kept on the verification. They never
+hold the change back, so the owner is not kept waiting for them. After the
+owner keeps the change, a queued job (`TriageShortcuts`, after
+`shortcuts.triage.delay_minutes`) asks the decision model (Jev through the
+AI SDK's classification) whether each one is a real problem, with the whole
+kept file to read. A shortcut whose line a change kept with it rewrote is
+logged as gone and not asked about. The answers are logged on the run as
+`shortcuts_triaged`, and each call as a `model_call` with the role `triage`.
+The real ones become a tidy-up (`TidyShortcuts`): a change the app asks for in
+the owner's name ("Tidy up 2 things in my app's code."), with the shortcuts in
+its brief (`feature_requests.tidy`). It starts only while the owner has no
+change of the main app being built, or built and touched lately; otherwise it
+checks again later, for a day. It is built by the coding agents'
+`light_model` on `shortcuts.tidy.max_budget_usd`. When its run completes and
+its patch removed each flagged line or added a comment saying why it stays,
+`KeepTidy` keeps it through `AcceptChange`, in the owner's name, and the owner
+is not notified; the owner can undo it like any kept change. The chat list
+and the chat name it by what it does, not by the words it was asked in:
+"Tidying up 2 things in your app's code in the background.", then "I tidied
+up 2 things…" once kept (`FeatureRequest::background()`). Until kept it reads
+as being built, never as waiting for the owner. A tidy-up put aside is not
+shown. When the light
+model fails or leaves a shortcut, the usual model tries once; when that fails
+too, the tidy-up is put aside (`tidy_put_aside`) and the app stays as it was.
+A tidy-up built on an app that changed since is built again on the new one.
+Tidy-ups are not triaged, so they never loop. A comment on
+the line, the line above or the line below lets one through. Where the
+analyser is missing, nothing is read or said. The owner sees the clean result
+as one line of the change's proof.
+`builder.verification.shortcuts` turns it off. No first-party Laravel package
+reads code for these shortcuts; Larastan checks types, not these.
+
+**The change is run without its code** (direction 32). A coder can misread
+a request, build the misreading and write tests that match it. No check that
+runs can find the misreading. But the checks can measure how much the
+change's tests say. When the checks pass, verification measures three things
+(`builder.verification.change_evidence`), and keeps them on the verification
+(`verifications.evidence`):
+
+- **New tests** (`NewTests`). The whole change is taken out with
+  `git apply --reverse`. Then only what it did under the tests' folders is put
+  back, and the test files it touched run again. A new test that fails there
+  tried what the change does. A new test that passes there says nothing about
+  the change. A change that only adds tests is not measured: its tests pass
+  without it by design.
+- **Routes** (`AppRoutes`). `route:list --json` runs with the change and
+  without it. The framework lists the routes itself, so routes from packages,
+  attributes and providers are there too. The difference names each route the
+  change added, removed, or whose middleware it changed.
+- **New code** (`NewCode`). The test map's coverage run also writes a line
+  report. Each new line of PHP that can run is one of three kinds: a test the
+  app already had runs it, only the change's own tests run it, or no test
+  runs it.
+
+These are measurements, not checks. They never change the result of the
+checks, and what cannot be measured is not kept. Nothing here sends a change
+back by itself, because what a measurement means depends on what the owner
+asked for: a route that lost `auth` can be the request or a mistake. The
+reviewer reads all three with the plan. A test that passes without the change
+guards what the app already did ("already true, now guarded"), such as a
+first version keeping the starter app's sign-in. It is not a gap by itself.
+But when every new test passes without the change, nothing shows it works, and
+`ConstructRun` sends the change back without a model. The reviewer blocks a
+route that lost a check on
+who may use it, and a new route that changes data without one, unless the
+request asks for exactly that. The owner reads them in the proof, in plain
+words: "It added 3 tests that fail without this change and pass with it",
+"A part of your app no longer checks who may use it: /teams. Make sure you
+wanted that." and "Tests ran 122 of its 123 new lines of code." Tests that
+pass with and without the change are a gap, and so is new code when more than
+`unrun_gap_share` of its lines are run by no test. Only Laravel's own
+middleware for who may use a route (`auth`, `verified`, `can`, `signed`,
+`password.confirm`) are read as such; an app's own middleware is not guessed
+at. A change to the package files is not measured, as the starting commit
+would need other packages installed. On the fixture, all three took about 8
+seconds.
+
+**What the app does is recorded while its tests run** (direction 32). Tests
+check what their author thought of. Some mistakes are wrong in every app,
+whatever the request, so they need no author. A recorder
+(`resources/trace-recorder`, in the box image at `/opt/trace-recorder`) writes
+one line for each request a test makes: the route, the status, whether the app
+refused it, and each effect in order. An effect is a query, a transaction that
+starts, commits or rolls back, a job, a mail, a notification or an outside
+call. Each effect has the nearest line of the app's own code and the number of
+transactions the request had open. What the test's own code does inside a
+request has no line: a test can play a second person who saves at the same
+moment, and that save is not the app's.
+
+Each query, job, mail, notification and outside call also says where in the
+request it happened (direction 33). `frames` is the app's own code on the way
+to it, nearest first, as `Class::method`, at most six. `phase` is the part of
+the request: `middleware`, `authorization`, `validation`, `handling` (the
+route's own code), `rendering`, `model` (a model's hooks and observers),
+`listener`, `job` or `error`. The recorder reads the phase from a fixed list
+of the framework's calls, from the effect outward, and the nearest one wins.
+A policy that a controller asks is `authorization`, and a value that the
+answer reads late is `rendering`. A call chain that matches nothing is
+`unknown`, never a guess. The boundary rules read these two fields.
+
+The recorder changes no file of the app. The coverage command sets PHP's
+`auto_prepend_file` in an ini file under `storage/logs/test-map/trace`. That
+file gives Laravel a copy of its package list with the recorder's provider
+added, and keeps the copy in the same folder, so `bootstrap/cache` stays as it
+was. The recorder has a neutral name and holds nothing of ours. It rides the
+coverage run that the test map already needs, so the suite does not run again.
+On the fixture it added about 1% to that run, and two runs gave the same
+lines. A box image without the recorder records nothing, and nothing is said.
+
+The recorder starts a request in its own middleware, the first one in. A
+test can turn off all middleware (`withoutMiddleware()`), and each test of a
+Livewire component does. The recorder then records the request from the
+router's events: it starts when the router looks for the route and takes the
+answer the router prepares. A request the app makes to itself inside another
+one is part of that one. When no answer comes, an error left the app that
+the test let through. In use the person gets the error page, so the request
+is recorded with the status of that page: the one the error names, or a
+server error. Its line is written when the next request starts, when the
+next test starts its app, or when PHP stops.
+
+All Livewire components of an app share one route for what a person does on
+them, and a test renders a component at an address with a random part. So
+the recorder adds the component, and the methods the request calls on it, to
+the route it records (`Wired`): `/livewire-…/update#send-receipt@send`, and
+`/livewire-unit-test-endpoint#send-receipt` for the test's first render.
+Each place then has its own name, the same in every run, and a finding on
+one component is not taken for a finding on another. The recorder reads the
+names from the request and the answer, not from Livewire's classes, so an
+app without Livewire is not changed.
+
+An Artisan command of the app's own code is recorded the way a request is:
+a class in the app, or a closure in `routes/console.php`. Its line has the
+method `ARTISAN` and the command's name as the route. The status is 200
+when the command ended well, and 500 when it ended with a failure or an
+error; the trace keeps which of the two (`exit 1`, `error`). Laravel does
+not send its own command events while tests run, so the recorder listens to
+the events of the console itself. A command that runs inside a request or
+inside another command is part of that one. A command of the framework or
+of a package is not recorded. So the faults below are caused in a command
+too: a scheduled command that saves and then fails to send is found the
+same way a request is. A command that did not end well refused no one, so
+the shape for a write kept after a refusal is not read from it.
+
+A job of the app's own code that runs with no request or command around it
+is recorded the same way: a test dispatched it, or something the test did,
+such as an event with a queued listener. Its line has the method `JOB` and
+the job's name as the route. Most tests of a request put a fake in place of
+the queue, so the job's own test is where the job runs. The job is then run
+a second time, and tried again after its last save or its email failed, the
+same way as a job a request dispatched. It is not held back, because no request ran
+before it. An email or an outside call the job makes is made to fail in it
+too: a queue takes a job that ends without an error as done, so a job that
+catches the failure and writes nothing to the log hid it. A job that lets
+the failure through is clean, because the queue then tries it again or
+keeps it as failed. A job the app runs after its answer, a closure a test queues,
+and a job of the framework that delivers one email are not recorded. One
+limit: a test that calls `handle()` on the job itself reaches no queue, and
+the job is not seen.
+
+`AppTraces` reads the lines for four shapes
+(`builder.verification.traces`):
+
+- **Saved on a read.** A GET request committed a write.
+- **Kept after a refusal.** The app refused a request (a status of 400 or
+  more, or validation errors) and still committed a write.
+- **Sent before saved.** A job, a mail, a notification or an outside call
+  left while a transaction was open. If the transaction fails, it is sent
+  anyway.
+- **Repeated lookup.** One line ran the same select `repeats` times or more
+  in one request.
+
+A write that a rollback undoes is not counted. A transaction that the test
+tools open is not counted as the request's own. A shape counts against a
+change only when its effect comes from a line the change added, or from the
+app's code on a route the change added. The same shape in code the app
+already had is counted (`existing`) and not reported.
+
+A test can put a fake in place of the mail, the notifications, the queue or
+the jobs. Nothing goes out through a fake. When a request starts, the
+recorder puts a stand-in where each of these fakes is. The stand-in is the
+same fake with the same memory: it notes each send, then does what the fake
+does, so the test's own assertions hold. A faked notification is noted as the
+app would send it: on the queue, or as the email it sends now. A job that
+waits for the transaction is noted when the transaction commits, as the queue
+would take it.
+
+Some sends stay hidden: everything under a fake of events, a notification to
+a channel that is not email, and a job the app runs before it answers, which
+did not run under the fake. A request that ran the change's code and opened a
+transaction with sends hidden is counted as not seen (`unseen`), never as
+clean. The proof then speaks only for what was saved: "Its tests only pretend
+to send emails and messages, so we could not watch when it sends them." On
+the fixture, fakes were active in 28% of requests. Only requests that tests
+make are recorded, so code that no test reaches says nothing here; the
+new-code measurement shows that gap.
+
+Like the other measurements, these never send a change back by themselves.
+The first three go to the reviewer, which blocks them unless the request or
+the plan asks for exactly that, and to the owner's proof: "Opening /reports
+changes what your app has saved…", or, when the tests reached the new code and
+nothing was found, "We watched what your app saved and sent while its tests
+used the new code 26 times. Nothing was saved by mistake or sent too early."
+A repeated lookup joins the shortcuts above (rule `SL204`), so it is tidied
+after the change is kept and the owner does not wait for it.
+
+**Three parts of a request must not change anything** (direction 33, the
+boundary rules). Laravel runs code in phases, and the rules follow the phase,
+not the class or folder, so they hold whatever style the app is written in. A
+policy method that saves is a problem only when it runs as a check; the same
+method called by the controller is not. `AppBoundaries` reads `phase` from
+the same recording (`builder.verification.boundaries`) and finds a write, a
+job, a mail, a notification or an outside call in one of these phases:
+
+- **While authorizing.** A check of who may act can run many times per page,
+  for example once per row, so what it saves repeats.
+- **While validating.** It runs before the app decides to act, so what it
+  saves or sends stays when the request is refused.
+- **While rendering.** Views, resources and Inertia props can run more than
+  once per request, and after the route's code has returned.
+
+Reads are allowed in all three. A phase of `unknown` is never held against a
+change. The finding is held to the change the same way as the shapes above:
+by a line the change added, or by a route the change added. A rendering
+effect has no controller in its `frames`, so it is held by the resource's or
+the view's own line. A query in a compiled Blade view has no line yet and is
+not counted. Each finding was seen to happen, but only on the paths the
+tests take. It goes to the reviewer ("GET /posts while Laravel checked
+whether the person may act: update posts at app/Policies/PostPolicy.php:9 in
+App\Policies\PostPolicy::view") and to the owner's proof ("At /posts your
+app saves or sends something while it checks who may do something…"). When
+the recorder named the phases and the tests reached the new code without a
+finding, the proof says so. Like the other measurements, it never changes
+the checks' result by itself.
+
+A finding the recording proves also sends the change back for a fix, as
+the safety scan does (`builder.verification.boundaries.send_back`). This
+is deterministic: no model decides it, and the reviewer can add findings
+but cannot take this one away. The coder is told where to do the work
+instead ("…seen in a test run. A check of who may act runs many times per
+page…"). A finding that only moved, or one the owner said they want, does
+not send the change back. A finding read from the code only is likely, not
+proven, and stays with the reviewer. When the fixes run out, the change
+stops for the owner with the finding in its proof. The owner can then say
+they want it and let the change keep trying.
+
+The coder may think a finding is wrong, or is what the owner asked for. It
+cannot dismiss the finding, but it can ask the owner. Each finding the gate
+sends back has a key (B1, B2…), and the coder may answer "KEEP B1: reason"
+and leave the code as it is (`ProposeFindings`). The finding still holds
+the change. When nothing else holds it, the change stops for the owner
+(`finding_proposed`), and the proof shows the reason next to "Yes, keep it
+this way" and "No, fix it". Yes stores the choice as "I want it this way"
+does, with who answered and when, and the review runs again. No sends the
+change back, and the coder is told that the owner said it must be fixed. The
+coder can ask about each finding once per change, and about at most three
+findings in one change (`builder.verification.proposals.asks`), so asking
+never replaces fixing. A finding past that has no key and must be fixed. The
+proposal keeps the record: the reason, the run that asked, who answered and
+when. A line the owner agreed to keep shows the agent's reason in the
+proof. The final decision is always the owner's.
+
+The owner can also ask the builder to be extra careful with a part of the
+app (`projects.careful_areas`, "Be extra careful here" on the page about
+the app). In such a part, two likely findings also send the change back: a
+boundary finding read from the code only, and a call to an outside service
+from outside the code that already calls it (`AppContainment`). Elsewhere
+they stay with the reviewer, because the plan may ask for them.
+
+`AppDrift` counts the work each request does in each area of the notes:
+the queries, and what the area's own files queue and send, read from the
+recording. An area seen in fewer than three requests is not measured. Each
+area keeps a ceiling in the control plane (`projects.drift_ceilings`), set
+when a change is kept. The ceiling moves down when the area does less. It
+moves up only when the owner said they want the growth, so twenty small
+increases cannot add up unnoticed. Work more than 25% past the ceiling is a
+note for the reviewer, because the count depends on the tests. In a careful
+area, work more than twice the ceiling sends the change back, and the
+owner reads it in the proof with "I want it this way". The numbers stay
+with the reviewer; the owner reads "steps of work"
+(`builder.verification.drift`).
+
+`AppConventions` reads where the app keeps its saves and its sends. For
+each one the recording names the nearest of the app's own code, and its
+folder gives the role: a controller, a Livewire component, an Action, a
+Service, a job, a listener, an observer or a model, at any depth
+(`App\Billing\Actions\Refund` is an Action). Places are counted once each,
+so one busy loop is one place. When one role holds at least 80% of the
+app's places and at least five of them, that is the app's convention. New
+code that saves or sends straight from a controller or a Livewire
+component in such an app goes to the reviewer: "Of the 15 saves seen in the
+rest of the app, 14 are in Action classes." No style is assumed. An app
+that saves from its controllers has no convention to bypass. It is a note,
+never a send back, because the plan may ask for exactly that
+(`builder.verification.conventions`).
+
+`AppCoupling` reads which areas of the notes call into which others. The
+recording keeps the chain of the app's own code on the way to each thing a
+request did, nearest first. A class's file comes from Laravel's own
+autoload (`App\Billing\Charge` is `app/Billing/Charge.php`). Where one link
+of a chain is in one area and the next in another, the first area depends
+on the second. Chains through no file the change touched show what the app
+already depends on. A dependency seen only in chains through the change's
+files is new, and goes to the reviewer: "Orders now calls into Billing:
+OrderController::store calls SendInvoice::handle". It is a drift signal, so
+it never sends a change back (`builder.verification.coupling`).
+
+The recording only shows what the tests run, and it never shows the app
+start. So `BoundaryCode` also reads the PHP files the change touched, as the
+change leaves them, before anything takes the change out of the workspace.
+It names the methods Laravel itself runs in each phase: every public method
+of a policy, a form request's `authorize`, `rules` and validation hooks, a
+resource's `toArray`, and a service provider's `boot` and `register`. On
+the lines the change added, it finds a save, a job, a mail, a notification,
+an event or an outside call in those methods, and, while the app starts,
+any query too. A closure that `boot` only registers runs later and is not
+counted. It reads one method at a time and does not follow calls, so each
+finding is likely, not proven. These go to the reviewer as "read from the
+code, not seen running" (`read`), never to the owner's proof. A line the
+recording already holds against the change is said once, as seen. A finding is
+also named by what it is, not by its line: the rule, the method and the
+kind of effect. The file as it was before the change is rebuilt from the
+file and its diff and read the same way. A finding it already had only
+moved, for example when the change reformats a policy, and is counted as
+`existing`, seen or read. The change is held only to what it has more of. The
+app's start is a fourth rule, read only: a query there runs for every
+request, command and queue worker, and before a database may exist.
+
+**The owner may want what a phase rule finds** (an exception, direction
+33). An audit log of each refusal, for example, is written while the app
+checks who may act. Each gap line of the proof carries a control ("I want it
+this way"), shown only while the change waits for the owner. Pressing it
+stores each finding of that rule in the change by what it is, never the
+rule itself (`accepted_findings`, in the control plane: the agent writes the
+app's code, so a code comment cannot grant one). The line then says it is
+the owner's choice, with what it costs, and can be undone. The reviewer
+does not hold those findings against the change. Once the change is kept,
+the finding is part of the app as it was, so a later change that does more
+of the same is asked about again.
+
+**An outside service stays where the app already calls it from** (a
+containment rule, direction 33). Nobody declares these rules yet; they
+are read from the app. A service the recording shows the rest of the app
+calling only from code that some areas claim (the `paths` in the notes,
+read from the main branch, so a change cannot move them) is kept to those
+areas. A service already called from code no area claims is kept nowhere,
+and a service the app never called has no place yet. A call the change's
+own lines make from elsewhere goes to the reviewer (`containment`), with
+the areas that call it today, never to the owner's proof: whether a
+second place is wanted is for the plan to say.
+
+**The files that decide how the app is checked are protected** (direction
+33). `phpunit.xml`, `tests/Pest.php`, `phpstan.neon` (and their `.dist`
+forms) and `.github` join the protected paths
+(`builder.construction.protected_paths`). A coding worker's tools refuse to
+write them, and anything the worker changed there is put back before the
+change is taken, as with the protected acceptance tests. A change therefore
+cannot pass its checks by changing how they run. Changing these files is a
+person's decision.
+
+The full design, with what comes after this first step (static effect
+analysis, a ratchet by finding identity, debt and exceptions, strict mode,
+and faults derived from effect signatures), is the proposal in
+[docs/research/boundaries-and-chaos.md](../research/boundaries-and-chaos.md).
+Only what this section describes is built.
+
+**One failure at a time is caused where the change sends or saves**
+(direction 32, the fault engine). A recording shows what the app does when
+everything works. It does not show what the app leaves behind when an email
+cannot be sent or a save fails. Tests rarely check that. So, once the checks
+pass, verification causes those failures (`builder.verification.faults`).
+
+Nothing is random. `AppFaults` reads the recording for the places a failure
+can be caused, in requests that ran the change's code:
+
+- **A send.** Each mail and each outside call of a request.
+- **A file.** Each file a request writes to one of its disks (`Storage`).
+  The disk does not take the file. Laravel then gives the app's code
+  `false`, and throws only when the disk's config has `'throw' => true`.
+  The recorder stands around each disk the app makes after it started. A
+  disk with a driver of the app's own is not seen. Only that a file was
+  written is recorded, never its name. A file is not counted among what the
+  app sent: a file that stays after a save was lost is not held against the
+  change. A copy is a write. A move is made to fail the same way. Each file
+  a request deletes is recorded too. A delete is not made to fail.
+- **An answer.** Each outside call the app's code makes itself, when the
+  app's code sends or saves something after it. The call does not fail. It
+  is made, and a server error is given as its answer. Laravel's HTTP client
+  gives the app such an answer and throws nothing. A call a package makes
+  for the app is not a place: the app's code does not get its answer. For a
+  call a job makes, only what the rest of that job does counts as after.
+- **A save in a transaction.** The last write of each transaction that a
+  request commits.
+- **A save in steps.** The last write the app's code makes outside a
+  transaction, when the request saved, sent or deleted a file before it. Most
+  requests that save twice have no transaction, so this is the common place.
+- **A job.** Each job the sync queue ran in a request, when the job sent
+  something or added a row that stayed. This place does not fail. The job
+  runs a second time. A job of the framework that only delivers one email,
+  notification or broadcast is not a place: it has no code of the app to
+  make safe.
+- **A save in a job.** The last save a job makes after it sent something.
+  The save is refused, and the job is run again, the way a queue tries a
+  failed job again.
+- **A job that waits.** Each job the sync queue ran in a request, when the
+  job sent or saved something, or the app's code did something after it.
+  This place does not fail. Tests run a queued job where it is dispatched.
+  In use it waits on a queue, and a worker runs it after the response. So
+  the job is held back and runs when the response is made, the way a worker
+  runs it: no one is signed in, and the request and the session are empty.
+  A job of the framework that delivers an email or a notification is a
+  place here too: the worker runs what the app's code puts in it. What such
+  a job sends keeps the line that dispatched the job, in both runs, so the
+  same email is read as the same. A listener that waits on a queue
+  (`ShouldQueue`) is a job of the app: the queue runs it under the
+  listener's name, and it has the same places as a job. A job the
+  app sends to the sync queue by
+  name (`dispatch_sync`, or a job that names the `sync` connection) is not
+  such a job, and is never held.
+- **An event.** Each event a request dispatches that has two or more
+  listeners Laravel found by itself (event discovery). This place does not
+  fail. The found listeners run in the reverse order. Laravel takes found
+  listeners in the order the disk lists their files, so their order is not
+  the same on every machine. Listeners the app registers by hand have the
+  order its code gives them, and are not a place.
+
+For each place, verification runs the one test that made the request again,
+with `TRACE_RECORDER_FAULT` naming the test, the request and the effect. It
+picks the test by its method, or by the sentence that names it when the test
+is written in Pest. The
+recorder then makes that one effect fail the way it fails in use: the mail
+transport cannot connect, the outside call times out, or the database
+refuses the write before it runs. A job is run again when it is done, the
+way a queue runs it again when a worker stops before it marks the job as
+done. The second run is marked in the trace, and an error in it stays in it.
+For a job that waits, the recorder puts a sync queue in place that asks it
+before each job, and only in that run. Before the held job runs, the
+recorder gives the app an empty request and an empty session, and has the
+app forget its guards, which hold the signed-in person. It puts all three
+back when the job is done, so the rest of the test runs as before. For an
+answer, the recorder puts a
+middleware on the HTTP client the same way. The call still reaches a fake
+of the test, and then gets a 500 as its answer. For an event, the fault also names
+the event. The recorder puts its found
+listeners in the reverse order for that one request, and gives them their
+order back when the request ends.
+The trace of that request shows what stayed:
+
+- **Saved, then failed.** A send failed, the person got a server error, and
+  a write from before the failure was kept. A second try can save it twice.
+- **Sent, then lost.** A save failed and was lost, but a mail, a job or an
+  outside call had left before it.
+- **Saved in part.** A save failed and was lost, but a write of the app's
+  code from before it was kept: an order without its items.
+- **File gone.** A save failed and was lost, but the app had deleted a file
+  from a disk before it. Nothing puts a deleted file back, not a
+  transaction either. What the app kept still points to a file that is
+  gone. The same is found when an email, a call or a file write fails
+  after the delete, and the request then does not make a save it makes
+  when all works. The coder is told to delete the file last, after the
+  save is kept. A file the app moved counts the same: what the app kept
+  still points to where the file was. The coder is told to move the file
+  after the save, in the same transaction, and to throw when the move
+  fails.
+- **Done twice.** A job ran twice, and both runs sent the same thing or
+  added the same row from the same line. A queue gives a job to a worker at
+  least once, so a job must be safe to run again. An outside call the
+  service can take twice is not held against the job, here or under "sent
+  again": a GET, a PUT, a DELETE, or a call with an idempotency key. A job
+  with only such calls is not run twice at all.
+- **Sent again.** A save failed in a job after the job sent something, the
+  job was tried again, and it sent the same thing again from the same line.
+  A job that asks if it ran before passes the run above. It fails here when
+  it marks that only after it sent. The same is read when an email failed in
+  the job. A job that sends to many starts from the top when it is tried
+  again, and sends again what it had sent before the failure. So the last
+  email a job sends from one line is the one made to fail. Only the count
+  from each line is compared with the normal run: a job that goes on where
+  it stopped sent each email once, and is clean.
+- **Never sent.** An email failed in a job, the job was tried again, and
+  the second try sent nothing from the same line. A job that marks its work
+  as done before it sends stops at that mark, so the email is never sent. A
+  job that takes the mark back when the email fails is clean. An outside
+  call is left out: a call that got no answer may have arrived, so a job
+  that does not make it again can be right.
+- **Rest not sent.** A request or a command sends the same thing from one
+  line more than once when all works: an email to each person. The first one
+  failed, and fewer left than in the normal run. One failure stopped the
+  rest. A loop that catches the failure, records it and goes on is clean, and
+  so is one that queues each email, or sends a queued notification. A send
+  in a job is left out: a queue tries a failed job again. An outside call is
+  left out too: a loop that reads pages from a service is right to stop when
+  one call fails.
+- **Called again.** An outside call got no answer, and the request made the
+  same call again from the same line. A call that got no answer can still
+  have arrived, so the service can do it twice: a payment taken twice.
+- **Answer not checked.** An outside call was answered with a server
+  error. The app's code did not ask the answer for its status, and the
+  request went on to send and save the same as when the call works: an
+  order marked as paid when the payment failed.
+- **Needs its job done.** A job ran after the response and not where it
+  was dispatched, and the request did not do the same. What the request
+  does after it dispatches a job only works when the job is done.
+- **Job needs the request.** A job ran after the response the way a worker
+  runs it, and the job did not do the same. A send, or a save of its code
+  that stayed, is missing or new from its line. A job that takes the
+  person or what they sent from the request it was dispatched in
+  (`auth()->user()`, `request()`, `session()`), and not from what it was
+  given, finds nothing on a queue. A job that was given a model the request
+  deletes after it queued the job is found too: the worker cannot load the
+  model.
+- **Depends on order.** The found listeners of an event ran in the reverse
+  order, and the request did not do the same. A send, or a save of the
+  app's code that stayed, is missing or new from its line, or the answer
+  has another status.
+- **Failure hidden.** A send or a save failed, the app's code caught the
+  failure, and the request carried on as if it worked: an empty `catch`
+  around an email. The person sees the same as when it worked, and no one
+  can find out later. When the failure was in a job the request queued, the
+  finding says so (`job`). The coder then reads the fix for a job, and the
+  owner reads it as work the app does on its own: no person sees an answer
+  there. A file that was not stored is read the same way. With the
+  framework's default config no code has to catch anything: the write gives
+  `false`, and an app that does not ask carries on as if the file is there.
+  The coder is told to ask what `put()`, `store()` or `storeAs()` gave back.
+
+A save in a transaction is lost when the transaction rolls back. A save in
+steps is lost when the request ends in a server error. An app that catches
+the failure and answers in its own way took the failure in, and nothing is
+said about what stayed. Such an app must still not hide the failure. The
+failure is hidden when three things hold. The app wrote nothing to its log
+after the failure: the recorder hears each log entry, and a `report()` ends
+in the log too (`quiet`). The request gave the same kind of answer as in the
+normal run. And the request did nothing it does not do in the normal run;
+what it did less is the failure itself. The recorder keeps the kind of
+answer by names only (`shape`): the pattern of the route a redirect leads
+to, the names of what the request flashed and of the fields it found wrong,
+the view and the names of what it was given, and the names in a JSON
+answer. It reads those names at any depth, and in text that holds JSON,
+because a package for screens can put the fields it found wrong there. A
+key that is not a name, such as an id, is left out. It keeps 40 names; one
+mark stands for all of them when there are more. An Inertia page is read
+the same way, in a view and as JSON: the component it shows, which is a
+name in the code, and the names in its props. So an app that records the
+failure, tells the person, or does something else about it is clean.
+For a command, the kind of answer is how it ended. What a command prints
+does not count: no one reads it when the schedule runs the command. So a
+command that catches a failure is clean only when it writes to the log,
+calls `report()`, or ends with a failure.
+Nothing is said when the log cannot be
+seen: a test put a fake or a mock in place of the events, the log or the
+handling of errors. A test that only turned that handling off
+(`withoutExceptionHandling()`, as each test of a Livewire component does) is
+still judged: its handler drops each `report()`, so the recorder puts a
+stand-in there that sees the `report()` first. The trace
+marks a request where the log cannot be seen (`dark`). When more than one test reaches the same send
+or save, the place takes the first test where the log can be seen. One limit: an
+app that tells the person in other words under the same name, or saves
+another value with the same statement, and records nothing, is a finding.
+The coder was told to catch a failure only together
+with `report()`, so this finding closes the easy way past the others.
+The recorder keeps no values, so the two runs of a job are compared by
+shape only. An update, a delete, or an insert that says what to do with a
+row that is there (`on conflict`, `insert ignore`) can be made again, and is
+not held against the job. A job that asks first and stops is clean.
+
+A call made again is a finding only for a POST or a PATCH with no
+idempotency key. The recorder marks a call that has a header or a field
+named for idempotency (`keyed`). It reads the name, never the value. A GET,
+a PUT and a DELETE can be made again. More calls from the line than in the
+normal run means a new try. The same number means a loop that carried on
+with its next call, and nothing is said.
+
+An answer is judged by two facts. The error answer tells the recorder when
+the app's code asks it for its status (`successful()`, `failed()`,
+`status()`, `throw()`), and the trace says so (`asked`). The framework asks
+every answer, and a package that watches outside calls can ask too. Neither
+counts. The second fact is the shape of the request. An app that asked, or
+that did not do the same as in the normal run, took the error in, and
+nothing is said. The recorder marks each call the app's code made itself
+(`direct`), so only those are places. One limit: an app that reads only the
+body of the answer and carries on with the same shape is a finding. The
+recorder keeps no values, so it cannot see that the body was used.
+
+The two orders of an event's listeners are compared by shape too. The
+recorder lists each such event in the trace (`events`), with the line that
+dispatched it and its found listeners. The same sends and saves from the
+same lines, with the same answer, is clean when the listeners use no table
+together. When two of them use one table and one of them saves to it, the
+shape cannot say what stayed there: the place is `missed`. A query is a
+listener's when the listener is among the app's code on the way to it
+(`frames`). What a listener changes only in memory is not seen. A job that
+waits is compared the same way. The two groups are what jobs did and what
+the app's code did after the job was dispatched. A request that reads the
+table its job saves to, with the same shape in both runs, is `missed`.
+What differs among the things the job did is the job's finding (job needs
+the request). What differs in the rest is the request's (needs its job
+done). One limit: a job that finds no person and carries on with the same
+shape, such as an update that now changes no row, is not seen.
+
+A finding counts against a change only when the failed effect, or what
+stayed, comes from a line the change added. The rest is counted (`existing`)
+and not reported. The places are tried in a fixed order (direction 33).
+Places on the change's own lines come first. Next come places on a line or a
+route that `AppTraces` or `AppBoundaries` has a finding about. Then sends
+come before jobs, and jobs before saves: what cannot be taken back is tried
+first. An answer is tried with the sends. It is the change's when the
+change makes the call or wrote what the request does after it. A
+notification is a send of its own, over the channel it goes out on; one
+whose email is the next effect defers to that email, so one failure is
+not found twice. A cache write or forget on the app's own line is a
+place too, tried with the saves: the cache keeps a copy, so an app that
+goes on without it did right and nothing is "hidden", and one write of
+many is not a send that stops the rest. The order comes only from the trace, the patch and those findings. At
+most `points` places are tried, and no place starts after `seconds`, so the
+owner's wait has a limit. A place whose failure did not happen is counted as
+`missed`, never as clean. What a job on the sync queue does is not a place
+of the request, because in use that job runs later on a queue. The job as a
+whole is the place, and the save after its send is a second place of the
+job. Both are tried with the jobs, before the saves of the request. They
+are the change's when the change queues the job or wrote what it does. An
+email or an outside call the app's code makes in the job is a place too, for
+one question: does the job catch the failure and write nothing to the log.
+These places are tried last. A failure the job lets through is not held
+against the request, because in use it stays on the queue, after the
+answer. A job of the framework that delivers one email has no code of the
+app to catch the failure, and gives no such place. A job that the job
+dispatched gives none to the job around it: in use it runs by itself. A
+job the app sends to the sync queue by name is different: in use it runs
+where the app dispatches it, once, and its error is the request's. The
+recorder reads the connection the job names, does not mark the job, and
+what the job does is a place of the request. A queued listener or a queued
+email that names the `sync` connection in its own class, and an encrypted
+job, keep the mark: the job the queue gets does not show that name. A
+job that waits is the job's third place, and is the change's too when the
+change wrote what the request does after the job. An
+event is tried with the jobs too. It is the change's when the change
+dispatches it or wrote what one of its listeners does. A
+job that takes the failure of its save in is not tried again, and nothing
+is said. A second run that the trace cut short is missed. An email that a test
+fakes is a place too: the stand-in of the fake fails it the same way, before
+the fake takes it.
+
+Each of the fourteen sends the change back for a fix by itself, as the safety
+scan does (`builder.verification.faults.send_back`). No model decides it:
+the failure was caused, and the trace shows what stayed. The coder is told
+what stayed and how to avoid it ("…A queue gives a job to a worker at least
+once. Make the job safe to run again…"). While these findings send a change
+back, the brief gives the coder the same rules before it writes code
+(`WriteBrief::FAILURES`). The brief says what must hold and never how it is
+checked. A place where the failure did not
+happen says nothing and sends nothing back. The reviewer reads the same
+findings. It can add to them, but it cannot take one away. Only the owner
+can: each of these lines in the proof has "I want it this way", as a
+boundary finding has. The choice is kept by what the finding is (the
+finding, the address and what was made to fail), not by its line, so it
+holds while the change is fixed. One line stands for every place where
+the same kind was found, and the owner's choice is for all of them. So the
+line names the first address and says where else: "Something like this also
+happens at one more place: /refunds." The reviewer is told how many the owner
+wants and does not see them.
+The owner reads each in the proof: "If saving fails at /invitations,
+your app has already sent something. People are told about something that
+was not saved." When failures were caused and nothing stayed: "We made things
+go wrong 3 times while your app used the new code, such as an email that
+cannot be sent or a save that fails. Each time, your app left nothing half
+done." For a job: "Your app does some work on its own after someone uses
+/orders. If that work is cut off and starts over, it sends or adds the same
+thing twice." When the job sends twice only after its save failed, the
+owner reads that in its place: "If saving fails during that work and it
+starts over, it sends the same thing twice." When the job does not send
+after it starts over: "If an email cannot be sent during that work and it
+starts over, it does not try to send again. What it had to send is never
+sent." For a failure that stops the rest: "Your app sends to several people
+at /news. If an email cannot be sent for one of them, your app stops there,
+and the people after them get nothing." For a file: "If a file cannot be
+stored at /photos, your app carries on as if it worked. The person sees the
+same as when it works, and nothing is written down, so you would not find
+out." For a deleted file: "If saving fails at /documents/{document}, your
+app has already deleted a file. What it kept still points to that file, and
+the file is gone." For a call made again: "If an outside service is slow to
+answer at /orders/{order}/pay, your app asks it again. The service may then
+do the same thing twice, such as take a payment twice." For an answer that
+is not checked: "If an outside service says it could not do what your app
+asked at /orders/{order}/pay, your app does not look at that answer. It
+carries on as if the service did it." For an event: "When
+someone uses /orders, your app does a few things one after the other, and
+nothing says which comes first. When they happen the other way round, your
+app does not do the same things." For a job that waits: "Your app does some
+work on its own after someone uses /orders, and does not wait for it. But
+what your app does next only goes right when that work is already done."
+For a job that needs the request: "Your app does some work on its own after
+someone uses /orders. That work runs a moment later, after your app has
+answered. By then something it counts on is gone, such as who the person
+is, and it does not do the same things."
+On the fixture the reference change has 2 places, both clean,
+in about 2 seconds. A copy of it that sends an email before its last save is
+found.
+
+**Made-up colours are sent back too** (direction 26, the first design check
+that graduated from the contract). The lines a change adds to screen files
+(Vue, Blade, TSX, JSX; not tests, and not CSS, where the theme lives) are
+checked for colours written out instead of taken from the theme: hex values
+and colour functions, in a Tailwind arbitrary value (`text-[#1a2b3c]`) or an
+inline style. Theme references (`bg-[var(--brand)]`), sizes (`w-[73%]`) and
+the palette's own classes pass. Each file with one is a blocking finding. A
+comment that mentions the colour, on the line or the line above, lets it
+through. The owner sees the clean result as one line of the change's proof.
+Pictures are checked the same way: an `<img>` tag a change adds (read across
+its lines) must have an `alt` description, or `alt=""` when it is only
+decoration. A tag with attributes spread in from elsewhere, or one that runs
+into lines the change did not add, is unknown and passes. Its clean result
+is a proof line too. `builder.verification.design_scan` turns both off.
+
+**Screens are opened at three widths** (direction 26, the first browser
+check). When the checks pass and a change touches a screen file (or CSS),
+verification builds the app, serves it in the workspace and runs the screen
+check (`resources/screen-check`, baked into the box image with Chromium). It
+visits every GET route without parameters, signed out. It then seeds the
+database with the app's own seeder, gives the app's first user (or one it
+makes) a password for the purpose, and signs in to measure the pages behind
+a login. Pages with parameters are reached through the links the measured
+pages show. At 390,
+820 and 1280 px it records sideways scrolling, words or controls cut off at
+the screen's edge (a layout that hides overflow cuts them off instead of
+scrolling), script errors and, at 390 px, controls under 24 by 24 px with no
+room around them (WCAG 2.2 AA 2.5.8, with its spacing and inline-link
+exceptions). The result is kept on the verification (`screens`); it never
+changes the checks' result. A page names its screen through Inertia's page
+component. On a page whose screen file the change touched, each kind of
+problem is a blocking finding at its narrowest width. Other pages are
+measured but never blamed. The owner sees a clean result as one proof line.
+At 390 px it also measures contrast (WCAG 2.2 AA 1.4.3: 4.5 to 1, or 3 to 1
+for large text; text over a picture or gradient is unknown). Faint words on
+a touched screen are a gap line in the proof, never a send-back: they
+usually come from the app's shared theme. At 1280 px it presses Tab through
+the first 20 controls and names those that look the same focused as not
+(2.4.7). Hidden focus is a gap line for the same reason. The check also takes a
+picture of each touched Inertia screen (up to `shots_max`) at each width.
+Verification copies them out of the workspace to `shots_disk`, and the
+owner sees the first screen as Phone, Tablet and Computer pictures under the
+first proof line, served only to people who can view the app.
+Where the tool is not installed, nothing is measured and nothing is said.
+`builder.verification.screens` holds the command and its switch.
+
+Depend on the idea of observed test dependencies, not on Pest's cache format:
+use affected-test output or a supported extension point.
+
+**Soft requirements climb the same ladder** (direction 26). "Feels fast",
+"consistent", "accessible", "not cluttered" are checked as far as evidence
+allows, and no further:
+
+| Kind of requirement    | How it is checked                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Measurable             | Deterministic checks: response time budgets, query counts, bundle size.                                                                    |
+| Structurally inferable | Heuristics and static analysis: token use instead of invented values, one primary action per surface, existing components reused.          |
+| Visually observable    | Browser checks on touched screens: contrast, no sideways overflow at 390, 820 and 1280 px, visible focus, touch targets of at least 44 px. |
+| Subjective             | The reviewer (a model) or a person judges hierarchy, clutter and coherence against the design contract.                                    |
+| Unknown                | Ask the owner one question (§7).                                                                                                           |
+
+Subjective qualities are never reported as passed checks. The owner sees the
+results in plain words ("Buttons are easy to tap on phones"), not the ladder.
 
 ## 13. Packages: trust, understanding and adapters
 
@@ -1108,8 +2950,8 @@ Resolved progressively when the user clicks in the preview; any level may be
 
 ```
 element     DOM path, visible text, screenshot crop, current classes
-source      file:line:col in the Vue template, component name
-screen      Inertia page, route, URL
+source      file:line:col in the Vue template or Blade view, component name
+screen      page component or view, route, URL
 behavior    keys (Wayfinder action bound to the element, or the page's view behaviour)
 capability, actors, permissions, side effects   (from the Product Behavior Graph)
 impl_refs   component, policy, action, tests
@@ -1122,7 +2964,35 @@ seeded with exactly what the user pointed at.
 
 A Vite plugin stamps elements with `data-source` from the single-file-component
 compiler's source locations; Vue's development metadata gives component names;
-the Wayfinder index links elements to behaviours. Conventions for generated
+the Wayfinder index links elements to behaviours.
+
+Implemented for Wayfinder: `FindBehavior` reads the action a part calls from
+its start tag, or from the form a submit button sends, and the file's
+imports. Where Wayfinder writes, and the aliases that reach it, come from the
+app's `tsconfig.json`, Vite aliases and Wayfinder plugin `path`, with the
+starter kit's `@` and `resources/js` as the default. The call gets a key
+only when the app on show lists exactly one route for it (`route:list
+--json`, run beside the app with a short timeout). The key is the
+controller and method, or the route name for a route with no controller.
+Otherwise there is no key, with the reason: `not_bound` when the part calls
+nothing through Wayfinder, and `not_found` when no single route matches, the
+import is not where the app's Wayfinder writes, or the app did not answer in
+time. A change request carries the key, so the coding agent knows the action.
+
+Implemented: `resources/preview-tools/locate-sources.mjs` stamps Vue files
+(with the app's Vue compiler, loaded only when it finds one) and Blade
+views, Livewire's included, so the designer works whatever the screens are
+made with (§18). A Blade view is read tag by tag; echoes, comments, PHP and
+script contents are skipped. A Blade component (`<x-…>`) is marked where it
+is used, as a Vue component is, and a Livewire tag is left alone because it
+passes what it gets to the component's code. `@foreach` and Alpine `x-for`
+mark a part as repeated; `@if`, `@unless` and the like mark it as shown at
+times. The edit writers read Blade too: a class, link or picture printed by
+Blade (`{{ }}`, `@class`) is left to the coding agent, except the first entry
+of `@class([…])` when it is a plain string with no condition, which is edited
+as `class="…"` is. A part moves only
+within one branch of one block, never into or out of an `@if` or
+`@foreach`. Conventions for generated
 code: meaningful component names, every server action through Wayfinder, no
 dynamic component resolution for interactive elements. Production output stays
 clean.
@@ -1132,7 +3002,15 @@ clean.
 - **Tailwind classes:** spacing, sizing, alignment, flex and grid, typography,
   radius, borders, shadow, visibility, gap, position; tokens grouped by utility
   family with variant and responsive prefixes; values snap to the project's
-  `@theme` steps but are not limited to them (§26.12).
+  `@theme` steps but are not limited to them (§26.12). Any other class goes
+  only when Tailwind would apply the new class in its place (`w-[calc(…)]`
+  against a new width). The package `tales-from-a-dev/tailwind-merge-php`
+  decides this. It is a PHP port of tailwind-merge, which the app's own `cn()`
+  uses. Laravel has no first-party package for this, and it saves us from
+  keeping Tailwind's clash rules ourselves. It is set up with the names the
+  app's `@theme` gives each scale, so `text-hero` from `--text-hero` is a size.
+  A `text-` class with a name the theme does not give is kept, because it may
+  be a size or a colour.
 - **Literal text** in templates, or translation files for translation keys.
 - **Show or hide** by breakpoint.
 - **This instance or all instances:** editing a shared component changes it
@@ -1141,8 +3019,70 @@ clean.
 - **Not static → agent:** dynamic `:class`, `v-if`, loops, props, database
   content, anything tied to permissions or behaviour.
 
-Edits collect on a visual-session branch, commit on save, and get light
-verification.
+**Design edits on the app wait in a draft.** An edit on the app's own preview
+does not change the app. The first edit opens a draft (`DesignDrafts`): a
+feature request with the generator `design` and a branch `changes/{id}` that
+starts at the app's newest commit. Each edit commits on save to that branch,
+and the app's preview runs from it (`Preview::branch()`). The draft's patch
+follows each commit (`FollowDesignedChange`). When the app moves on meanwhile,
+`CatchUpDesignDraft` moves the draft onto the new commit. When the edits no
+longer fit, the draft stays as it was. The design panel shows "N edits not
+kept yet" with **Keep** and **Undo all**. Keep runs the full checks on the
+draft (`KeepDesignEdits`, then `VerifyFeatureRequest`). Edits and undos are
+refused while the checks run, so what joins the app is what was checked. When
+the checks pass, or fail only as they failed before, `CommitDesignEdits`
+squash-merges the branch into the app as one commit, "Change the design". When
+they fail, the edits wait and the owner is told why. Undo all throws the draft
+away (`DiscardDesignEdits`), and the app never had it. A kept draft is a kept
+change, so the app's history can undo it.
+
+**Motion is a few ready-made choices.** The Motion section of the design
+panel says in words how the selected part moves, for example "Slides in from
+the left, slowly." `MotionClasses` reads this from Tailwind classes: the
+entrance (`starting:`, Tailwind v4), speed (`duration-*`), wait (`delay-*`),
+what it does when pointed at, and any lasting motion (`animate-*`). The owner
+picks from fixed choices: Fade, Rise, Slide or Grow to come in; Lift or Grow
+when pointed at; Pulse, Bounce or Spin to keep moving; and a speed and a wait.
+`ChangeVisualMotion` writes them without a model. Movement goes under
+`motion-safe:`, so people who ask for less motion see a fade at most. Each
+kind of part gets a suggestion: a rise for a heading, a fade for a picture, a
+lift for a button or link. A part that moves in a way the choices cannot show
+(its own keyframes, or motion for one screen size) is only described. Its
+"Ask me to change how this moves" goes to the agent. The builder draws its
+preview without entrances, so they do not replay after every edit. **Play**
+replays the entrance: the overlay takes the part off the page for one style
+pass and puts it back. A motion edit is a `VisualEdit` with the kind
+`motion`. Undo swaps the classes back, as for a look.
+
+**Designing a change before it is kept.** A change that waits to be kept has
+its own branch, `changes/{id}` (`OpenChangeForDesign`). The branch holds the
+change's base, the changes it follows up on, and then the change itself.
+`design_base` marks the commit where the change's own code starts. The copy of
+the change is an editable preview that runs from this branch, so the owner
+designs "After" as they design the app. `Preview::branch()` names the branch
+that design edits, undo, formatting and rebuilds use. Each edit records its
+change in `visual_edits.feature_request_id`. After each commit on the branch,
+`FollowDesignedChange` reads the change's patch back from `design_base` to the
+branch head (`AmendChangeFromDesign`) and rebuilds the copy. So keeping the
+change keeps the edits, and the app does not move until then. The design panel
+lists only the edits of what is on show. A copy started before this has no
+branch; design mode then shows the app without the change.
+
+Direct edits are written without the app's formatting, so the preview shows
+them in about a second. When the editable preview shows the newest version,
+`FormatEditedFiles` waits `builder.preview.format.after_seconds` (10 s). Then
+it runs the app's own formatters (`builder.construction.formatters`) on the
+changed files. The formatters work on copies in the preview's workspace, so
+the running build does not see them. The job commits the result. If the owner
+changed the app meanwhile, it does nothing; the next rebuild asks again.
+
+Formatting moves the app on while the owner may still be editing. So
+`FormattedRevisions` remembers each formatting commit. An edit sent on the
+version before one continues on the formatted version. `FollowLocation` finds
+the element there by its place in the order, because formatting keeps every
+element and its order. Class lists are compared without order, because
+Tailwind ignores order and the formatter may sort the classes. Undo follows the
+element from the edit's commit to the newest version.
 
 ### Both users
 
@@ -1172,7 +3112,191 @@ own workspace and serves it at `http://{host}.{preview domain}`.
   stripped.
 - Reaped after maximum age or idle time; stopping kills the server and removes
   the workspace.
+- An app that stops answering mid-session is marked stopped, with our reason,
+  on the first request that cannot reach it. Only a ready copy whose port
+  stays silent counts, and only one request of a page load checks (a short
+  lock). The box is removed on the previews queue; the idle workspace reaper
+  is the backstop.
 - Serves built assets; hot reload arrives with the edge proxy.
+
+### What the app does behind the page
+
+An app does work the page does not show: it sends email, saves rows and
+writes down its problems. The owner must see that work to try the app. The
+builder shows it in tabs beside the app, for the preview on show. Each tab
+reads the preview's workspace, so the app itself does not change.
+
+- **Emails** (built). A preview sends email to its log
+  (`MAIL_MAILER=log`, `MAIL_LOG_CHANNEL=single`), so nothing leaves the
+  machine. The builder reads the log file (`builder.preview.log`), finds
+  each email in it and lists them newest first. An email opens as its
+  reader sees it, in a sandboxed frame without scripts. A link to the app
+  opens that page in the app on show, so sign-up, password reset and
+  verify-email flows can be tried to the end. The tab is named Messages:
+  the same list holds the notices the app left for people inside the app
+  (Laravel's database notification channel, such as what a bell shows),
+  newest first with the email. A notice says who it is for, what it is
+  called and what it holds, and if the person has opened it. Notices are
+  read through the app itself, only while the owner looks at the tab.
+- **Problems** (built). The same log file holds the app's errors. The
+  tab lists them in plain words, newest first, with the place in the code
+  that caused them. The same fault met again is counted, not listed again.
+  The details for a developer stay folded. Each problem offers "Ask me to
+  fix this", which starts a normal change. A problem leaves the list when
+  its fix is kept, or when the owner clears it. It returns, marked "came
+  back", if the app runs into it again after that. The log itself is never
+  changed; the builder keeps only which problems the owner cleared.
+  A problem met while the owner had something down on purpose (What if)
+  is a question, not a fault: "Should your app keep working when email is
+  down?" "Yes, it should cope" starts the fix and says it uses AI. "No,
+  failing is fine here" costs nothing. It is kept as a clearance marked
+  fine, which does not come back, since the app meets it whenever the same
+  thing is down. Either answer is a product decision: it goes into the
+  notes' Decisions, so it shows on the Understanding page and later plans
+  follow it. A new answer replaces the old one. "Show again" puts the
+  problem back and takes the decision out.
+- **Saved data** (built: tables and counts). The preview's tables, with
+  how many rows each holds: what a sign-up or an order saved. They are read
+  through the app itself (`db:show`), with the settings it runs with, never
+  from the control plane's database. Laravel's own tables stay folded. The
+  owner can start the data again, with the app's example data
+  (`migrate:fresh --seed`) or empty, after a second click; only the copy
+  they try changes. A table opens to its newest 50 rows, with what
+  visitors sign in with hidden. Below the tables are the files the app
+  stored, such as uploads, newest first: a picture shows, anything else
+  downloads. Changing rows comes later, with an undo.
+- **Schedule** (built). The tasks the app runs on its own
+  (`schedule:list`), each with when it runs in plain words and how long
+  until it runs next. "Run it now" runs one at once (`schedule:test`), so
+  a daily reminder email can be tried without waiting a day. What it sent
+  or ran into shows in the other tabs. **Jump ahead** (built) moves the app
+  a day, a week or a month on, by the calendar in the app's timezone. The
+  recorder reads `clock.json` in its folder as each request and command
+  starts, and runs Carbon's clock that far ahead of the real one. A queued
+  job runs each task the skipped time held, oldest first, with the clock
+  set to its moment (`schedule:test`; at most `each` runs of a task and
+  `most` in all, `builder.preview.clock`). It then moves the app's
+  database or file sessions on too, so the owner stays signed in. "Back to
+  today" keeps what happened. A new start of the app starts today. The
+  database's own clock and the browser's do not move.
+- **Pages** (built). The address beside Back and Forward opens a list of
+  the app's pages, read through the app itself (`route:list`): each web
+  address that needs nothing filled in, with a lock when a visitor must
+  sign in. Picking one opens it in the app on show. Framework addresses
+  that answer with data, not a page, are left out.
+- **Fill the form** (built). One tap beside Back and Forward puts example
+  details in every empty field of the page on show, the way typing does,
+  so the app's own code sees them. Nothing is sent: the owner looks, then
+  presses the app's own button. A script the gateway adds to every page
+  does the filling; it acts only on messages from the builder's origin,
+  answers only to it, and tells it counts, never what a field holds. A
+  sign-in form is left alone ("Sign in as" does that), as are search
+  boxes, cards and one-time codes. A new password is made at random on
+  each fill, only where the app asks for a new one; nobody knows it, and
+  the owner comes back with "Sign in as". Each fill is a new example
+  person, so an app that takes an email once takes a second sign-up.
+- **What happened** (built). A tab says, newest first, what the app did
+  behind each of its last pages in plain words: "Sent a form on
+  /bookings · Saved a new booking · Sent an email: Booking confirmed",
+  "Opened /bookings · Looked at bookings, rooms". It reads the trace the
+  recorder (§12) writes while the app is on show: the preview
+  server loads `/opt/trace-recorder/prepend.php` from the box image
+  through PHP's own prepend setting (`php -d auto_prepend_file=`), and
+  the recorder writes `storage/logs/recorder/trace.jsonl` in the
+  workspace, a path the app's own `.gitignore` keeps out of its
+  repository. Nothing is added to the app. The tab reads the end of the
+  trace through the driver and follows along while the owner looks. A
+  trace past 4 MB is moved aside (one old copy kept), so a busy app
+  cannot fill the workspace disk. The trace holds routes, table names,
+  class names and hosts: never field values, headers or cookies. The
+  cache is recorded as what the app kept and forgot; its many reads are
+  noted only when the cache is down and one fails.
+  `BUILDER_PREVIEW_RECORDER=false` turns it off. Reads of framework
+  tables (sessions, cache, jobs) are not something the app did and are
+  left out; saves are said on their own, so only a read is "looked at".
+  The recorder also writes how long each page took and how often it asked
+  the database, never while the app's own tests run. A page from one
+  second (`BUILDER_PREVIEW_SLOW_MS`) reads "Slow: took 2.4 seconds", and
+  from 50 lookups (`BUILDER_PREVIEW_MANY_LOOKUPS`) adds "looking things up
+  340 times", so "Add lots more" shows which pages do not cope.
+- **What if it fails** (built). A select in the same tab lets the owner
+  pretend one kind of thing is down while they use the app: "Email is
+  down", "Outside services do not answer", "Storage is full", "The cache
+  is down", "Notices do not go out". The
+  builder writes `storage/logs/recorder/fault.json` in the workspace;
+  the recorder reads it as each request starts and makes every thing of
+  that kind fail, so the owner sees the page a visitor would see and the
+  tab says what could not be done. Nothing is sent or stored for real
+  either way. The warning stays on screen until the owner picks "All
+  works", and the preview server drops the file when it starts, so a
+  restarted app starts with all working.
+- **Add lots more** (built). Under Saved data, one tap adds hundreds of
+  each kind of record the app keeps, beside what is saved, so the owner
+  sees how its pages cope with lots before real customers come. The app's
+  own factories make them, as its tests would. People get a quarter as
+  many, and every other kind reuses the people already there, so each of
+  them sees a full app. A kind whose factory breaks is left as it was and
+  named. `BUILDER_PREVIEW_LOTS` sets how many (200).
+- **Jobs** need no tab while previews run queued work at once
+  (`QUEUE_CONNECTION=sync`).
+
+### Live updates
+
+Proposed, not built, and paused by the owner on 2026-10-08. A change one
+person makes shows at once in another person's tab, with Laravel
+broadcasting and Reverb, and the owner sets up nothing.
+
+**Today.** The coder can add it: `install:broadcasting --reverb` asks only
+for `laravel/*`, `laravel-echo`, `pusher-js` and `@laravel/echo-vue`, which
+are all on the package allowlist. It does not work in the preview, for three
+reasons:
+
+- Reverb writes its keys and `BROADCAST_CONNECTION=reverb` into `.env` only.
+  A preview starts from `.env.example`, where the starter kit has
+  `BROADCAST_CONNECTION=log`. Each broadcast goes to the log.
+- The build gets no `VITE_REVERB_*`, so Echo has no key. The page that
+  listens is expected to fail in the browser. This is read from the code;
+  nobody has run it yet.
+- Nothing serves the socket. The preview runs only `php -S`, and the
+  gateway drops `Upgrade`: a PHP relay cannot carry a WebSocket.
+
+**Design: one Reverb for all previews.** Reverb serves many apps from one
+server, each with its own id, key and secret. Its app list comes from a
+provider that the `ApplicationManager` lets us replace (`extend`).
+
+- A second `reverb:start` process of the control plane serves previews. It
+  is not the control plane's own Reverb: it has its own port and host, and
+  its provider lists only running previews. The control plane's app is
+  never in it.
+- A preview of an app with `laravel/reverb` in `composer.lock` gets an app
+  id, key and secret of its own, kept encrypted on the preview. Its allowed
+  origin is the preview's URL, so a share link works, and no other origin
+  does. The provider stops listing it when the preview stops.
+- The preview environment sets `BROADCAST_CONNECTION=reverb` and the
+  `REVERB_*` values for the server side. `REVERB_HOST` is the private
+  address the workspace reaches the server at. The build and the watcher
+  get `VITE_REVERB_*` with the public host, which the browser uses. The
+  real environment wins over `.env` for Laravel and for Vite, so nothing
+  is written into the app.
+- The browser connects straight to the preview Reverb host. The gateway is
+  not involved. Private channels still sign in through the gateway
+  (`/broadcasting/auth` is a normal POST with the preview's session).
+- Previews run queued work at once, so `ShouldBroadcast` events go out
+  in the request.
+
+One Reverb process for each preview was rejected. It needs a port, a
+WebSocket relay in the gateway and memory for each preview, for no gain in
+isolation: Reverb keeps apps apart by their id.
+
+**The coder.** The brief says: add live updates with
+`install:broadcasting --reverb`. List the `REVERB_*` names in `.env.example`
+with no values. Tests fake broadcasting. New apps do not start with
+broadcasting installed; it comes with the first change that needs it, and
+works in the preview with no setup.
+
+**Published apps.** On Forge, the site's Reverb daemon serves the app,
+with keys in the site's environment (§32.5). On Laravel Cloud, its managed
+Reverb does the same.
 
 ## 16. Model gateway and credentials
 
@@ -1182,11 +3306,52 @@ path.
 - The runtime gets a base URL and a short-lived token; the gateway injects the
   real credential, so an agent with a shell never sees it; it records usage and
   enforces budgets as hard limits.
+  Built (`ModelGateway`, `/api/gateway/{provider}`, on by default through
+  `BUILDER_MODEL_GATEWAY`; with it off, a box refuses to start an agent rather
+  than receive the real key): each runner-agent run gets a `gw_` token in place
+  of `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, and a base URL that points at the
+  control plane. The gateway passes each call on with the real key and streams
+  the answer back. It counts calls and output tokens per run, and it refuses a
+  run past `max_requests` or `max_output_tokens`. The token works for one
+  provider and closes when the run ends. Grants live in the database
+  (`model_gateway_grants`, the token's hash only), so an emptied cache stops
+  no run; each keeps the calls and the input and output tokens its run spent,
+  and is pruned a month after it ends. It is plain Laravel and HTTP, so it
+  does not depend on a cloud vendor. The plan's monthly AI use is checked
+  before each step ([§11](#11-execution-agents-runtimes-and-routing)) and,
+  while an agent works, in the gateway. A grant opens with what is left of
+  the owner's month (`MeasureUsage`). Each call is priced from
+  `builder.prices` as it streams back. The owner's runs share what was left:
+  a call is refused once the runs still open, or closed since, have spent
+  it. The refusal is a permission error in the provider's own shape, so the
+  agent's SDK stops rather than retrying. The run then stops with
+  `usage_limit` and the plan's own wording, with no failover to another
+  agent. A model without a price costs nothing here, and an operator's
+  account has no limit.
+- The gateway also adds our instructions on its side (how to work, the
+  discretion and observability rules), so the box holds only the task: the
+  plan, its acceptance criteria and the owner's own request for their own app
+  ([§19](#19-learning-and-privacy)). Built: the SDK driver gives the agent
+  `WriteBrief::task()` and hands `WriteBrief::rules()` (how to work, keeping
+  the app easy to see, what must hold when something fails, and discretion)
+  to the run's grant, stored encrypted. `GatewayInstructions` adds them to each call: one more
+  Anthropic `system` block after the agent's own, more OpenAI
+  `instructions`, or a first system message for chat calls. An error from
+  the provider has them taken out before the box reads it. An agent that
+  reaches its model without the gateway (signed in its own way, in a trusted
+  local folder) reads the rules with the task. This protects the rules only
+  in our own boxes; a worker on the owner's machine sees whatever it is sent.
+  So the working rules are written to be read: plain engineering guidance,
+  with nothing in them that would do harm when read
+  ([§11](#workers-one-boundary-for-ours-and-theirs)).
 - **Credentials vault** per account, encrypted, masked, revocable, each checked
   by a test call before saving: `api_key`, `claude_subscription_token`,
   `codex_chatgpt_token`, and provider OAuth (for example OpenRouter) later.
-- **Seamless default:** included credits. Bring-your-own is an option chosen in
-  one onboarding question.
+- **Pricing is Grandma-first: one unified price.** The owner pays one plan
+  price and never sees credits, tokens, models or cost per call. What each
+  change costs us is internal telemetry (§25.2), not an owner-facing number.
+- **Power users choose pay as you go,** or bring their own keys, from
+  settings. It is an option they look for, not an onboarding question.
 - **Subscription tokens:** technically supported, but Anthropic's documentation
   states that third-party developers may not offer claude.ai login or rate
   limits in their products unless previously approved. They stay flagged off on
@@ -1194,6 +3359,23 @@ path.
   used, only the agent process receives them, never test or preview commands.
 - **Model choice:** presets ("Recommended", "Best quality", "Lowest cost")
   mapping each stage to tested models; an advanced override per stage.
+- **Answer formats are tried on the real model.** An AI service can refuse
+  an agent's answer format (a schema whose compiled grammar is too large),
+  and then every call to that agent fails. Fakes in tests cannot show it.
+  Built: `php artisan ai:check-formats` finds every agent in `app/Ai/Agents`
+  that answers in a fixed format, with no list to keep. Each agent names its
+  tier with `#[Tier(ModelRole::...)]`, and one with none is reported. The
+  command makes one tiny call per agent on that tier's providers, with no
+  project data. Each result is kept (`answer_format_checks`, with the
+  service's error and never our prompt). A failed one is an attention item
+  ("An AI answer format failed its check") until a later check passes. It
+  runs daily when `BUILDER_CHECK_ANSWER_FORMATS` is on (by default in
+  production), and the deploy guides run it after each deploy.
+  A test also holds each format under a measured size before any call:
+  `AnswerFormatSize` counts each object and each field in it, at any depth.
+  On 2026-10-05 Anthropic accepted the planner at 58 and refused every
+  variant at 60 or more, so the ceiling is 58. Sizes now: FeaturePlanner
+  41, ShapePlanner 19, ChangeReviewer 19.
 
 ## 17. Safety and approvals
 
@@ -1204,7 +3386,137 @@ email or SMS, paid infrastructure, data deletion, domain and DNS changes,
 integrations with real consequences. The behaviour diff detects most of them
 deterministically (a new mail channel, a destructive migration, a new secret).
 
+### What the owner saw is what goes online
+
+The publish panel lists what goes online next. The publish sends the version
+the owner saw with that list (`seen`). When the app changed since, for example
+a change kept in another tab, `PublishProject` refuses: the owner did not see
+what would go online. The list then shows the newer version. The commit is
+fixed when the publish starts, and the checks and the push use that commit.
+
+### Undoing a kept change
+
+"Undo this change" (`RevertChange`) writes a new commit that reverses the
+change's commit, in the owner's name, and reverses the notes it changed. It
+locks the change first, so two quick clicks undo it once. A kept change that
+a later kept change builds on (its commit is in that change's history) is not
+undone by itself, even when git sees no conflict: the later one may rely on
+it. The owner is told which to undo first, newest first, by name.
+
+An undo never runs a migration's `down()`. When the change added a migration,
+the owner is told that what the app stored because of it is still there.
+
+An undo changes the app in the builder, not the live app. While the newest
+online version still holds the undone change, the owner sees that it is still
+online and "Put it online again", with how many other kept changes go online
+too. An undone change shows as "Undone", with nothing to try or check.
+
+A change that no longer fits the app (its patch does not apply any more, or
+its checks stopped for a reason that needs a new attempt) cannot be kept as it
+is. It shows "Could not finish" and offers only "Try again" and "Ask in other
+words"; keeping it is refused on the server too.
+
+### Going back to the version before
+
+When a newer version goes wrong online, the owner puts the one before it back.
+The publish panel offers "Go back to the version from …" and asks once, in
+place (`RestoreDeployment`). Only a version that came online and answered its
+checks (status `published`) can come back. It is not checked again, so it goes
+at once. The app in the builder keeps its newer work, and the next publish puts
+it online again.
+
+A push never forces, so the host may never lose a commit it has. Going back
+sends a commit with the earlier files on top of what the host has. The next
+publish sends the newer files on top of that commit. `PublishDeployment` makes
+these release commits (`ProjectRepository::releaseCommit`) when the commit it
+checked does not build on the last one sent. It keeps each under
+`refs/releases/{id}` and records it as `release_sha`. Hosts push
+`Deployment::released()`.
+
+Only code goes back. Information people saved stays, and so does how it is
+stored: a down-migration could lose what they saved. When the newer version
+changed `database/migrations/`, the panel says so before the owner goes back.
+
+### A copy before storage changes
+
+A release that changes `database/migrations/` since the last version sent may
+lose information, and going back does not undo that. So `PublishDeployment`
+asks the host for a copy first (`PublishingHost::backup`) and records its id as
+`backup_id`. The first release has nothing to copy. Laravel Cloud takes a
+snapshot of the shared database cluster. The Git branch host keeps no copies
+and returns null. When a host keeps copies but cannot save one, the release
+stops before anything goes online. The panel tells the owner a copy was saved.
+
+A copy comes back only with an operator's help. Cloud restores a snapshot into
+a new cluster, so the app moves to it rather than being overwritten. Restoring
+into a clean environment from the panel is not built yet.
+
+### Outside services and their keys
+
+Payments and email are what make most business apps usable, so the owner can
+connect them without a developer.
+
+- **A fixed catalogue** in `config/builder.php` (`services`): payments through
+  Stripe with Laravel Cashier, and email through Resend with Laravel's mail.
+  Each entry names its fields and how to check them, fixed settings (for
+  example `MAIL_MAILER=resend`), the change the owner sees asked for, and the
+  agent's guidance.
+- **The owner pastes keys; nobody else sees them.** They are stored encrypted
+  with the project and never sent back to the page. The agent gets only their
+  names, in a section of every plan and build prompt, and is told to read them
+  through config and keep them out of the repository.
+- **The first connection is a normal change.** It goes through the plan,
+  checks, review and the owner's keep. New keys for a connected service change
+  only the keys.
+- **The keys follow the app wherever it runs.** A preview gets them as
+  environment variables, but the preview's own settings win, so a preview
+  never sends real email. A Laravel Cloud release appends them to the app's
+  environment variables before it deploys. An owner who publishes to their own
+  branch sets them where they host. The checks never get them: the app's tests
+  fake outside services.
+
 ## 18. Imported applications
+
+Any Laravel application is imported, whatever its screens are made with:
+Inertia with Vue, React or Svelte, Livewire, or plain Blade views. The only
+requirement is `laravel/framework` in `composer.json` and an `artisan` file.
+`App\Projects\Frontend` names the stack from the packages the app requires,
+using the `builder.frontends` list; the last entry requires nothing, so every
+app is one of them. Each part that must know where the screens live asks it,
+so knowledge of one stack stays in one place:
+
+- the notes check expects the stack's screen folders to be described;
+- the planner is told what the screens are made with and where they live, so
+  new screens follow the app's own way;
+- the safety scan reads each stack's way to show raw HTML (`v-html`, `x-html`,
+  `dangerouslySetInnerHTML`, `{@html}`);
+- a setup step or check that `needs` a file (the Node install and build need
+  `package.json`, Wayfinder needs its package, TypeScript needs
+  `tsconfig.json`, static analysis needs PHPStan) does not apply to an app
+  without it, in previews, checks and publishing alike
+  (`App\Actions\Workspaces\CheckStepNeeds`).
+
+A stack not in the list still works, with fewer of these aids.
+
+The database is the one the app asks for in its `.env`. SQLite needs no
+server. For MySQL, MariaDB or PostgreSQL, the "Start the database" setup step
+(`resources/preview-tools/start-database.sh`, sent as one `sh -c` script so
+no file of ours lands in the app) starts a server private to the workspace:
+it listens only on a socket in the workspace's temp folder and lets in any
+user, so the app keeps the names and passwords it was written with. Each
+database the app or its test settings name is created. The socket goes into
+`.env` (`DB_SOCKET`, or `DB_HOST` for PostgreSQL) and into
+`.git/environment`. The box runner gives that file's variables to every
+command and service of the workspace, so tests that read a committed
+`.env.testing` also find the server. It reads the file only when it is a
+small regular file the workspace's user owns, never through a link, and
+never takes names that change how programs load (`LD_*`, `NODE_OPTIONS`) or
+the ones it sets itself; what the control plane sends wins. Closing a
+workspace stops every process its user still runs, a database server
+included, before the user id goes to another workspace. The box image holds the server
+programs; no server starts unless an app asks for one. SQLite is not used in
+place of the app's own database: an app's migrations may use what only its
+own database understands.
 
 1. Read-only introspection and a conformance report: supported as-is; harmless
    variation, recorded as the project's own conventions so agents follow them;
@@ -1231,6 +3543,28 @@ shows it honestly; normalization improves it over time.
 - **Metrics:** pass rate per task class and engine, cost, repairs, share of work
   done without a model, tokens avoided, generated foundation code per feature,
   behaviour-diff and annotation accuracy.
+- **The customer repository shows no trade secrets:** by default, a project's
+  repository is a private repository in our organisation. Owners can also bring
+  their own. Either way, it must look like the work of the app's own developer.
+    - Commit subjects are written in a developer's words (the planner's
+      `commit_subject`). They never quote the owner's request. They have no
+      trailers and do not name the builder or its screens.
+    - Commits are committed by their author, unless an operator sets
+      `BUILDER_COMMITTER_NAME` and `BUILDER_COMMITTER_EMAIL`.
+    - Agent prompts do not mention a platform, a builder or a control plane. The
+      coder is told to write as the app's own developer. Files the runner puts in
+      a workspace go inside `.git/` and have neutral names.
+    - The workspace box holds nothing of ours either: no control-plane code,
+      keys or prompts ([§11](#adapters)). Our working rules reach the model
+      through the gateway, never through the box
+      ([§16](#16-model-gateway-and-credentials)).
+    - The project notes are never committed to the repository (§26.3).
+- **The code is the owner's to take.** "Download your app" in the app menu
+  sends the main branch's files as a zip (`git archive`), in a folder named
+  after the app. The history and the notes stay with us.
+- **Workers see compiled text, never our machinery.** What stays on the
+  server, what a brief may carry and what is open on purpose are listed in
+  [§11](#workers-one-boundary-for-ours-and-theirs). A brief lint enforces it.
 
 ## 20. Deliberately not built yet
 
@@ -1240,8 +3574,7 @@ content-addressed snapshot storage (V0 stores plain per-snapshot rows); the
 second provider adapter and learned routing (the contract and telemetry stay);
 package trust levels and adapters beyond an allowlist; custom Rector rules and
 the rule-promotion pipeline; the typed-operation catalogue beyond
-`capability_config` and `agent_task`; mapping design context onto theme tokens;
-AI comparison of prose intent; the edge proxy and hot reload; imported
+`capability_config` and `agent_task`; AI comparison of prose intent; the edge proxy and hot reload; imported
 applications; the invariant lifecycle interface; showing all five provenance
 classes to users (three badges suffice). Postponed in version 9: a precedent
 sources pipeline (public examples, domain research, aggregate insights), an
@@ -1259,6 +3592,28 @@ rule catalogue; a page-builder document tree; generic multi-framework support;
 targeted test selection; multi-agent decomposition within one request;
 automated upgrades across many projects; inferred invariants as protections;
 online routing experiments on high-risk work.
+
+Not built at all (version 23): a formal planning language (PDDL) or symbolic
+planner, a theorem prover, a symbolic world model of the application, a formal
+behaviour or specification language, a copy of the app's schema or
+authorization model, a dependency ontology built by a model, and confidence
+scores for assumptions. Rules start as plain language and become checks
+progressively (§31.2); effects carry provenance, not percentages.
+
+Not V1 (version 25, direction 26), each a consequence of the core loop working
+rather than a prerequisite for proving it: business usage analytics, semantic
+runtime journey tracking and observability, production-derived Effects,
+anomaly detection, runtime behaviour reconciliation, goal optimisation from
+telemetry, an expert marketplace and expert matching, semantic undo, a mature
+architecture-rule compiler or complexity-budget scoring, mature audits and
+adversarial review, a learned model router, a large precedent database,
+native PHP or Symfony support, a fully deterministic Effect graph, and full
+reverse engineering of existing repositories.
+
+Not built for workers (version 31, direction 31): a separate gateway service,
+OAuth or device flow for workers, our own signed capability tokens, graph or
+embedding queries, a model that answers product questions, field-level
+redaction, a git server for local workers, and streaming preview traces.
 
 ## 21. Status and staged plan
 
@@ -1310,19 +3665,24 @@ for; none is started without that evidence.
 
 ## 23. Open decisions
 
-- Included credits at launch, and pricing.
+- The unified price and the fair-use limit it includes; the pay-as-you-go
+  rates for power users.
 - Providers beyond Anthropic and OpenAI. (The OpenAI agent SDK choice is
   settled: the Codex SDK, §27.4.)
 - Curated presets only, or also an open model picker.
 - Approval from Anthropic (and a position from OpenAI) for subscription tokens
   in a hosted product.
-- The sandbox provider for managed runtimes. For V1, runner servers on Forge
-  (§28); the isolation trade-off still needs the owner's confirmation (§28.11).
+- Which box provider to start with. The code does not depend on the answer
+  ([§11](#adapters)). For V1, runner servers on Forge (§32); the isolation
+  trade-off still needs the owner's confirmation (§32.11).
 - The product's public name and category (not "Laravel builder").
 - Whether to charge for accepted changes rather than raw usage (§25.6).
 - Recruiting 3–5 owners for the behaviour-diff study (§26.7).
 - Who writes and reviews precedent files (us, or domain experts per vertical),
   and whether owners' option choices may be aggregated anonymously.
+- Test impact analysis needs Pest. The template uses Pest (§27.6), but the
+  fixture and imported apps may use PHPUnit: convert the fixture, or keep a
+  PHPUnit path with no observed Effects.
 
 ## 24. Convention over generation: reassessment
 
@@ -1627,7 +3987,7 @@ by the agent, not extracted.
 
 | Step                                     | V0                                                                                                                                 | State                     |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| 1. Describe a small application          | Project created from the template; the description seeds `.builder/project.md`                                                     | new                       |
+| 1. Describe a small application          | Project created from the template; the description seeds the notes' `project.md`                                                   | new                       |
 | 2. Answer one useful product question    | The planner may return one question before building (optionally with hand-written precedent options); the run waits for the answer | new (run state exists)    |
 | 3. See something generated               | Run, verification, preview                                                                                                         | built                     |
 | 4. Select an element or request a change | Text requests; one selection path from instrumented components in the preview                                                      | text built; selection new |
@@ -1638,11 +3998,93 @@ by the agent, not extracted.
 ### 26.3 Context as Markdown in the application
 
 ```
-.builder/
-    project.md              # goal, users, terminology, design, app-wide rules
-    capabilities/
-        invitations.md
-        billing.md
+project.md              # goal, users, terminology, design, app-wide rules
+capabilities/
+    invitations.md
+    billing.md
+```
+
+**Where the notes live.** The notes are a trade secret, so they never go in the
+app's repository (§19). The database is the lasting copy:
+
+- `project_notes` holds one row per file for each line of work (the main branch
+  and each idea's branch). A write from the owner, a question's answer or a
+  kept change is saved there first and is available at once.
+- Each workspace gets a copy in a hidden directory (`BUILDER_NOTES_DIRECTORY`,
+  default `.product-notes`) before its baseline commit. The workspace can be
+  thrown away at any time.
+- A run's patch never includes that directory. What the run did to the notes
+  is kept on the change as `note_changes` (each file before and after). Keeping
+  the change applies them; undoing it reverses them. A file someone edited in
+  the meantime keeps their version. A follow-up starts from the notes its
+  parent left.
+- An idea starts with a copy of the main notes. Using it brings back the files
+  the idea changed; throwing it away forgets them.
+- Files a workspace's setup makes and that should survive it, such as `.env`
+  (`BUILDER_WORKSPACE_FILES`), are kept encrypted in `workspace_files`. The
+  first workspace saves them, and every later workspace gets the saved copy.
+- Notes that older versions kept in `.builder/` are imported when a project is
+  imported. `php artisan projects:move-notes` moves them out of existing
+  repositories with one commit.
+
+**Keeping the notes right (as built).** The notes help only while they match
+the code, so drift is found without a model and the owner fixes it in place:
+
+- **No keys.** A live secret key is cut from the notes before they are saved,
+  and the owner's own edit with one is refused ("Keep keys in your app's
+  settings, not in its notes").
+- **The quick check** (`CheckProjectNotes`) lists notes that point at files
+  that are not in the app, or say a part is connected to something the notes
+  do not describe. "Remove from the notes" removes only what the check still
+  finds (`FixNotesDrift`), and is refused when the notes changed since. It also
+  lists behaviours the app's tests check that no part's rules describe, for
+  the owner to copy in. The other way round, it lists behaviours a part's
+  notes name that no test proves any more, with the same "Remove from the
+  notes". It uses only tests seen after the part's notes were last saved, so
+  a behaviour just added for a change still in progress is not listed.
+- **The full checks with it.** "Check my app" also runs the setup, every
+  check and the package lookups (`composer audit`, `npm audit`) on the app's
+  current commit, in a fresh workspace, as publishing does
+  (`RequestHealthCheck`, `CheckProjectHealth`, one `HealthCheck` row). Nothing
+  in the app changes. A second click while one runs gets the same check. The
+  page polls while it runs, then adds what it found to the same list: checks
+  that do not pass and packages with known problems, by name only. What a
+  check said stays with the builder. A check of an earlier commit is not
+  shown. A failure on our side says "This is our fault". "Fix it" asks the
+  builder to fix what failed (`RequestHealthFix`), as publishing's fix does,
+  with what each step said; a second click opens the same fix.
+- **Notes written before later code.** Each notes file's save time is set
+  against `git log` of its part's paths since then. A part with at least
+  `BUILDER_STALE_NOTES_MIN_FILES` (3) later-changed files, not counting its
+  tests or removed files, is listed with those files. The owner corrects the
+  notes or says "These notes are still right", which saves a `checked` time
+  in the notes so they are not listed again until the code moves on. Commit
+  times and save times come from different clocks, so a rebase can move a
+  file in or out of the count; the threshold keeps one such file from listing
+  a part.
+- **After each change.** The review lists the parts whose code the change
+  touched without rewriting their notes (`notes_behind`), and the change's
+  page points to them ("These notes may now be out of date"). When the notes
+  update failed, it says it is our fault. The project's numbers count the
+  changes that left notes behind.
+- **Updating them on request.** On a kept change that is not undone, the
+  owner can click "Update these notes". This is the only time the model is
+  called for it. A queued job (`UpdateBehindNotes`) gives `NotesKeeper` the
+  change, its summary and the notes of those parts. The reviewer tier runs
+  it, and the call is gated like a notes draft. Each file is saved through
+  `UpdateProjectNotes`, so an edit the owner made meanwhile wins. A file that
+  would change a part's name, effects or links is not saved. The state lives
+  on run events (`notes_update_requested`, `notes_updated`,
+  `notes_update_failed`), and the page polls while it works. A refused or
+  failed call leaves every note as it was and gives the reason.
+
+The layout of the files:
+
+```
+project.md              # goal, users, terminology, design, app-wide rules
+capabilities/
+    invitations.md
+    billing.md
 ```
 
 A capability file is plain Markdown with a small frontmatter:
@@ -1664,7 +4106,7 @@ effects:
     - to: membership
       strength: strong # strong | possible | historical
       reason: Accepted invitations create memberships.
-      source: agent # agent | package | analysis | owner
+      source: agent # agent | package | analysis | owner | tests
       observed: 2026-09-26
     - to: billing
       strength: possible
@@ -1688,19 +4130,39 @@ effects:
 **Selection is the V0 Context Compiler** (§8), deterministic:
 
 1. `project.md`, always.
-2. The target capabilities' files. Targets come from the planner choosing among
-   the capability names and summaries, or from a visual selection's capability.
+2. The target capabilities' files. Targets come from evidence first
+   (`SelectAreas`), each with its reason, so the same request in the same app
+   always loads the same notes. In order: the areas that claim the file of the
+   step the owner pointed at (`step`), or of the element they picked in the
+   app (`picked`); a follow-up's parent's areas, both those it was given and
+   those its agent read (`follow_up`); then at most three areas whose name or
+   one of whose behaviours the request names, compared by word stems, most
+   words first (`named`). The planner's choice among the capability names and
+   summaries is added after these (`planner`). `context_compiled` records the
+   reason for each.
 3. For each target, its Effects as one-line hints (name and reason), not the
-   affected capabilities' files.
-4. The agent may open any other `.builder/` file itself; the pack guides, it
-   never imprisons.
+   affected capabilities' files, and its code: up to 30 of the app's files its
+   `paths` claim, then how many more. The planner's file list puts these
+   files first, so cutting a large app's list (`max_files`) never drops them.
+4. An index of the other areas, one line each with its notes file. The agent
+   asks for another area by reading its notes or its code; the pack guides,
+   it never imprisons. The run records each other area the agent read, with
+   the first file (`areas_read`), and a follow-up starts with those areas.
 5. Log the files and tokens included.
 
 **Writing knowledge.** An answer to a question is appended to the relevant file
-deterministically. The agent may propose edits to `.builder/` as part of its
-change, including Effects it discovered ("accepting an invitation changes the
-seat count"); they are part of the diff and listed in the review. Owners edit
-the files directly. Everything is versioned by git.
+deterministically. The agent may edit its workspace copy of the notes as part
+of its change, including Effects it discovered ("accepting an invitation changes
+the seat count"); they are kept with the change and listed in the review. Owners
+edit the notes on the Understanding page. An edit made on an old copy is refused.
+
+**The planner's view of the code** is also deterministic, and kept small because
+every planning call pays for it. The file list is grouped by folder, so each
+folder is named once; this halves its size. The app's addresses come from
+`route:list --json`, run in the workspace, as one line each: method, path, the
+code that handles it and its name. With this map, the planner can name the right
+files in its tasks, and the coding agent searches less. It is left out when the
+app cannot list its routes.
 
 **Progression.** V0 is stage 3 of: one `PROJECT.md` → plus capability files →
 frontmatter and behaviour notes → indexed retrieval → the richer compiler with
@@ -1716,9 +4178,14 @@ other area change, not proof of causality. The wording to users is "May also
 affect: Billing".
 
 - **Strength** is `strong`, `possible` or `historical`; never a percentage.
-  Each Effect has a reason, a source (agent, package, analysis, owner) and when
-  it was last observed; an Effect whose reason no longer holds is removed or
+  Each Effect has a reason, a source (agent, package, analysis, owner,
+  `tests` from test impact analysis, `history` from kept changes, §6)
+  and when it was last observed; an Effect whose reason no longer holds is removed or
   downgraded, by the agent or the owner.
+  As built, the owner removes a wrong connection on the Understanding page.
+  This writes `not_connected: [key]` into the area's frontmatter. That area
+  then gets no Effect to the key from any source, so tests and history
+  cannot bring it back. "Connected after all" removes the key again.
 - **Context:** Effects are listed as hints; the agent decides whether they
   matter. "Change the Invite button text" does not look at billing; "invited
   users become members immediately" probably does.
@@ -1727,7 +4194,8 @@ affect: Billing".
   _may also affect_ (a capability named by a target's Effects) or _unexpected_
   (anything else, including code no capability claims).
 - **Verification:** V0 runs the full suite anyway; Effects only order what the
-  review asks the owner to look at.
+  review asks the owner to look at. Later, Effects with observed evidence
+  select targeted tests for the fast path; the full suite stays the gate (§12).
 - **Never:** load a whole related subsystem because an Effect exists, run
   extra work automatically, or block until every Effect is handled.
 
@@ -1767,10 +4235,10 @@ the same repository state and the same request.
 | --------- | --------------------------------------------------- |
 | A         | repository + request                                |
 | B         | A + `PROJECT.md`: all the project's knowledge, flat |
-| C0        | A + the selected `.builder/` files, without Effects |
+| C0        | A + the selected notes files, without Effects       |
 | C         | A + the selected files with Effects                 |
 
-B is generated by concatenating the same `.builder/` files that C selects from,
+B is generated by concatenating the same notes files that C selects from,
 so the content is identical and only the selection differs. The question is not
 whether C beats B on a small project (it may not) but **at what project size it
 starts to**. The same tasks therefore run at several sizes of accumulated
@@ -1780,6 +4248,27 @@ unrelated regressions, cost per accepted change. Results are reported as
 distributions and paired differences, and read as trends. If C never pulls
 ahead, or only far beyond realistic sizes, we use flat notes: that is a good
 outcome, because it is simpler.
+
+As built: `builder:context-experiment {project} --modes=flat,selective`
+makes each next benchmark request once per mode, on the same commit. The
+mode travels with the change's queued work in hidden Laravel Context, so
+`CompileContext` uses it, and a run that compiled another mode is left out.
+Each `ContextTrial` keeps the §26.7 measures from the run's events. Then the
+selective change is kept so the next round builds on it, and the others are
+put away. `builder:context-results` shows each mode, then the median
+difference from selective over the rounds where both completed. Below
+`builder.context.experiment.min_pairs` pairs it says "too few pairs" instead.
+Every trial spends real model calls; nothing runs it on a schedule.
+
+`builder:planted-changes {project}` tests the Effects half of hypothesis C
+without model calls. For each kept change, it plants a one-line edit in each
+area the change was not about. Each plant uses the first file in sorted order
+that the area claims, from paths named in kept diffs or in the notes, so the
+same changes always give the same plants. It then classifies each planted
+diff from the run's saved context, with the Effects and without them. It
+reports where each plant lands and which plants Effects moved from
+unexpected to may also affect. It reads saved diffs only. It does not touch a
+repository and saves nothing. It uses the same "too few pairs" rule.
 
 The simulated owner is an engineering tool for iteration, scenarios and
 automated checks. It is not evidence that people value anything.
@@ -1871,6 +4360,53 @@ the diff's areas). This yields the share decided at each level, confident
 errors, missed escalations and their repair cost, and the effect on cost per
 accepted change.
 
+**As built (V1.1, shadow mode).** Jev is called through the AI SDK's
+classification API (`Laravel\Ai\Classification`, the `typesafe` provider).
+The SDK is the `Decider` contract: its provider list is the driver choice and
+the failover. One call per new change request, queued beside the run, asks
+five typed questions:
+
+- complexity (a choice);
+- whether the request is only a question (yes/no);
+- whether it touches permissions, persisted data, or is destructive (yes/no each).
+
+The question decision was added because a question already skips the build
+(§19). If Jev can spot one with confidence, the planner call can be skipped
+for it too. The state sent is the owner's words only.
+
+Each answer is a row in `decisions` (choice, probabilities, confidence,
+threshold, acted, latency, whether a later provider had to answer, and its
+share of the call's cost), not a run event: decisions belong to the request
+and are made before its run exists. `acted` is true only when the answer
+changed the run (see below).
+
+`php artisan builder:decisions` joins the answers with the outcome, read from
+the final diff and its repairs:
+
+- a migration means persisted data;
+- a policy, middleware or authorization call means permissions;
+- a drop or delete outside a migration's `down()` means destructive;
+- the number of changed files outside tests, plus the repairs, gives the complexity;
+- an answered request is a question.
+
+It reports, per decision, how often the answer was confident, how often a
+confident answer was right, how often a second provider answered, and what
+the answers cost. A decision may start acting only when that report
+shows its confident errors are rare.
+
+**As built (acting).** A decision acts only when the operator names it in
+`BUILDER_DECISIONS_ACT` (empty by default, so every decision stays in shadow
+mode) and its answer is at or above its threshold. Only _complexity_ acts so
+far. A confident "trivial" sends the first build to the light coder model,
+the same one a background tidy-up uses. A repair after it goes to the usual
+model, so a wrong "trivial" costs one repair, not a failed change. The
+planner still runs: a trivial change still needs its scope and its tests
+written before the coder starts. The question and safety decisions stay in
+shadow mode until their own reports earn it. The run records a
+`decision_acted` event, and `builder:decisions` sets the changes a decision
+acted on against those it left alone, on first-try passes and cost per kept
+change.
+
 **The honest expectation.** A change's cost is dominated by the coder loop and
 verification, and its latency by verification, so a 100 ms decision matters
 only when it removes a stage. V0 therefore proves the layer on one decision
@@ -1898,7 +4434,7 @@ checking", never as fact.
 
 | Level                        | Does                                                                                                                                                                                                                                                                                    | Intelligence                                                           | When           |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------- |
-| **Quick health check**       | Reconciles `.builder/` with the code: paths that match nothing, code no area claims, Effects naming unknown areas, areas changed since the last audit whose notes did not change; dependency advisories (`composer audit`, `npm audit`); the full test suite and static analysis        | deterministic; at most one small-model call to phrase the summary      | **V0**         |
+| **Quick health check**       | Reconciles the notes with the code: paths that match nothing, code no area claims, Effects naming unknown areas, areas changed since the last audit whose notes did not change; dependency advisories (`composer audit`, `npm audit`); the full test suite and static analysis          | deterministic; at most one small-model call to phrase the summary      | **V0**         |
 | Thorough audit               | Quick, plus one reasoning pass per area changed since the last audit (and the areas their Effects name): notes and rules against the code, behaviours without tests, proposed Effects                                                                                                   | frontier model per area, bounded by a budget shown up front            | after V0       |
 | Deep audit                   | Thorough across every area, changed areas first; tracing workflows across areas; architectural drift                                                                                                                                                                                    | frontier model; decision model to prioritise areas                     | later          |
 | Permissions challenge        | The first adversarial level: a **who-can-do-what matrix** from route and policy introspection, probed with generated requests as each role, including another team's records (tenant isolation needs no stated intent: crossing it is always a finding); compared with the notes' rules | deterministic probes; a model only turns prose rules into expectations | first after V0 |
@@ -1969,6 +4505,18 @@ agent-maintained notes of §26.3 from rotting. Everything else waits for owners
 to be using the product, since a review of software nobody has built yet proves
 nothing.
 
+**Only the package lookups run on a schedule.** An app nobody changes never
+learns about a new advisory. So Laravel's scheduler runs
+`health:look-up-packages` daily. It looks up the packages of each app with code
+whose last check is older than `BUILDER_PACKAGE_LOOKUP_DAYS` (default 7). The
+lookups read the committed lock files, so they need no installs. The full suite
+and static analysis cost an install and every test, so they stay on request.
+A newer lookup replaces the full check's lookup of the same name, and never
+hides a failing test that check found. Its findings show on the Understanding
+page with "Fix it". When it finds a problem that the previous check did not
+know of, the owner's inbox gets one line. A lookup that cannot be read shows
+nothing and tells nothing.
+
 ### 26.11 Laravel-native active testing (versions 13–14, later stage)
 
 Direction 14: **exploit framework determinism before spending model
@@ -2024,17 +4572,23 @@ real applications.
 
 **Static knowledge chooses the probes; only runtime results are evidence.**
 Introspection (routes, middleware, bindings, FormRequest rules, registered
-policies, roles from their enum or config, factories) decides what to probe and
-how to build the request. Whether a request is actually allowed is always
-observed by running it, because enforcement can live in controllers,
-middleware, query scopes or nowhere.
+policies, roles from their enum, config or Spatie's permission package,
+factories) decides what to probe and how to build the request. Whether a
+request is actually allowed is always observed by running it, because
+enforcement can live in controllers, middleware, query scopes or nowhere.
 
 **How much of the authorization matrix is automatic.** The routes, the actors
-(when roles are an enum or config, as in the fixture) and the team model (found
-from bindings and relationships, confirmed once by the owner) can be derived.
-World building works where factories do. The expectations split in half:
-isolation and guest denial need no intent and are fully automatic; the
-in-team role expectations need the notes' rules and one owner confirmation.
+(when roles are an enum or config, as in the fixture, or Spatie's permission
+package, whose roles and the permissions they grant come from the app's own
+migrations and seeders, run where its suite migrates: its test database, with
+its phpunit.xml settings, left migrated and empty as RefreshDatabase leaves it,
+else a private in-memory database; in its teams mode a role is given in one
+team) and the team model (found from bindings and relationships, or by the team
+foreign key in Spatie's teams mode, confirmed once by the owner) can be
+derived. World building works where factories do. The
+expectations split in half: isolation and guest denial need no intent and are
+fully automatic; the in-team role expectations need the notes' rules and one
+owner confirmation.
 
 **Rules are generators without combinatorial fuzzing.** One dimension changes
 per probe. Each field gets its equivalence classes (valid, missing, each rule's
@@ -2063,7 +4617,240 @@ time, and snapshots to reset. Races need a real server (the preview host) and
 parallel requests. Testing production is out of scope unless a later policy
 explicitly allows it, and then only read-only.
 
-**Out of V0:** all of it, including the introspection this relies on, beyond
+**What is built: probes from the plan's own rules.** When the plan states
+who may do what with a new record (§9), that statement is the intent, so no
+model turns prose into expectations. Once the checks pass, the verification
+lists the routes with `route:list --json` and matches each to the record by
+Laravel's conventions: a route parameter named after the model gives view
+(GET, or update for `edit`), update (PUT, PATCH) and delete (DELETE); a POST
+at the same controller, or named `{table}.store`, gives create. For each
+route and each actor the rules refuse (a signed-out visitor, and another
+signed-in person where only the person who added a record may use it), one
+generated test method builds the record with its factory, sends the request
+and notes the status and whether the record was added, changed or removed.
+Only that is evidence: a refused actor who changed data, or got a 200 on a
+page, fails the check "Who may see and change records", and the change goes
+back for a fix with the route and the rule. A request that broke, or whose
+values were turned down first, proves nothing and is counted, never judged.
+Records the app already had answer to the app's own policy instead: on the
+routes of controllers the change touched, each probe first asks the policy
+(`Gate::forUser`) about the same actor and record, and only a request the
+policy refuses can be a finding ("the policy says no, the route said yes").
+Routes of untouched controllers are left alone, since their problems are not
+the change's.
+
+**Rules stay tests.** A rule the owner stated does not end with its change. The
+records of every kept change whose probes passed are probed again on each later
+change, wherever it touched the app, after the change's own records, within the
+same limit. A change that breaks an earlier rule (a moved route, a removed
+policy check) fails the same check. A rule of a change that was undone, or that
+no probe proved when it was kept, is not tried: a problem the app already had
+is never held against a later change.
+
+**Tenant isolation, on the same touched routes.** A short script runs with the
+app's own PHP and reads what the models declare through their return types: a
+team is a model with a many-to-many link to the user model, and a record
+belongs to a team through its `BelongsTo` to it. A signed-in person outside
+the team then tries the team's own routes, the routes of the records it owns,
+and routes under the team (`teams/{team}/rooms/{room}`, with the room's own
+team in the address). Crossing a team needs no stated intent, so the policy is
+not asked, and these probes replace the policy probe for the same route. No
+owner confirms the team model yet; records with no matching route and routes
+that need other values are not probed. The scaffold no longer asks the form for the
+person who added a record: it comes from the signed-in user.
+
+**Someone else's records in the address (`SwapProbes`).** The probes above
+need a stated rule or a policy, and a route with one record. Most holes in
+generated code are elsewhere: an action route (`orders/{order}/refund`), a
+nested one that never checks the task is the project's
+(`projects/{project}/tasks/{task}`), or a child added to someone else's
+parent. So whose a record is, is guessed from the models, and the request
+decides. A second script asks Laravel which models each route binds
+(`signatureParameters`, as implicit binding does) and follows each model's
+`BelongsTo` links, up to three, to the user model or to a team with
+members. That gives the allowed list: a record is a person's when one of
+its links ends at them, or at a team they are in. On the routes of
+controllers the change touched, one test makes two people with the app's
+factories. The first is the user at the end of a link, put in each team at
+the end of one with the role that has the most rights. The first person
+then sends the route twice: with their own records, and with the second
+person's. With more than one record in the address, it is also sent with
+their own records and the other person's last one. The first send must
+work: a page that opens, or a send that writes and is not turned down.
+Otherwise the swap proves nothing and is counted. When the swap works the
+same way, the person reached what is not theirs, and the check "Who may
+see and change records" fails. A page anyone signed out can open, or one
+the app's own policy allows, is shared on purpose. A route with a value
+that is not a record, or a record with no link to an owner, is counted,
+never judged. A POST names what it adds by the address
+(`projects/{project}/tasks` adds a task, sent with the task factory's
+values) or acts on the record itself. A route a person outside the team
+already tries with one record is not tried again. On a copy of the
+fixture with four planted holes, all four were found, and its own team
+routes and a route that checks its policy were refused.
+
+All these probes share one limit (`BUILDER_SWAP_PROBE_LIMIT`, 100). Each kind
+gets one place in turn: address swaps, form keys, extra fields, lists and
+removals. So a long kind cannot crowd out the others. Each kind keeps its
+own order. On a copy of the fixture with nested tasks and notes, 98 probes
+ran in 2.0 seconds, against 1.3 seconds for 30.
+
+A form can also name a record. Each create or update form on those routes
+is also sent with the other person's record in a key that links the saved
+record to its owner (a task's `project_id`), at an address of the person's
+own. A POST with no record in the address, such as `/tasks`, is included.
+The swap counts only when a saved row then points at their record: the
+rows linked to it are counted before and after. A form whose app takes the
+key from the address, or ignores it, writes but is refused. A key to the
+user model saves a record in another person's name. These sends share the
+limit with the address swaps.
+
+A form can also save more than it asks for. Each create or update form on
+those routes, and a form with no record in its address that saves the
+person's own account (a profile form), is sent once as it is and once with
+extra fields: `role`, `is_admin`, `admin`, `is_super_admin`, `super_admin`,
+`is_staff`, `email_verified_at`, `balance` and `credits`, each only when the
+table has it. Each gets an unusual value: the first case of an enum cast,
+`admin` for a text role, `true` for a flag, a fixed old date, or 987654. It
+is a finding only when more rows hold the value after the send than before,
+and the send without the field did not save it too. So a value the row held
+already, or a default every new row gets, is never one. A field the route's
+action or its form request names in quotes is one the form asks for, such as
+an admin's own form for roles, and it is not sent. A send without the fields
+that writes nothing or is turned down cannot be judged. On a copy of the fixture with `is_admin` made
+fillable and the profile form saving `$request->all()`, it was found. The
+plain starter kits gave no finding.
+
+A route that removes a record is also sent a record that other records hang
+off. For each `hasMany` and `hasOne` child whose foreign key the database
+enforces, and does not cascade or set to null, the child's factory makes one
+linked to the record. A bare record is removed first, to show that the route
+works. It is a finding only when that worked and the removal with children
+broke the page. A removal that is turned down with a message, or that removes
+the children too, is an answer. A model with soft deletes never meets the
+foreign keys, so it is not tried. On SQLite with foreign keys off
+(`DB_FOREIGN_KEYS=false`) a removal proves nothing, so it cannot be judged. On
+a copy of the fixture whose tasks link to a project with no cascade, removing
+a project was found; a team removal that refused while it had projects was
+not.
+
+A list page on those controllers is opened with 60 of the person's own records
+(`BUILDER_LIST_PROBE_ROWS`), all linked to the same owner as the first. A list
+is a GET whose address ends in a model's name, such as `projects` or
+`teams/{team}/projects`. Inertia apps are asked for the page's props. The
+records' route keys are counted in the JSON or in the props. When all of them
+come back, the list has no pages, and it gets slower with each record. It
+fails the check "Long lists show a page at a time" only when a line of the
+list's action that loads it (`->get()`, `::all()`, or the relation of the
+list's name loaded whole) is a line the change added. A list that was like this
+before is a note. A list that broke with many records is a note too. A page
+that is not JSON or Inertia cannot be read, so it proves nothing. On a copy of
+the fixture, a JSON list and an Inertia list that loaded every row were found,
+and a list with `paginate(15)` was not.
+
+Each page that opens with the person's own records is also read for hidden
+fields. The test collects the stored value of each attribute in a model's
+`$hidden`, and of the columns `password`, `remember_token`,
+`two_factor_secret`, `two_factor_recovery_codes` and `api_token`. It takes
+each value as the database holds it and as the model casts it. A value
+shorter than 8 characters, a null or a flag is left out, so an empty password
+field on a form or a "two factor enabled" flag never counts. The JSON or the
+Inertia props are searched for those values whatever their key, and other
+pages are searched as text. A page that holds one fails the check "Pages keep
+hidden fields to the server" when the change added a line to that page's
+action, made its controller, or added a line to the model whose field it sent.
+A page that sent it before the change is a note. The person's own name and
+email are not hidden, so they never count. On a copy of the fixture, a task
+page that sent `DB::table('users')` rows and an Inertia page that sent members
+with `makeVisible(['password'])` were both found, and 12 other pages were not.
+
+Opening such a page must not remove anything. Inertia prefetches links on
+hover, and crawlers and link previews follow them too. The test notes each
+table that rows were deleted from, or whose `deleted_at` was set, the first
+time the person opens the page. The framework's own tables (sessions, cache,
+jobs, password reset tokens) are left out. A page that removed rows fails the
+check "Opening a page removes nothing" under the same rule as a leak. A route
+behind the `signed` middleware, such as an email's unsubscribe link, acts on
+GET by design, so it is a note. A page that did not open is not counted. On a
+copy of the fixture, a GET link that removed a task was found, both when it
+deleted the row and when it set `deleted_at`. A signed link was not counted.
+
+**Dates at the edges (the time engine of direction 32).** When the change adds
+app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
+the like), its own tests run again with the clock stopped. A PHPUnit extension,
+passed with `--bootstrap` and `--extension`, sets Carbon's clock before each
+test, so the app needs no change, and a test that sets its own time still wins.
+The tests run first on an ordinary day, then at the last second of a year, on
+the 31st of a month, on a leap day and at the end of February. A test that
+passes on the ordinary day and fails at a moment, and fails there again on a
+second run, fails the check "Dates at the edges": the change goes back with the
+test and the moment. A test that fails on the ordinary day is broken by the
+stopped clock, not by a date, and is left out. Time zones and daylight saving
+are not tried yet.
+
+**Sending a form twice (the replay engine of direction 32).** People click
+twice, go back and send again, or lose the answer on a slow line. For each
+record the plan describes, and each model whose controller the change touched,
+the route that adds it (matched as above) gets the same values twice from one
+signed-in person, in a generated test. Only a second send that the database
+refuses as a duplicate (`UniqueConstraintViolationException`) is a finding: the
+page broke where a rule should have given a message. It fails the check
+"Sending a form twice", with the columns the database named, never the values.
+A first send that was turned down proves nothing, and a second record is not
+judged, since the app may want two. Jobs that run twice are the fault
+engine's (§12).
+
+**Wrong values in forms (the input probes).** For each POST, PUT or PATCH
+route on a controller the change touched, a first generated test sends an
+empty form as a signed-in `User::factory()` person. It notes the rules the
+app's validator received, so form requests and inline `validate()` count
+alike. Enum rules become their cases. Closures, custom rule objects and
+conditional rules arrive only as what they are. `InputValues` keeps the one
+valid value per field and the one wrong-kind value. A planned field with a
+format (§9) uses the first value `FieldType::examples()` accepts and is also
+sent the first it refuses. Its length is not tried just inside a limit, since
+padded text would break the format. A second test sends one whole form that should pass, with dates
+in the order their rules ask for, and rows from factories for `exists`. Then
+it sends that form again, one field changed per probe: left out, one value
+of the wrong kind, outside its `in` choices or `exists` rows, and on both
+sides of each `max`, `min`, `size`, `between`, `digits` and date-order rule.
+Fields are combined only for `required_if`, `required_with` and
+`required_without`. Rules written as code are tried only by leaving the field
+out. A budget (`BUILDER_INPUT_PROBE_LIMIT`, 40) keeps the most telling classes:
+left out, wrong kind, out of domain, outside the edges, then inside them.
+Only what came back counts. A wrong value the app took, a valid edge it
+turned down, or a 500 is a finding. A finding fails the check "Forms turn down
+wrong values" only when the change added the field or its rules: the file
+holding them is new, or an added line names the field. Other findings are
+listed as already so and not sent back. If the whole form is not accepted,
+or a form cannot be reached or filled in (no user factory, a route record
+without a factory, a pattern rule, a form request the app cannot build or
+whose rules break), its probes are listed as not fully tried,
+never as findings. A field inside a list is tried on the list's first item
+(`rooms.*.name` as `rooms.0.name`), and a list with rules of its own is also
+sent empty, as text, and left out. An empty list is expected to pass unless it
+is `required` or has a `min` or `size`. A file is a fake upload
+(`UploadedFile::fake()->create`) of the first type its `mimes`, `mimetypes`,
+`extensions` or `image` rule allows. It is also tried left out, as text, as a
+file of another type, and on both sides of its size rules in kilobytes. An
+image with `dimensions` cannot be faked this way, so it is not tried.
+
+Each file field is also sent two files that a browser opens as a page: a web
+page (`.html`, as `text/html`) and an image that runs a script (`.svg`, as
+`image/svg+xml`), each holding a script. The test lists the public disk and
+the `public` folder before and after each send. A copy kept there as an
+`.html`, `.htm`, `.xhtml` or `.shtml` file, or as an `.svg` with a script, is a
+finding: anyone the person sends its address to opens it as a page of the app.
+The test removes what the send kept there. A file that is turned down, or kept
+on a private disk, is fine. The served content type is not fetched, because a
+test request never reaches the web server that serves those folders. The
+extension decides what that server sends. The coder is told to allow only the
+types the field needs (`mimes` or `image`) and to store the file privately or
+under an extension the app picks. On a scratch app, a `file` rule stored on
+the public disk was found for both files. An `image` rule, and a file stored
+on the private disk, were not.
+
+**Out of V0:** the rest, including the introspection this relies on, beyond
 what V0's own verification already uses.
 
 ### 26.12 Visual properties on a Tailwind substrate (version 15)
@@ -2112,7 +4899,11 @@ or arbitrary" is rarely about validity. The rules:
 value, tablet is `md:` and desktop is `lg:`. Tailwind is mobile-first, so the
 inspector shows inherited values as "same as phone" and editing phone changes
 every device that has no value of its own. States map to `hover:`, `focus:`,
-`active:` and `disabled:`, and combine (`lg:hover:`).
+`active:` and `disabled:`, and combine (`lg:hover:`). Each state takes text
+and fill colours; focus also takes a border colour, and disabled an opacity. A
+new focus colour is written as `focus-visible:`, so it shows for the keyboard
+only. A part that already uses `focus:` keeps it. A class for two states at
+once (`disabled:hover:`) is left as it is.
 
 **Writing source with the app's own merge.** The edit runs `twMerge` from the
 application's own `node_modules`, with its own configuration, in the workspace
@@ -2130,7 +4921,8 @@ classes. V0 edits:
 - static `class="…"` attributes;
 - literal string arguments of `cn(…)` in `:class`, where each
   `condition && '…'` argument is a named state ("Selected", "Error") the owner
-  can pick.
+  can pick. Not built: only the first string of `cn(…)` is edited. A named
+  state needs a picker in the panel, and design work is paused.
 
 Anything else (`:class="styles(x)"`, template strings, cva variants, computed
 properties) goes to the agent. Blade uses the same mutation on `class="…"` and
@@ -2188,15 +4980,25 @@ Direction 16 freezes the V1 direction. This section is the engineering plan
 that answers it. For V1, it wins over §21 and §26 where they differ. The
 ambition is the depth of one loop, not the breadth of features.
 
+Direction 26 names that loop: V1 is **the smallest complete evolution loop**,
+from request to published and checked change, and **the demo is evolution, not
+generation**. First-generation demos are common; ours builds an app, then
+makes ten changes in a row, and by change 10 the owner still talks about their
+business exactly as at change 1. Speed and polish to the first result match
+the best builders; the edge is that the tenth change is as easy as the first.
+The thesis: can a real application grow more complex without the owner's
+experience growing more complex?
+
 ### 27.1 What proves the differentiation
 
 The claim is "it understands the product, retrieves what matters, knows what
 else may be affected, scopes the change, verifies it and explains it". Only
 these components prove that claim, so only these are **required**:
 
-1. Project notes in `.builder/` with selective compilation (built: §26.3).
+1. Project notes with selective compilation (built: §26.3).
 2. Behaviours and Effects in the capability notes, and the change sorted by
-   area (built: §26.4).
+   area (built: §26.4). Capabilities, rules and behaviours keep stable keys
+   that tests and Change Records share (§6), in their thinnest form.
 3. **The Change Brief** with _preserve_ and _verify_ clauses (new; §27.4).
 4. The coding agent running in a sandboxed runtime through an agent SDK.
 5. Independent verification: the full suite, protected acceptance tests, and
@@ -2206,25 +5008,63 @@ these components prove that claim, so only these are **required**:
 7. Selection with "What this does", and the deterministic Tailwind editor
    (§26.12).
 8. Creating a project from the template, and a constrained import that drafts
-   `.builder/` for the owner to confirm.
-9. A minimal Project Understanding page: the `.builder/` files rendered in
+   the notes for the owner to confirm.
+9. A minimal Project Understanding page: the notes files rendered in
    product language and editable.
-10. Git boundaries per accepted change, revert, and deploy by pushing to the
-    branch Laravel Cloud deploys from.
+10. Git boundaries per accepted change, revert, and deploy. Publishing goes
+    through a host contract with no host hard-coded (direction 28): a host
+    takes a commit and gives back an address and its deploy status, and
+    changing host changes configuration, not the loop. Grandma's apps publish
+    to **Laravel Cloud** by default, so she never picks a host. They run in our
+    Cloud organization, and for now we absorb their hosting cost: her price
+    does not change with it. We still read each app's cost from Cloud's usage
+    API so operators see it next to model spend. She never sees a Cloud
+    account or token. Power users may connect their own Cloud organization with a scoped
+    API token and deploy from their own repository, and Cloud bills them
+    directly; or they bring another host, or a plain branch that their own host
+    deploys from. Cloud has no sign-in for platforms and deploys only from a
+    repository the organization's own Git account can read, so direct billing
+    for Grandma waits for one. Cloud apps cannot move between organizations, so
+    moving an app to the owner's own account later means creating it again and
+    moving its data.
+    Smoke checks, error intake and the health state sit above the contract and
+    are the same for every host. Publishing is one click to a default
+    address, and it is a loop, not a push (direction 26): publish, run smoke
+    checks against the published app (it boots, sign-in works, the critical
+    journeys and invariants answer), link the deployment to the changes it
+    carries, take in basic errors from the published app, and show one plain
+    state: "Published", "Checks passed" or "Needs attention". Runtime is light
+    in V1: no analytics, tracing or anomaly detection.
+    A version that went online but fails the smoke checks offers "Fix it",
+    also on a first publish and on hosts that report no errors. What the
+    address answered goes to the builder as evidence (`RequestCheckFix`), and
+    the owner sees only "Fix what stops my app working online". Sending the
+    same version again is not offered, because it would fail the same way. A
+    host that is still starting the version keeps "Try again".
+    A publish that fails says whose it is to put right, in plain words. When
+    the repository the owner gave cannot be reached, it names the address
+    and offers "Change where to publish". Our own failures say "This is our
+    fault" and offer "Try again". What Git or the host said is kept apart
+    (`error_details`, without credentials or keys) and shows only under
+    "Where it goes".
+    A version sent before the owner gave the app's web address is checked
+    as soon as they give it (`CheckDeployment`), without sending it again.
+    When our own check breaks, the owner reads "This is our fault" and gets
+    "Check it's online" instead of sending the same version again.
 11. Telemetry per change request (§25.3), including cost per accepted change.
 
 ### 27.2 Postponed to V1.1
 
-| Postponed                                                     | Why it can wait                                                                                                                                                                                                                   |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Decision layer (Jev), even in shadow mode                     | The brief's model call already classifies. A decision model pays off only by skipping stages, and needs V1 traffic to show which ones. V1 routes deterministically: selections go to the inspector, everything else to the brief. |
-| Thorough and deep audits, adversarial review                  | They need real applications with history. V1 keeps the quick health check (deterministic), which protects the notes.                                                                                                              |
-| Precedent library                                             | Hand-written cards in owner sessions first (§26.6, F).                                                                                                                                                                            |
-| Compatibility mode                                            | V1 preserve clauses already cover "don't change these"; the mode is a user-chosen set of protected interfaces on top.                                                                                                             |
-| Backend flow visualisation                                    | Behaviour notes already say "what happens" in words. A diagram only restates them until behaviour is extracted automatically.                                                                                                     |
-| Small-generative-model tier                                   | No V1 job needs it: answers are written deterministically, and the coder updates the notes in its own diff.                                                                                                                       |
-| Deploy checks beyond Cloud's own (queues, schedule, env diff) | Laravel Cloud deploys and reports from the Git branch. V1 shows its status and keeps the revert.                                                                                                                                  |
-| Multi-provider routing                                        | The reviewer already runs on a different provider through laravel/ai. Anything more waits for telemetry.                                                                                                                          |
+| Postponed                                                          | Why it can wait                                                                                                                                                                                                        |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision layer (Jev) acting on runs                                | The brief's model call already classifies. A decision model pays off only by skipping stages, and needs traffic to show which ones. V1.1 runs it in shadow mode only (§26.9, "As built"); V1 routes deterministically. |
+| Thorough and deep audits, adversarial review                       | They need real applications with history. V1 keeps the quick health check (deterministic), which protects the notes.                                                                                                   |
+| Precedent library                                                  | Hand-written cards in owner sessions first (§26.6, F).                                                                                                                                                                 |
+| Compatibility mode                                                 | V1 preserve clauses already cover "don't change these"; the mode is a user-chosen set of protected interfaces on top.                                                                                                  |
+| Backend flow visualisation                                         | Behaviour notes already say "what happens" in words. A diagram only restates them until behaviour is extracted automatically.                                                                                          |
+| Small-generative-model tier                                        | No V1 job needs it: answers are written deterministically, and the coder updates the notes in its own diff.                                                                                                            |
+| Deploy checks beyond the smoke checks (queues, schedule, env diff) | Laravel Cloud deploys and reports from the Git branch. V1 runs the smoke checks, shows a plain health state and keeps the revert.                                                                                      |
+| Multi-provider routing                                             | The reviewer already runs on a different provider through laravel/ai. Anything more waits for telemetry.                                                                                                               |
 
 ### 27.3 Still architecture for architecture's sake
 
@@ -2263,6 +5103,23 @@ the sandbox, never committed).
 - sorting the change by area and explaining it in product language;
 - deterministic paths (Tailwind edits, the notes check);
 - cost per accepted change.
+
+**The honest behaviour diff.** "Preserved: billing" is a claim, so the diff
+says how it knows:
+
+- _verified_: tests that cover the area ran and passed;
+- _untouched_: no file the area claims changed;
+- _not checked_.
+
+Without that label, "preserved" is ceremony.
+
+**The brief (extending `Plan`):** understood as, current behaviour, intended
+change, **preserve** (from the rules and behaviours of the target and Effect
+areas), may also affect, relevant paths, and **verify** items. The verify
+items are the acceptance criteria; the coder turns them into tests, and the
+independent verification and the reviewer check that they exist and pass.
+Planning depth follows consequence: a selection edit gets no brief, a small
+change a short one, and a new capability a full one.
 
 **Two agent adapters, one failover rule.** The primary coder is the Claude
 Agent SDK; the failover is OpenAI's **Codex SDK** (`@openai/codex-sdk`), the
@@ -2326,7 +5183,9 @@ a later layer on top of it.
 ### 27.6 Dependency order
 
 1. **Execution in a runtime:** a sandbox provider behind the workspace driver,
-   and the Agent SDK coder replacing the in-process tool loop. The runtime is
+   and the Agent SDK coder replacing the in-process tool loop. The SDK coder
+   is built, and the in-process loop is removed; the scripted driver still
+   applies known-good patches through the server-side tools. The runtime is
    hosted by a provider; we still need to choose one (§23).
 2. **Brief and honest diff:** extend `Plan` and `Review`; test coverage per area
    from the test paths in the notes.
@@ -2337,7 +5196,8 @@ a later layer on top of it.
 5. **Project lifecycle:** create from the template (Pest, PHP 8.5 per the
    blessed stack; the fixture and control plane use PHPUnit today), constrained
    import with drafted notes, the Understanding page, the quick health check.
-6. **Deploy:** push to the Cloud-connected branch, show status, revert.
+6. **Deploy:** through the host contract (Laravel Cloud by default, direction
+   28), show status, revert.
 
 Telemetry (1–6) and the owner sessions run alongside.
 
@@ -2367,7 +5227,7 @@ Telemetry (1–6) and the owner sessions run alongside.
 ### 27.8 Milestones
 
 1. **M1: the continuation loop, in a sandbox.** On the fixture (an existing app
-   with `.builder/`): request, brief with preserve and verify, the Agent SDK in
+   with the notes): request, brief with preserve and verify, the Agent SDK in
    the runtime with the Codex SDK as tested failover, verification, review by area with evidence-labelled "preserved",
    accept and commit, and the next request using the updated notes.
    Measured: cost per accepted change, first-attempt pass, unexpected changes.
@@ -2380,7 +5240,8 @@ Telemetry (1–6) and the owner sessions run alongside.
 3. **M3: a real project lifecycle.** Create from the template with one
    question; constrained import that drafts notes for confirmation; the
    Understanding page; the quick health check; deploy through the
-   Cloud-connected branch; and revert. Covers demo steps 1–2, 16 (quick) and 18.
+   Cloud-connected branch, after the full checks pass on that exact commit
+   (§12); and revert. Covers demo steps 1–2, 16 (quick) and 18.
 
 ### 27.9 V1, not a prototype, when
 
@@ -2403,12 +5264,56 @@ Telemetry (1–6) and the owner sessions run alongside.
 - at least 3–5 real owners have used the loop, and we know what they did and
   did not value.
 
+**Where V1 stands (2026-10-05).** Met, as built:
+
+- **Secrets, cost and budgets.** Live keys are cut from everything sent to a
+  model (`RedactSecrets`) and from the notes. The coding agent in a box
+  reaches its model through the gateway, never with the real key, and the
+  gateway adds our working rules, so the box holds only the task. Every model
+  call is priced on its change, or counted as unpriced. Each change, each day
+  and each plan has a limit that stops the work ([§11](#11-execution-agents-runtimes-and-routing)).
+- **Verification is independent of the agent.** The checks run after the
+  agent stops and judge only what the change adds. Protected files and the
+  tests written first are put back as they were. The semantic checks
+  ([§12](#12-verification)) read the result without a model.
+- **Every kept change can be undone, including after it went online.** The
+  undo is a new commit. A change that later kept changes build on is undone
+  after them, newest first. An undone change stays online until the app is
+  put online again, and the owner is told so (§17).
+- **The behaviour diff says how each line is known**: tested, in the change
+  but not tested, or not shown in the change.
+- **The owner can read and correct the notes, and drift is caught**
+  ([§26.3](#263-context-as-markdown-in-the-application)): notes pointing at nothing, behaviours no rule
+  describes, notes written before later code, and parts a change left behind.
+- **Every failure ends in a next step**: setup, the checks, money and limits,
+  a change that no longer fits, and publishing.
+- **Telemetry answers the four questions**, per app and across every app.
+
+Not met:
+
+- **Isolated sandboxes.** Each workspace runs as its own user, cannot reach
+  private addresses, and only it can open its previews (runner machines).
+  Workspaces on one machine still share its kernel, and can reach the whole
+  internet. A stronger boundary per run is not built yet. Their internet stays
+  open (owner's decision, 2026-10-08): owners' apps call outside services we
+  cannot list, so a list of allowed hosts would break them in the preview.
+- **Someone other than us** has not created an app and shipped changes, edits
+  and a deploy without our help. Importing an existing app is out of scope
+  for V1 (§18).
+- **3–5 real owners** have not used the loop yet, so what they value is
+  unknown.
+- **Our own sign-in starter** (owner's decision, 2026-10-08, before
+  production). The starter kit's sign-in emails (verify the address, reset
+  the password) go to the Laravel log, which owners never read. Owners' apps
+  need our own starter for sign-in that works without them reading the log.
+  Until then, apps keep the vue-starter-kit.
+
 Two corrections to direction 16, from §26.12: 15px padding is `p-3.75` in
 Tailwind v4 (a theme-relative utility), not `p-[15px]`; and any fraction is a
 valid width (`w-73/100`), though `w-[73%]` reads more clearly and is fine as
 the arbitrary form.
 
-### 27.10 Positioning and competitors (version 17)
+### 27.10 Positioning and competitors (version 36)
 
 **Public promise: cut complexity, make software observable, make software
 easier to evolve.** Laravel is how we deliver it, not the pitch. Internally,
@@ -2442,7 +5347,7 @@ each capability, ask:
 
 When the evidence is missing, the answer is **unknown**, never "yes".
 
-**LaraCopilot, the closest competitor** (direction 18, from the owner's
+**LaraCopilot, the closest competitor** (direction 36, from the owner's
 reading of its public material). Credited:
 
 - Laravel-native generation;
@@ -2481,7 +5386,480 @@ The hypothesis is that our advantage **grows** with the application. If it
 does not, behaviour notes, context and Effects have not earned their
 complexity.
 
-## 28. Hosting: control plane on Laravel Cloud, runtimes on Forge (version 18)
+## 28. Grandma first: the translation layer (version 17)
+
+Directions 17 and 18 add one product rule and a filter for what comes next.
+This section is the engineering answer. For V1 it adds to §27; it does not
+replace any milestone.
+
+### 28.1 The rule
+
+**Grandma first. Power users can drill down. Never require Grandma to drill
+up.** The test for every surface: could someone who knows their business very
+well, and software hardly at all, make the correct decision here? If not, the
+surface leaks implementation and must be simplified, or the complexity moves
+into the engine.
+
+> No internal architectural noun is allowed into the default UI unless Grandma
+> needs it to make a business decision.
+
+The translation layer is part of the V1 architecture, not copywriting. Every
+internal record keeps one user-language projection, and the page shows that
+projection first. Technical detail stays one click away, under "Details" (or
+"Show the code" for power users), and is never needed to act.
+
+### 28.2 Vocabulary
+
+The default UI uses the right-hand column. Code, notes and logs keep the
+left-hand one.
+
+| Internal                                     | Default UI                                                 |
+| -------------------------------------------- | ---------------------------------------------------------- |
+| Feature request, run                         | Change                                                     |
+| Change Brief, plan                           | Here's what I'm changing                                   |
+| Acceptance criteria, verify items            | Done when                                                  |
+| Preserve clauses                             | I'll keep these the same                                   |
+| Effects, "may also affect"                   | This may also touch                                        |
+| Capability                                   | The area's own name (Teams, Billing), or "part of the app" |
+| Behaviour                                    | What people can do                                         |
+| Actor                                        | Who can do it                                              |
+| Rules in the notes                           | Things that must always be true                            |
+| Project Context, the notes                   | What I know about your business                            |
+| Verification                                 | Checks I ran                                               |
+| Behaviour diff, review by area               | What changed                                               |
+| Evidence: verified / untouched / not checked | Checked by a test / Not touched / Not checked yet          |
+| Unexpected change                            | Something I didn't expect to change                        |
+| Accept (commit)                              | Keep this change                                           |
+| Revert                                       | Undo this change                                           |
+| Commit history                               | What changed, in the owner's words (the change summaries)  |
+| Preview                                      | Try it                                                     |
+| Quick health check                           | Quick check: look for obvious problems                     |
+| Deploy (push to the Cloud branch)            | Publish                                                    |
+| Tailwind classes                             | Direction, wrap, alignment, space, columns per device      |
+
+Assumptions stay visible, as "Decisions I made for you": they are the product
+decisions the owner is most likely to want to correct.
+
+### 28.3 Depth
+
+Every surface renders the same records at four depths (§3 already has five
+levels; this is the same ladder, named by the question each answers):
+
+1. **What** does this do? (default)
+2. **Why and when**: who can do it, what else it may touch.
+3. **How**: the files, tests, rules and packages involved.
+4. **Source**.
+
+A lower level is never required to operate a higher one.
+
+**Technical details are off by default (version 35).** One switch, "Technical
+details", sits in the app menu and the account menu. Off, the owner sees only
+level 1: no depth switch, no plan and code beside the chat, no test counts, no
+"How I did it", no per-case marks and no developer tools (their own Claude or
+Codex, details for a developer, bringing in an app from a folder). On, every
+level and tool shows, and the depth the person last picked comes back. The
+setting is per person (`users.technical_details`).
+
+### 28.4 What directions 17 and 18 change in V1
+
+Only what the V1 loop already produces the data for:
+
+- **Pages follow §28.2.** The change page leads with "Here's what I'm
+  changing", "I'll keep these the same", "This may also touch", "Done when"
+  and "Checks I ran"; the file lists and a plain-words log of what happened
+  move under Details. Model and provider names, token counts, workers,
+  budgets and our own checks are never shown: messages that name them are
+  replaced with a vague one (§19).
+- **"What changed" is product history.** The project page lists kept changes by
+  their summaries; commit hashes are details. (Direction 18, §9.)
+- **"Things that must always be true"** is the Understanding page's name for
+  the rules in the notes. They already feed the preserve clauses, the review
+  and verification. (Direction 18, §7.)
+- **Honest confidence.** The preserved lines say "Checked by a test", "Not
+  touched" or "Not checked yet". No percentages. (Direction 18, §10.)
+- **The inspector speaks in visual concepts** (§26.12 already did); Tailwind
+  shows only when the power user asks.
+- **Selection answers "What this does"** from the area's notes, and shows the
+  area's rules as the first answer to "Why is this here?". A fuller "why"
+  needs decision history. (Direction 18, §1.)
+- **The Understanding page is "Your business"**: what this app is for, who
+  uses it, how things work, important rules, connected services, things to add
+  later. It is not an ontology editor.
+- **The quick check and publish** use the labels in §28.2.
+
+### 28.5 Differentiators after V1
+
+Direction 18 ranks five: why is this here; things that must always be true;
+what happens if I change this; explain my app and what changed while I was
+away; goal-aware simplification. The V1 loop already stores the raw material
+for each (notes with rules and Effects, change summaries, assumptions, evidence
+labels). Later stages, in order:
+
+1. **Decision history.** Store a kept change's assumptions and the owner's
+   answers as decisions in the notes (value, why, "Change this rule"), so
+   "why is this here" can cite them.
+2. **Impact preview before important changes.** Show "This may also touch"
+   before the agent runs when the brief flags permissions, stored data or
+   destructive changes. Question frequency follows consequence and
+   reversibility.
+3. **Invariants as tests.** Turn "Things that must always be true" into
+   protected tests, reused by verification and audits.
+4. **Explain my app** as a numbered list from the notes, where "Number 4 is
+   wrong" starts a reconciliation (notes stale, understanding wrong, or code
+   drifted).
+5. **Main goal** in the project notes, and suggestions judged against it.
+
+Progressive autonomy, safe experiments (a preview of an unkept change is
+already one), "Simplify this", the complexity budget and product-level undo
+stay later. A feature that improves none of complexity cutting, observability
+or evolution does not belong in the core product.
+
+### 28.6 Open
+
+- Whether the owner approves the brief ("Make the change") before the agent
+  runs on every change, or only on consequential ones. V1 runs straight
+  through and asks at "Keep this change"; §28.5 (2) is the proposal.
+- Whether to enforce §28.2 mechanically (a check that fails when a default-UI
+  page uses an internal noun). V1 relies on review.
+
+## 29. Human judgment where it has leverage (version 18)
+
+Direction 19 reframes people in the loop. A developer is not the fallback when
+the AI fails. People add concentrated judgment where it has unusual leverage,
+and the platform carries that judgment into every later change. The promise is
+"you no longer need a developer for every change", not "never again".
+
+### 29.1 Who decides what
+
+| Kind of decision                      | Who                     |
+| ------------------------------------- | ----------------------- |
+| Routine implementation                | AI                      |
+| Ambiguous but low risk                | AI with the owner       |
+| High-consequence product decision     | Owner                   |
+| High-consequence engineering judgment | Developer or specialist |
+
+Escalation is a normal path, not a failure state.
+
+### 29.2 Three sources, one understanding
+
+The owner (intent, rules, goals), the platform (implementation, verification,
+the notes it maintains) and developers (architecture, risk, simplification,
+long-term direction) all write to the same notes. Nothing a
+developer says lives only in a chat or a report.
+
+### 29.3 What V1 does
+
+Only what the notes already support:
+
+- **Engineering direction is a section of `project.md` in the notes.** The Context
+  Compiler includes the project notes in every change (§26.3), so a rule such
+  as "Use Actions for state-changing operations" or "External integrations go
+  through adapters" reaches every later brief, coder and reviewer. A developer
+  writes it once.
+- **The Understanding page (M3) shows it** as "Guidance from your developer",
+  editable, with the other sections. Changes to it are commits like any other,
+  so its history is visible.
+- **The reviewer checks changes against it**, because the reviewer already
+  receives the project notes.
+- **"Ask a developer" brings in one of our own developers**
+  ([direction 26](direction/26-evolution-loop-and-design-contract.md),
+  "Human-in-the-loop: tiny V1 version"). The test is whether one hour of
+  engineering judgment changes later AI work. The owner asks in their own
+  words, about the whole app or about one change (app menu, or a link that
+  names the change). Operators answer under "Questions for developers", and
+  so do the developers they approved. A developer asks to join on the public
+  "For developers" page (`DeveloperApplication`, one per person); an operator
+  approves or declines it under Operations → Developers, and can take a yes
+  back. Approved developers (`answerDeveloperQuestions`) see only the
+  questions, never the rest of operations. A developer takes a question
+  before answering it (`claimed_by`), so two never spend their hour on the
+  same one. After that only they and operators see it and its code, and
+  nobody sees questions about their own app (`DeveloperReviewPolicy`).
+  Every operator and approved developer but the asker is told of a new
+  question (`DeveloperAsked`), and operations counts the questions still
+  waiting and the requests to join.
+    - **What they read is written once, without a model**
+      (`WriteReviewRequest`, kept in `developer_reviews.bundle`): the
+      question, what the app is for, its rules, decisions and guidance so far.
+      For the app, each area with its code paths, rules and how many tests
+      run it. For a change, how it was understood, what must stay, the
+      assumptions, the notes of its areas, what the checks showed and what
+      nothing checks yet, the problems still open, its code, and the kept
+      changes in the same areas. It names the commit (`revision`), and the
+      code download (`PackProject`) is taken at that commit, so the review
+      reads the same code however the app moves on. It holds no scores,
+      routing or other machinery, because it can be downloaded and passed on.
+    - **The answer has three parts:** a short answer, what they noticed, and
+      guidance, one rule per line. The owner is told once in the builder.
+    - **Only the owner makes guidance part of the app.** They choose which
+      points to keep. Each kept point joins "Engineering direction" with the
+      developer's name and the date. The review keeps the commit it was given
+      on, so stale guidance can be found later (§30.3). Kept guidance fixes
+      the answer, and only the kept points show afterwards.
+    - **Every later change is held to it.** The coder reads it in the
+      project notes. The second look reports a blocking finding for code
+      that goes against it, and a change it passed says so among its proof.
+    - **Not in V1:** our developers writing code here (an owner who wants
+      that uses "Use my own Claude Code or Codex", §11), naming in a change
+      which point of guidance it followed, asking before risky changes,
+      payment.
+
+Grandma sees none of the vocabulary: no "architecture consultation", no
+"audit". Where V1 shows anything, it says "Guidance from your developer".
+
+### 29.4 Later
+
+In order, each built on the notes rather than beside them:
+
+1. **Review packet**: built in V1 as what "Ask a developer" writes (§29.3).
+   Still to come: the **unconfirmed assumptions the design rests on**, once
+   assumptions are kept in the notes (§30.3). "These assumptions decide the
+   tenancy model" is the kind of catch the packet exists for. Then: say in a
+   change which kept guidance it followed, only where the second look
+   weighed that point.
+2. **"Ask a developer to review it first"** beside "Continue", offered before
+   high-consequence changes (permissions, stored data, billing, destructive
+   changes), from the same flags as §28.5 (2).
+3. **Expert sessions** (developer check, architecture session, feature review,
+   periodic health review) whose output is edits to the notes and invariants,
+   reviewed by the owner.
+4. **A marketplace for judgment, not for feature work** ("lend your judgment to
+   my software"), with levels from general developer to specialist.
+
+Developers are operators or people an operator approved (§29.3). For
+now, approved developers work for the business that runs the builder, so
+the product does not pay them and has no payouts. Access for the owner's
+own or hired developers, and paying developers through the product, are
+not designed yet.
+
+## 30. Software stewardship (version 19)
+
+Source: [direction 20](direction/20-software-stewardship.md). The product is a
+software stewardship platform: build, understand, operate, change, bring in
+judgment, keep that judgment, and keep evolving safely. The test is no longer
+"can Grandma build a booking MVP" but "can Grandma still own the product after
+years of changes". This section answers the direction's closing question: what
+is the smallest durable structure that gives most of the leverage?
+
+### 30.1 Three primitives, no new ones
+
+| Primitive         | What it holds                                                                                                                                                                   | Where it lives now                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Notes**         | Owner intent (rules, invariants), developer guidance, the areas of the app                                                                                                      | Our database, with a copy in each workspace (§26.3)                                          |
+| **Change Record** | What the owner wanted, how it was understood, the assumptions used and how each is known, before and after, what was kept the same, what it may touch, the commit, the evidence | The accepted feature request and its brief, verify items, preserved items, checks and commit |
+| **Evidence**      | Which checks ran, which tests cover which promise, and what was not checked                                                                                                     | Runs and verification, linked from the Change Record                                         |
+
+The feature request already is the Change Record: the change page shows it in
+owner language (§28). V1 adds no new entity for it. Visual edits (M2) are
+Change Records without a model: file, element, before and after, commit.
+
+Expert guidance is not a fourth store. It is the "Engineering direction"
+section of the notes (§29.3), so it reaches every later change through the
+Context Compiler.
+
+### 30.2 What V1 does
+
+- Keeps every change as a Change Record with evidence, and lists them on the
+  project page as "What changed".
+- Keeps owner rules and developer guidance in the notes, visible on the
+  Understanding page (M3).
+- Marks evidence honestly: "not checked" is never shown as "verified" (§27).
+- Shows each change's assumptions as "Decisions I made for you" (the planner's
+  `assumptions`). They are plain text for that change only: not kept in the
+  notes, not checked against evidence, and never asked before building. The
+  next steps close that gap (§30.3).
+
+### 30.3 Later, in order
+
+1. **Assumptions in the notes** (built for what was assumed). Keeping a change
+   keeps its assumptions: each one the owner confirmed becomes a rule or
+   decision in the area's notes, and the rest go under "## Assumptions" with
+   how each is known (checked in the code, confirmed by you, assumed). The
+   planner reads them first (§7), and one question before building uses the
+   same list. Markdown, no new store. Built: the owner's answers are already
+   decisions (`RecordDecision`). `KeepAssumptions` writes the plan's other
+   assumptions, marked "(assumed)", into the workspace's notes before they
+   are read back: the area's notes when the change is about one area, else
+   the project notes. So keeping the change keeps them, and undoing it takes
+   them out. Choices about how the code is built stay out, as in
+   `ListDecisions`, and an app without notes gets none. Still to come:
+   "checked in the code", and the planner reading them first.
+2. **Change Records in the handover package.** Export a short Markdown record
+   of each kept change with the notes, so the handover package (direction 20
+   §17) needs no extra work. They stay out of the repository (§19).
+3. **Guidance that ages.** Record the commit each guidance item was last
+   reviewed against, and show "This guidance was written before … It may need
+   another review" when its area changed a lot since. The count comes from
+   Change Records per area, so no new data is needed.
+4. **Review freshness.** "Billing was reviewed 8 months ago; 6 billing changes
+   since." Same count.
+5. **Intent against reality.** Compare owner rules with what policies, routes
+   and tests allow ("You said managers cannot see payroll; the app lets them").
+   This builds on the active testing in direction 14.
+6. **Selective context for humans.** The review packet (§29.4) includes only
+   the areas, rules, Change Records and evidence that the question touches.
+7. **Scoped expert access** (read-only snapshot, isolated preview, no
+   credentials or customer data) and **explainable escalation** (the reason
+   is always shown; bring-your-own developer always works). These need the
+   access model that later gates design.
+
+## 31. Complexity moves upward (version 20)
+
+Source: [direction 21](direction/21-complexity-moves-upward.md). Capable agents
+do not remove the work of managing software; they move it up to continuity,
+context selection, rule enforcement, verification and change history. The
+platform carries that work so the owner does not have to. We must beat
+"Claude Code + Laravel + good documents + an attentive human architect", not
+"repo + a bare prompt".
+
+### 31.1 Four primitives, as they exist in V1
+
+This refines §30.1 by splitting the notes by what they do. It adds no store.
+
+| Primitive     | Owner sees                      | V1 home                                                                  |
+| ------------- | ------------------------------- | ------------------------------------------------------------------------ |
+| Understanding | About your app, How things work | The notes' `project.md` and each area's summary and behaviours           |
+| Constraints   | Things that must always be true | "## Rules" in each area, and "Engineering direction" in `project.md`     |
+| Relationships | Things this is connected to     | `effects` in each area's frontmatter                                     |
+| Changes       | What changed                    | Kept feature requests (brief, evidence, commit) and visual edits (§30.1) |
+
+Code and runtime stay the source of implementation reality (§1, principle 10).
+A behaviour stays light: a key, a plain name, and, when known, who does it,
+its key rules and the tests that prove it. Knowledge items keep their kind
+(decision, assumption, invariant, guidance; §7 Provenance) and little else.
+The database is not normalized further until real use asks for it.
+
+### 31.2 Knowledge is not enforcement
+
+A rule the agent has read can still be broken. Constraints therefore
+graduate from prose towards checks:
+
+1. **V1 (built):** rules become the brief's _preserve_ clauses; _verify_ items
+   become tests the independent verification runs; "preserved" says how it is
+   known (§27.4).
+2. **Later: the Constraint Compiler.** "This must always be true" becomes an
+   actor × data × action matrix (for example Owner A → Org B → deny), then
+   policy, route and query tests in the app's suite. Laravel's fixed places
+   for authorization, validation, routing and tests make this feasible.
+3. **Later: guidance as guardrails.** Some developer guidance becomes a
+   structural check (for example "no Stripe calls outside BillingGateway" as a
+   dependency search in the quick check).
+
+### 31.3 Selective context is the hypothesis
+
+The claim is "task-relevant product state beats accumulated history", not
+"structured beats Markdown". The hierarchy (project → area → behaviour)
+stores knowledge; the Context Compiler (§8, §26.3) picks the small packet the
+agent sees. The experiment in direction 21 §9 (full documents against the
+compiled packet, same model and code) tests it directly.
+
+### 31.4 Measure human interventions
+
+- **Research log:** [docs/research/interventions.md](../research/interventions.md)
+  records each time a human had to steer, with one of six reasons: missing
+  context, wrong interpretation, ignored constraint, missed effect, bad
+  verification, architecture drift. It stays a Markdown log until the
+  categories prove useful.
+- **Metric:** human interventions per kept change, beside cost per kept change
+  (§25.3). What the builder records are **owner actions**: follow-ups,
+  retries, stops and undos. They are observed facts, not proof that something
+  failed. An action becomes an intervention only when an operator classifies
+  why it happened (later, phase 2 of the operations screens).
+- **Definitions (built):** _completed_ (a run finished its build and review),
+  _verified_ (the latest checks passed with tests for the change;
+  _unverified_ is never counted as passed), _kept_, _pushed_ (the code
+  reached the host), _published_ (the app answered its checks after the push)
+  and _healthy_ (not measured: nothing checks a published app afterwards)
+  are separate. Every percentage is shown with its counts.
+- **The four V1 measures** (cost per kept change, first try passed, touched
+  parts not asked about, edits without a model) are worked out in one place
+  (`MeasureChanges`). Each owner sees them for their app and operators see
+  them across every app (Numbers), so a word means one thing. Cost counts
+  every request, kept or not, and the decision model's calls about it. Calls
+  without a known price are counted, never guessed. A first try passes only
+  with tests for the change.
+- **Operations screens (built, phase 1):** operators named in
+  `config/operations.php` see what needs attention (silent queue workers,
+  backlog, stuck runs and expired leases, failures by stage and reason,
+  exhausted budgets, preview failures and edit-to-screen time, workspace
+  cleanup, spend with a completeness label) and each change's history, with
+  queue, machine and owner time kept apart. Facts are recorded at the source:
+  worker heartbeats, preview rebuilds, stop reasons, the execution settings
+  version, cleanup failures, where each cost came from (a coding agent that
+  reports no cost is priced from config when its model is named), the
+  decision model's calls, and which changes a publish contains. No prompts
+  or customer code appear on list screens.
+- **Evolution Benchmark (running):** a fixed sequence of 20–50 realistic
+  changes to one app, measured at changes 1, 5, 10, 20, 35 and 50 for
+  regressions, corrective prompts, cost and missed rules. This project is the
+  first one. Built: `php artisan builder:benchmark {project} --changes=N`
+  asks for the next N changes of `builder.benchmark.changes` (20 changes to a
+  room-booking app, each adding a rule the later ones must keep), one at a
+  time, as an owner would. It answers a question with its recommended option,
+  keeps a change whose run completes, and stops at a change that fails.
+  `php artisan builder:evolution {project}` (`--json` for machines) cuts any
+  project's kept changes into windows ending at the checkpoints. Each request
+  counts toward the first change kept after it was asked, so abandoned and
+  repaired work is part of what a kept change cost. Per window: cost and
+  tokens per kept change, first tries that passed, repairs, owner steps
+  (adjustments, retries, stops), tests a change broke that passed on its
+  starting commit (caught by the checks), rules of earlier kept changes it
+  broke (§26.11, recorded as `earlier_rules` evidence), changes undone, and
+  the median hours from ask to keep.
+- **Learned relationships:** when kept changes show two areas changing
+  together repeatedly, the relationship becomes a `history` Effect (see the
+  test-impact entry). Later: propose it to the owner ("Remember this
+  relationship?") so it is written into the notes.
+- **Test-impact prototype (running):** tag some tests with the
+  behaviour they prove (a `behavior:<key>` group; Pest groups and PHPUnit's
+  `#[Group]` both work). For real changes, map behaviour → tests → affected
+  tests → behaviours, and log useful, noisy and missed Effects, and important
+  behaviours with no tests. Build an Effect graph only if this pays off.
+  Built: when a change's suite check passes, the suite runs again with code
+  coverage (`builder.verification.test_map`), before the protected tests are
+  copied in. PHPUnit's coverage XML and test list XML, both documented
+  formats, give which tests ran which code files; each run is kept as a test
+  observation. Tests of area B that ran code area A claims give A an Effect
+  on B with source `tests` (strong from two tests, possible from one). The
+  review gets the areas whose tests ran the changed code, and the changed PHP
+  files no test ran. `php artisan builder:effects` compares, per change, the
+  areas the tests reached with the areas touched outside the ask ("missed"),
+  and lists the behaviours no test proves. For the fast path, each requested
+  area in the coder's context lists its existing tests: first the test files
+  seen running its code (most tests first), then the ones it claims by path.
+  The agent runs those while it works; the full suite still decides. First
+  real map (the fixture, 2026-09-27): 92 tests over 32 code files; the
+  observed Effects matched the written ones. History: kept changes (accepted,
+  not undone) about area A that also changed area B give A a `historical`
+  Effect on B with source `history`, once `builder.context.history.min_changes`
+  (2) of the latest `window` (50) kept changes agree. The date is the latest
+  such change's. Foundation: code more than `foundation_share` (half) of
+  the tests run, once the suite has `foundation_min_tests` (10), such as the
+  user model, middleware and providers (88–100% of the fixture's tests). It
+  would tie every area to every other, so it makes no `tests` or `history`
+  Effect and lists no tests for an area. A change to it is reported apart as
+  reaching the whole app: a broad change (§8). Lines: the map also keeps,
+  per file, the line ranges each test ran (short gaps bridged, since blank
+  lines and comments are not executable). A change reaches the tests that
+  ran its changed lines: numbered as in the new file when the map was made
+  with the change in place, else as in the old one. So a change to one
+  method of a large or foundation file is narrow when few tests run that
+  method. When no test ran any changed line (new code, a signature), the
+  whole file counts: unknown broadens, never narrows. Changed code no test
+  ran is a gap only in a top folder coverage measured (usually `app/`); a
+  config file or migration there is unknown to the map, not untested. Next: impact by
+  behaviour, as tests gain `behavior:` groups.
+  The owner sees this evidence in plain words. Each part says how many tests
+  run its code, and lists what they check, in the tests' own names. Each
+  change says how it is known to work: the checks that passed, the problems
+  caught and fixed before the owner saw it, the tests it added, how many
+  tests ran the changed code, and the code no test runs yet. Each part also
+  lists what the owner asked for in the changes they kept, in their words:
+  the criteria a named test proved. The app's current code is searched for
+  each test name, since the last test map can predate a kept change; a test
+  renamed or removed since is shown as changed or gone, never as passing.
+
+## 32. Hosting: control plane on Laravel Cloud, runtimes on Forge (version 37)
 
 Direction 19 sets the hosting: the control plane (this application) runs on
 Laravel Cloud, and the previews run on servers managed by Laravel Forge. This
@@ -2494,11 +5872,11 @@ the existing workspace driver boundary.
 recommends microVMs from a bought provider, because customer code and
 generated code are untrusted. A Forge server runs containers on a shared
 kernel, which is a weaker boundary. This design accepts that for V1, with the
-mitigations in §28.3 and §28.10, and keeps the driver boundary so a microVM
+mitigations in §32.3 and §32.10, and keeps the driver boundary so a microVM
 provider can replace the runner later without touching runs, verification or
-previews. The owner should confirm this trade-off (§28.11).
+previews. The owner should confirm this trade-off (§32.11).
 
-### 28.1 What breaks today, and why
+### 32.1 What breaks today, and why
 
 Every runtime path assumes the web process, the queue workers and the
 customer code share one machine. On Cloud they do not: web and workers run in
@@ -2507,15 +5885,15 @@ network.
 
 | Today                                                                                                             | On Cloud                                                       | Replacement                                                                  |
 | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| A project is a directory on the control plane's disk (`source_path`)                                              | There is no such directory, and no disk shared between workers | A project is a git repository, checked out by the runner (§28.6)             |
-| Workspaces are directories (`local`) or containers on a Docker daemon next to the worker (`docker`)               | Customer code must not run in the control plane's containers   | Workspaces live on runner servers, reached through a `remote` driver (§28.4) |
-| A worker starts the preview with `php -S` on a local port; the web process's gateway relays to `127.0.0.1:{port}` | The web container cannot reach a worker's loopback             | Previews are served by the runner server that hosts the workspace (§28.5)    |
+| A project is a directory on the control plane's disk (`source_path`)                                              | There is no such directory, and no disk shared between workers | A project is a git repository, checked out by the runner (§32.6)             |
+| Workspaces are directories (`local`) or containers on a Docker daemon next to the worker (`docker`)               | Customer code must not run in the control plane's containers   | Workspaces live on runner servers, reached through a `remote` driver (§32.4) |
+| A worker starts the preview with `php -S` on a local port; the web process's gateway relays to `127.0.0.1:{port}` | The web container cannot reach a worker's loopback             | Previews are served by the runner server that hosts the workspace (§32.5)    |
 
 The local driver is already refused in production unless explicitly allowed,
 so a misconfigured Cloud deploy fails loudly instead of running customer code
 in the control plane.
 
-### 28.2 Shape
+### 32.2 Shape
 
 ```
 Owner's browser                                 Owner's browser
@@ -2548,7 +5926,7 @@ machine, leases, budgets, the operation journal, verification policy and
 results, reviews, grants and the model keys. The runner owns only sandboxes,
 commands, files and preview traffic.
 
-### 28.3 The runner
+### 32.3 The runner
 
 **One repository, two roles.** The runner is this application deployed to a
 Forge server with `BUILDER_ROLE=runner`. In that role it registers only the
@@ -2556,7 +5934,7 @@ runner API routes and the preview gateway, and none of the control plane's
 routes, authentication or database. It reuses what already exists: the
 `docker` workspace driver, `CopyExclusions`, the preview gateway and the
 command result types. The alternative is a separate runner repository: cleaner
-separation, at the cost of copying the drivers and a second CI (§28.11).
+separation, at the cost of copying the drivers and a second CI (§32.11).
 
 This is the _host_ side. The TypeScript runner the architecture describes
 (§11, `resources/agent-runner/run.mjs`) stays as it is: it runs _inside_ each
@@ -2584,7 +5962,7 @@ runner's dependencies), built from a Dockerfile in this repository and pulled
 by the runner. Template snapshots with dependencies pre-installed (research §5)
 come later. They are the main lever on time per change.
 
-### 28.4 Runner API (the runtime protocol, V1)
+### 32.4 Runner API (the runtime protocol, V1)
 
 The control plane gets a `remote` workspace driver. It implements the existing
 `WorkspaceDriver` contract over HTTPS, so runs, verification and previews do
@@ -2594,7 +5972,7 @@ stores only its hash.
 | Contract                      | Runner API                                                                                                      |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `create(spec)`                | `POST /workspaces` `{name, image, cpus, memory_mb, pids}` → `{id}`                                              |
-| `copyDirectory` (replaced)    | `POST /workspaces/{id}/checkout` `{repository, commit, token}` → `{commit}` (§28.6)                             |
+| `copyDirectory` (replaced)    | `POST /workspaces/{id}/checkout` `{repository, commit, token}` → `{commit}` (§32.6)                             |
 | `writeFile` / `readFile`      | `PUT` / `GET /workspaces/{id}/files?path=`                                                                      |
 | `exec`                        | `POST /workspaces/{id}/commands` → `202 {command}`; `GET /commands/{command}?wait=25` long-polls for the result |
 | `startService` / `serviceUrl` | `POST /workspaces/{id}/previews` `{host, port, command, expires_at}`; the upstream URL never leaves the runner  |
@@ -2618,7 +5996,7 @@ runner remembers the highest token per workspace and refuses lower ones. Today
 fencing protects only the database: a worker that lost its lease can still
 change the workspace while its command runs. This closes that gap.
 
-### 28.5 Previews on the runner
+### 32.5 Previews on the runner
 
 - **Hosts.** Each runner has its own preview domain: `*.r1.preview.example.com`
   points at runner r1. A preview's host is `{random}.r1.preview.example.com`.
@@ -2642,8 +6020,15 @@ change the workspace while its command runs. This closes that gap.
   for state and destroys what the runner no longer has.
 - On Cloud, `ServePreviewHosts` and the gateway are not registered (the role
   decides). They exist in exactly one place at a time.
+- **Live updates** (decided 2026-10-08, paused by the owner, §15). Each runner runs one Reverb
+  for its previews, at `ws.r1.preview.example.com` under the same wildcard
+  certificate, so the socket sits next to the app. A central one would put
+  every preview's traffic through the control plane. A runner has no
+  database of previews: the control plane sends each preview's keys,
+  signed, the way it sends grants. On a dev machine the local runner has
+  its own Reverb in the same way.
 
-### 28.6 Project sources
+### 32.6 Project sources
 
 - A project is a git repository: `repository_url` and a default branch.
   Checkouts are pinned to a commit SHA recorded on the run, verification or
@@ -2662,14 +6047,14 @@ change the workspace while its command runs. This closes that gap.
   `fixtures/customer-app` to its own template repository. That repository is
   also the starting point for "create from the template" (§27.6 step 5).
 
-### 28.7 The control plane on Laravel Cloud
+### 32.7 The control plane on Laravel Cloud
 
 - Web, a queue cluster, the scheduler (`runs:reconcile`, `workspaces:reap`,
   `previews:reap`), Postgres and Redis/Valkey are used as today. No customer
   code, workspace or preview runs on Cloud.
 - **Long jobs.** Runs and verifications wait on runner commands for up to an
   hour. Check Cloud's maximum job time and `retry_after` for the queue cluster.
-  If they are lower, take the callback step from §28.4 first.
+  If they are lower, take the callback step from §32.4 first.
 - **Behind Cloud's edge.** Confirm that client IPs and the HTTPS scheme come
   through Cloud's proxy (trusted proxies). Otherwise generated URLs and
   rate limits see the proxy instead of the client.
@@ -2681,7 +6066,7 @@ change the workspace while its command runs. This closes that gap.
       run commands that see it.
       The runner must start the Agent SDK with project setting sources disabled.
 
-### 28.8 Configuration
+### 32.8 Configuration
 
 - **Control plane.** `config/builder.php` gains `runners`: per runner, a name,
   its API URL, its token, its preview domain and its grant-signing key, all
@@ -2693,7 +6078,7 @@ change the workspace while its command runs. This closes that gap.
   Docker runtime (`runsc`), the workspaces network, its own Redis for commands
   and grant nonces, and `BUILDER_PROJECT_ROOTS` if local sources are used.
 
-### 28.9 Build order
+### 32.9 Build order
 
 Each step ships on its own and keeps today's tests passing.
 
@@ -2716,7 +6101,7 @@ Each step ships on its own and keeps today's tests passing.
 Steps 3 and 4 can swap. Nothing here starts the later-stage subsystems in
 §20.
 
-### 28.10 Risks
+### 32.10 Risks
 
 - **Isolation.** Containers with gVisor on a shared server are weaker than
   microVMs. An escape reaches other tenants' workspaces on that server, never
@@ -2735,7 +6120,7 @@ Steps 3 and 4 can swap. Nothing here starts the later-stage subsystems in
 - **The runner is a new deployable,** with its own deploy, monitoring and OS
   upkeep (Forge handles most of it).
 
-### 28.11 Decisions for the owner
+### 32.11 Decisions for the owner
 
 1. **Isolation for V1:** containers with gVisor on Forge servers (this design),
    or a bought microVM provider behind the same driver (the research's

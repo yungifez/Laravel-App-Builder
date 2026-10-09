@@ -8,32 +8,41 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Lab404\Impersonate\Models\Impersonate;
+use Laravel\Cashier\Billable;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Passport\Contracts\OAuthenticatable;
+use Laravel\Passport\HasApiTokens;
 
 /**
  * @property int $id
  * @property string $name
  * @property string $email
  * @property Carbon|null $email_verified_at
+ * @property bool $technical_details Whether the person sees how changes are made
  * @property string $password
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property string|null $granted_plan A plan an operator gave without payment
+ * @property Carbon|null $granted_plan_until
+ * @property Carbon|null $suspended_at When an operator stopped the person signing in
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'detail_level', 'technical_details'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
+class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use Billable, HasApiTokens, HasFactory, Impersonate, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Get the attributes that should be cast.
@@ -46,6 +55,10 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'detail_level' => 'integer',
+            'technical_details' => 'boolean',
+            'granted_plan_until' => 'datetime',
+            'suspended_at' => 'datetime',
         ];
     }
 
@@ -67,5 +80,40 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public function workspaces(): HasMany
     {
         return $this->hasMany(Workspace::class);
+    }
+
+    /**
+     * Get the person's request to answer owners' questions as a developer.
+     *
+     * @return HasOne<DeveloperApplication, $this>
+     */
+    public function developerApplication(): HasOne
+    {
+        return $this->hasOne(DeveloperApplication::class);
+    }
+
+    /**
+     * Determine if an operator stopped the user from signing in.
+     */
+    public function suspended(): bool
+    {
+        return $this->suspended_at !== null;
+    }
+
+    /**
+     * Determine if the user may sign in as someone else: operators only.
+     */
+    public function canImpersonate(): bool
+    {
+        return $this->can('viewOperations');
+    }
+
+    /**
+     * Determine if an operator may sign in as the user: never as another
+     * operator.
+     */
+    public function canBeImpersonated(): bool
+    {
+        return ! $this->can('viewOperations');
     }
 }

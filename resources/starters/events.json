@@ -1,0 +1,12 @@
+{
+    "name": "Local Events",
+    "purpose": "People sign up for my events, and I see who is coming.",
+    "design": "sharp",
+    "includes": [
+        "A page for each event with its date, place and places left",
+        "People sign up with their name and email",
+        "I see the sign-ups for each event and can close an event",
+        "People get an email when they sign up"
+    ],
+    "order": 5
+}

@@ -9,11 +9,27 @@
 // else that goes wrong is "failed".
 //
 // Usage: node run.mjs <task.json>
-// The task file: {adapter, prompt, model?, max_turns?, max_budget_usd?}.
+// The task file: {adapter, prompt, model?, effort?, max_turns?, max_budget_usd?,
+// session?, follow_up?, continue_only?, protected_paths?}. With "session", the agent
+// continues that earlier session and is sent "follow_up" instead of the whole
+// prompt. The result line names the session ("session"), and whether the
+// earlier one was continued ("resumed"). With "continue_only", a session that
+// cannot be continued ends the task as "session_gone" instead of starting
+// fresh, because the files hold another session's half-done edits. The Claude agent may not write or edit a file in
+// "protected_paths"; the control plane puts them back afterwards anyway.
+//
+// While the agent works, progress.json next to the task file says what it
+// is doing, so the owner can follow along, and which session it works in,
+// so a task cut off part way can be continued:
+// {"adapter":"claude|codex","session":"id|null","doing":"reading|changing|testing","last":"path","read":[...],"changed":[...],
+//  "story":[{"kind":"said|thinking","text":"..."}|{"kind":"read|changed","file":"path"}|{"kind":"testing"}]}
+// The story is what the agent did and said, in order; the result line
+// carries it too, so it outlives the task files.
 // Credentials come from the environment (ANTHROPIC_API_KEY, OPENAI_API_KEY,
 // and optionally ANTHROPIC_BASE_URL / OPENAI_BASE_URL for a gateway).
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 /** Assistant message errors from the Claude Agent SDK that mean the provider could not serve the task. */
 const CLAUDE_PROVIDER_ERRORS = new Set([
@@ -27,47 +43,290 @@ const CLAUDE_PROVIDER_ERRORS = new Set([
     'cloud_credential_error',
 ]);
 
-/** Codex reports failures as text only, so provider trouble is recognised by these patterns. */
-const CODEX_PROVIDER_ERROR =
-    /\b(401|403|429|500|502|503|504)\b|rate.?limit|quota|unauthori[sz]ed|invalid api key|incorrect api key|overloaded|server error|service unavailable|timed? ?out|ECONNRESET|ENOTFOUND|ECONNREFUSED/i;
+/**
+ * Provider trouble reported as text only: Codex failures, and errors either
+ * SDK throws (the Claude SDK throws when the account is out of credit).
+ */
+const PROVIDER_ERROR =
+    /\b(401|403|429|500|502|503|504)\b|rate.?limit|quota|credit balance|billing|unauthori[sz]ed|invalid api key|incorrect api key|overloaded|server error|service unavailable|timed? ?out|ECONNRESET|ENOTFOUND|ECONNREFUSED/i;
+
+/** What the agent has done so far, written after each step. */
+const progress = {
+    adapter: null,
+    session: null,
+    doing: 'reading',
+    last: null,
+    read: [],
+    changed: [],
+    story: [],
+};
+let progressFile = null;
+
+/** The story keeps the latest steps only, so the file stays small. */
+const STORY_LIMIT = 200;
+
+function tell(entry) {
+    progress.story.push(entry);
+
+    if (progress.story.length > STORY_LIMIT) {
+        progress.story.shift();
+    }
+}
+
+/** Keep what the agent says between steps, as its own words. */
+function say(text) {
+    const said = (text ?? '').trim().slice(0, 1000);
+
+    if (said !== '') {
+        tell({ kind: 'said', text: said });
+        write();
+    }
+}
+
+/**
+ * Keep what the agent thinks before it acts, so the owner sees its reasons
+ * while it works, as they would in a chat with it.
+ */
+function think(text) {
+    const thought = (text ?? '').trim().slice(0, 1000);
+
+    if (thought !== '') {
+        tell({ kind: 'thinking', text: thought });
+        write();
+    }
+}
+
+function track(doing, path = null) {
+    progress.doing = doing;
+
+    if (path) {
+        const file = isAbsolute(path) ? relative(process.cwd(), path) : path;
+        const list = doing === 'changing' ? progress.changed : progress.read;
+
+        if (!file.startsWith('..') && !list.includes(file)) {
+            list.push(file);
+        }
+
+        if (!file.startsWith('..')) {
+            tell({ kind: doing === 'changing' ? 'changed' : 'read', file });
+        }
+
+        progress.last = file;
+    } else if (doing === 'testing') {
+        tell({ kind: 'testing' });
+    }
+
+    write();
+}
+
+function write() {
+    if (progressFile === null) {
+        return;
+    }
+
+    try {
+        // Written whole and then moved, so a reader never sees half a file.
+        writeFileSync(`${progressFile}.tmp`, JSON.stringify(progress));
+        renameSync(`${progressFile}.tmp`, progressFile);
+    } catch {
+        // Progress is a courtesy; the task goes on without it.
+    }
+}
+
+/** Note the session as soon as the SDK names it. */
+function noteSession(session) {
+    if (session && progress.session !== session) {
+        progress.session = session;
+        write();
+    }
+}
+
+const TEST_COMMAND =
+    /\b(phpunit|pest|artisan test|npm (run )?test|vitest|jest)\b/;
 
 function print(result) {
     process.stdout.write(`${JSON.stringify({ type: 'result', ...result })}\n`);
 }
 
-async function runClaude(task) {
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
-    let providerError = null;
-    let final = null;
+/**
+ * Continue the agent's earlier session when the task names one, so a repair
+ * pass starts from what the agent already read instead of reading the whole
+ * app again. A session that cannot be continued (it is gone, or was kept on
+ * another machine) falls back to a fresh start with the whole prompt.
+ */
+async function runTask(adapter, task) {
+    if (task.session) {
+        const result = await adapter(
+            task,
+            task.session,
+            task.follow_up ?? task.prompt,
+        );
 
-    for await (const message of query({
-        prompt: task.prompt,
-        options: {
-            cwd: process.cwd(),
-            model: task.model ?? undefined,
-            maxTurns: task.max_turns ?? undefined,
-            maxBudgetUsd: task.max_budget_usd ?? undefined,
-            permissionMode: 'acceptEdits',
-            allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
-            disallowedTools: ['WebFetch', 'WebSearch'],
-            settingSources: ['project'],
-            systemPrompt: { type: 'preset', preset: 'claude_code' },
-        },
-    })) {
-        if (message.type === 'assistant' && message.error) {
-            providerError = message.error;
+        if (!result.lost) {
+            return { ...result, resumed: true };
         }
 
-        if (message.type === 'result') {
-            final = message;
+        if (task.continue_only) {
+            return {
+                status: 'failed',
+                error_kind: 'session_gone',
+                error: 'The earlier session could not be continued.',
+                turns: 0,
+                input_tokens: 0,
+                cached_input_tokens: 0,
+                output_tokens: 0,
+                cost_usd: null,
+                session: null,
+                resumed: false,
+            };
         }
     }
 
+    return { ...(await adapter(task, null, task.prompt)), resumed: false };
+}
+
+/** Whether a failure means the session to continue could not be found. */
+function lostSession(session, started, error) {
+    return session !== null && !started && !PROVIDER_ERROR.test(error ?? '');
+}
+
+/** Whether a path is, or is inside, one the agent may not change. */
+function isProtected(path, protectedPaths) {
+    const file = relative(
+        process.cwd(),
+        resolve(process.cwd(), path),
+    ).toLowerCase();
+
+    return protectedPaths.some((protectedPath) => {
+        const root = protectedPath.replace(/^\/+|\/+$/g, '').toLowerCase();
+
+        return file === root || file.startsWith(`${root}/`);
+    });
+}
+
+/**
+ * Refuse a write or edit to a protected file before it happens, and say
+ * why, so the agent does not spend turns on a change that is put back.
+ */
+function guardProtectedPaths(protectedPaths) {
+    return async (input) => {
+        const path =
+            input.tool_input?.file_path ?? input.tool_input?.notebook_path;
+
+        if (typeof path !== 'string' || !isProtected(path, protectedPaths)) {
+            return {};
+        }
+
+        return {
+            hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: `${path} is protected: it decides how the app is checked, so a person changes it, not this task. Leave it as it is.`,
+            },
+        };
+    };
+}
+
+async function runClaude(task, session, prompt) {
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    let providerError = null;
+    let final = null;
+    let started = false;
+    let sessionId = session;
+
+    try {
+        for await (const message of query({
+            prompt,
+            options: {
+                cwd: process.cwd(),
+                model: task.model ?? undefined,
+                effort: task.effort ?? undefined,
+                resume: session ?? undefined,
+                maxTurns: task.max_turns ?? undefined,
+                maxBudgetUsd: task.max_budget_usd ?? undefined,
+                permissionMode: 'acceptEdits',
+                allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
+                disallowedTools: ['WebFetch', 'WebSearch'],
+                hooks: {
+                    PreToolUse: [
+                        {
+                            matcher: 'Write|Edit|MultiEdit|NotebookEdit',
+                            hooks: [
+                                guardProtectedPaths(task.protected_paths ?? []),
+                            ],
+                        },
+                    ],
+                },
+                settingSources: ['project'],
+                systemPrompt: { type: 'preset', preset: 'claude_code' },
+                // Without this the CLI leaves its thinking out of SDK
+                // sessions, and the owner sees no "thinking" steps. Only
+                // the display is set; the model still picks how to think.
+                extraArgs: { 'thinking-display': 'summarized' },
+            },
+        })) {
+            sessionId = message.session_id ?? sessionId;
+            noteSession(sessionId);
+
+            if (message.type === 'assistant' && message.error) {
+                providerError = message.error;
+            } else if (message.type === 'assistant') {
+                started = true;
+            }
+
+            for (const block of message.type === 'assistant'
+                ? (message.message?.content ?? [])
+                : []) {
+                if (block.type === 'text') {
+                    say(block.text);
+                }
+
+                if (block.type === 'thinking') {
+                    think(block.thinking);
+                }
+
+                if (block.type !== 'tool_use') {
+                    continue;
+                }
+
+                if (['Write', 'Edit', 'MultiEdit'].includes(block.name)) {
+                    track('changing', block.input?.file_path);
+                } else if (block.name === 'Read') {
+                    track('reading', block.input?.file_path);
+                } else if (
+                    block.name === 'Bash' &&
+                    TEST_COMMAND.test(block.input?.command ?? '')
+                ) {
+                    track('testing');
+                }
+            }
+
+            if (message.type === 'result') {
+                final = message;
+            }
+        }
+    } catch (error) {
+        if (lostSession(session, started, String(error?.message ?? error))) {
+            return { lost: true };
+        }
+
+        throw error;
+    }
+
+    // Claude counts input read from and written to its cache apart from the
+    // rest. As with Codex, input_tokens is all of it, and the part read back
+    // from the cache is also given on its own.
+    const cached = final?.usage?.cache_read_input_tokens ?? 0;
     const usage = {
         turns: final?.num_turns ?? 0,
-        input_tokens: final?.usage?.input_tokens ?? 0,
+        input_tokens:
+            (final?.usage?.input_tokens ?? 0) +
+            cached +
+            (final?.usage?.cache_creation_input_tokens ?? 0),
+        cached_input_tokens: cached,
         output_tokens: final?.usage?.output_tokens ?? 0,
         cost_usd: final?.total_cost_usd ?? null,
+        session: sessionId,
     };
 
     if (providerError !== null && CLAUDE_PROVIDER_ERRORS.has(providerError)) {
@@ -90,18 +349,25 @@ async function runClaude(task) {
 
     if (final.subtype !== 'success' || final.is_error) {
         const status = final.api_error_status ?? null;
+        const error =
+            (final.errors ?? []).join(' ') || final.result || final.subtype;
+
+        if (status === null && lostSession(session, started, error)) {
+            return { lost: true };
+        }
+
         const unavailable =
-            status !== null &&
-            (status === 401 ||
-                status === 403 ||
-                status === 429 ||
-                status >= 500);
+            (status !== null &&
+                (status === 401 ||
+                    status === 403 ||
+                    status === 429 ||
+                    status >= 500)) ||
+            PROVIDER_ERROR.test(error);
 
         return {
             status: unavailable ? 'provider_unavailable' : 'failed',
             error_kind: final.subtype,
-            error:
-                (final.errors ?? []).join(' ') || final.result || final.subtype,
+            error,
             ...usage,
         };
     }
@@ -109,52 +375,104 @@ async function runClaude(task) {
     return { status: 'completed', summary: final.result, ...usage };
 }
 
-async function runCodex(task) {
+async function runCodex(task, session, prompt) {
     const { Codex } = await import('@openai/codex-sdk');
     const codex = new Codex({
         baseUrl: process.env.OPENAI_BASE_URL || undefined,
         apiKey: process.env.OPENAI_API_KEY || undefined,
     });
-    const thread = codex.startThread({
+    const options = {
         workingDirectory: process.cwd(),
         model: task.model ?? undefined,
-        sandboxMode: 'workspace-write',
+        modelReasoningEffort: task.effort ?? undefined,
+        sandboxMode: task.sandbox ?? 'workspace-write',
         approvalPolicy: 'never',
         networkAccessEnabled: false,
         webSearchMode: 'disabled',
-    });
+    };
+    const thread = session
+        ? codex.resumeThread(session, options)
+        : codex.startThread(options);
 
-    const { events } = await thread.runStreamed(task.prompt);
     let summary = '';
     let usage = null;
     let failure = null;
+    let started = false;
 
-    for await (const event of events) {
-        if (
-            event.type === 'item.completed' &&
-            event.item.type === 'agent_message'
-        ) {
-            summary = event.item.text;
-        } else if (event.type === 'turn.completed') {
-            usage = event.usage;
-        } else if (event.type === 'turn.failed') {
-            failure = event.error.message;
-        } else if (event.type === 'error') {
-            failure = event.message;
+    try {
+        const { events } = await thread.runStreamed(prompt);
+
+        for await (const event of events) {
+            started ||= event.type.startsWith('item.');
+
+            if (event.type === 'thread.started') {
+                noteSession(event.thread_id);
+            }
+
+            if (
+                event.type === 'item.completed' &&
+                event.item.type === 'file_change'
+            ) {
+                for (const change of event.item.changes ?? []) {
+                    track('changing', change.path);
+                }
+            } else if (
+                event.type === 'item.started' &&
+                event.item.type === 'command_execution' &&
+                TEST_COMMAND.test(event.item.command ?? '')
+            ) {
+                track('testing');
+            } else if (
+                event.type === 'item.completed' &&
+                event.item.type === 'agent_message'
+            ) {
+                summary = event.item.text;
+                say(event.item.text);
+            } else if (
+                event.type === 'item.completed' &&
+                event.item.type === 'reasoning'
+            ) {
+                think(event.item.text);
+            } else if (event.type === 'turn.completed') {
+                usage = event.usage;
+            } else if (event.type === 'turn.failed') {
+                failure = event.error.message;
+            } else if (event.type === 'error') {
+                failure = event.message;
+            }
         }
+    } catch (error) {
+        if (lostSession(session, started, String(error?.message ?? error))) {
+            return { lost: true };
+        }
+
+        // Codex reports why a turn failed, such as "Quota exceeded", and
+        // then exits with code 1. The SDK's error only says the exit code,
+        // so the reported reason is the one kept.
+        if (failure === null) {
+            throw error;
+        }
+    }
+
+    if (failure !== null && lostSession(session, started, failure)) {
+        return { lost: true };
     }
 
     const counts = {
         turns: 1,
         input_tokens: usage?.input_tokens ?? 0,
-        output_tokens:
-            (usage?.output_tokens ?? 0) + (usage?.reasoning_output_tokens ?? 0),
+        // Part of input_tokens, read back from OpenAI's cache at a lower price.
+        cached_input_tokens: usage?.cached_input_tokens ?? 0,
+        // Reasoning is already part of output_tokens: Codex's own session log
+        // gives total_tokens as input plus output.
+        output_tokens: usage?.output_tokens ?? 0,
         cost_usd: null,
+        session: thread.id ?? session,
     };
 
     if (failure !== null) {
         return {
-            status: CODEX_PROVIDER_ERROR.test(failure)
+            status: PROVIDER_ERROR.test(failure)
                 ? 'provider_unavailable'
                 : 'failed',
             error_kind: 'turn_failed',
@@ -167,6 +485,10 @@ async function runCodex(task) {
 }
 
 const task = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+progressFile = join(dirname(process.argv[2]), 'progress.json');
+progress.adapter = task.adapter;
+progress.session = task.session ?? null;
+track('reading');
 const adapters = { claude: runClaude, codex: runCodex };
 
 try {
@@ -174,21 +496,25 @@ try {
         throw new Error(`Unknown adapter "${task.adapter}".`);
     }
 
-    print({ adapter: task.adapter, ...(await adapters[task.adapter](task)) });
+    print({
+        adapter: task.adapter,
+        ...(await runTask(adapters[task.adapter], task)),
+        story: progress.story,
+    });
 } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
     print({
         adapter: task.adapter,
-        status:
-            task.adapter === 'codex' && CODEX_PROVIDER_ERROR.test(message)
-                ? 'provider_unavailable'
-                : 'failed',
+        status: PROVIDER_ERROR.test(message)
+            ? 'provider_unavailable'
+            : 'failed',
         error_kind: 'exception',
         error: message,
         turns: 0,
         input_tokens: 0,
         output_tokens: 0,
         cost_usd: null,
+        story: progress.story,
     });
 }

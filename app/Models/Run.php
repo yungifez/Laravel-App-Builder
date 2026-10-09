@@ -3,8 +3,11 @@
 namespace App\Models;
 
 use App\Enums\RunStatus;
+use App\Enums\StopReason;
+use App\Models\Concerns\HasPublicId;
 use App\Runs\Exceptions\LeaseLost;
 use App\Runs\RunLease;
+use App\Scaffolding\Scaffold;
 use Carbon\CarbonImmutable;
 use Database\Factories\RunFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -13,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * One attempt to build a feature request's change in a workspace.
@@ -21,31 +25,46 @@ use Illuminate\Support\Facades\DB;
  * the fencing token; taking over an expired lease increments the token, so
  * the previous holder's late writes are refused.
  *
+ * @phpstan-import-type Record from Scaffold
+ *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $feature_request_id
  * @property int|null $workspace_id
  * @property string $driver
+ * @property string|null $config_version The ExecutionConfig the run was built with
  * @property RunStatus $status
  * @property int $fencing_token
  * @property string|null $lease_owner
  * @property CarbonImmutable|null $lease_expires_at
  * @property int $workspace_revision
- * @property array{summary: string, acceptance_criteria: list<string>, assumptions: list<string>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities?: list<string>, understood_as?: string|null, current_behavior?: string|null, preserve?: list<array{area: string|null, statement: string}>}|null $plan The saved plan the run builds against
+ * @property array{summary: string, acceptance_criteria: list<string>, assumptions: list<array{text: string, touches: list<string>, reversible: bool, easier_after_seeing: bool}>, tasks: list<string>, steps: list<array{key: string, kind: string, label: string, file: string, symbol: string, detail: string}>, acceptance: list<string>, solution_key: string|null, capabilities: list<string>, understood_as: string|null, current_behavior: string|null, preserve: list<array{area: string|null, statement: string}>, commit_subject: string|null, answer: string|null, next: list<string>, goal: string|null, data_shape: list<Record>, cases: list<array{criterion: int, kind: string, says: string|null, none: string|null}>, written_tests: list<array{item: int, file: string, name: string}>, written_files: array<string, string>}|null $plan The saved plan the run builds against
  * @property array{mode: string, targets: list<string>, text: string, included: list<array{file: string, tokens: int}>, outline: list<array{key: string, name: string, summary: string|null, file: string|null, paths: list<string>, behaviors: list<array{key: string, name: string}>, effects: list<array{to: string, strength: string, reason: string, source: string, observed: string|null}>, test_files?: list<string>}>, problems: list<string>}|null $context The project context compiled for the run's agents
  * @property int $repairs Repair attempts made after failed verification or review
- * @property array{reason: string, details: list<string>}|null $feedback What the next implementing pass must address
- * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>}, preserved?: list<array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int}>}|null $review The latest review of the run's change
+ * @property array{reason: string, details: list<string>, gate?: list<array{key: string|null, kind: string, identity: string, text: string}>, tests?: list<array{item: int, file: string, name: string, message: string}>}|null $feedback What the next implementing pass must address; "gate" holds what the gate found, keyed so the agent can ask the owner to keep one; "tests" the written tests to correct first
+ * @property array{approved: bool, summary: string, findings: list<array{severity: string, summary: string, file: string|null}>, changes: list<array{area: string|null, section: string, evidence: 'tested'|'in_change'|'not_in_change', behavior: string, before: string, now: string}>, classification: array{requested: array<string, list<string>>, may_also_affect: array<string, list<string>>, unexpected: array<string, list<string>>, unclaimed: list<string>, context_updates: list<string>, targets: list<string>, observed: array{areas: array<string, int>, tests: int, unmapped: list<string>, foundation: list<string>, by_line: list<string>}|null, notes_behind: list<string>}, preserved: list<array{area: string|null, statement: string, evidence: string, unchanged: bool, tests: int, review_objected: bool}>, verified: list<array{criterion: string, kind: string, case: string, test_file: string|null, test_name: string|null, evidence: string, named_in_diff: bool}>, coverage: list<array{area: string, tests_passed: int, cases: array{base: string, alternate: string, exception: string}}>}|null $review The latest review of the run's change
+ * @property array{image: string|null, image_digest: string|null, tools: array{php: string|null, composer: string|null, node: string|null, npm: string|null, postgres: string|null}, lockfiles: array<string, string>}|null $environment What the run's workspace built with: its box image, tool versions and lockfile hashes
  * @property string|null $error
+ * @property StopReason|null $stop_reason Why the run failed, waits on its owner or was cancelled
+ * @property array{text: string, asked?: string, glance?: list<string>, details?: list<string>, why: string, options: list<string>, recommended: string|null}|null $question What the run waits for the owner to answer before it plans again
+ * @property list<array{question: string, asked?: string, answer: string, decided_by: string}>|null $answers What the owner answered before building, oldest first
+ * @property list<string>|null $kept_assumptions What I decided for the owner that they said to keep
+ * @property int $question_limit How many questions the run may ask before building
  * @property CarbonImmutable|null $started_at
  * @property CarbonImmutable|null $finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  */
-#[Fillable(['workspace_id', 'driver', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'error', 'started_at', 'finished_at'])]
+#[Fillable(['workspace_id', 'driver', 'config_version', 'stop_reason', 'status', 'fencing_token', 'lease_owner', 'lease_expires_at', 'workspace_revision', 'plan', 'context', 'repairs', 'feedback', 'review', 'environment', 'error', 'question', 'answers', 'kept_assumptions', 'question_limit', 'started_at', 'finished_at'])]
 class Run extends Model
 {
+    // A worker's token opens this one change (GrantWorkerAccess).
+    use HasApiTokens;
+
     /** @use HasFactory<RunFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.
@@ -56,13 +75,19 @@ class Run extends Model
     {
         return [
             'status' => RunStatus::class,
+            'stop_reason' => StopReason::class,
             'fencing_token' => 'integer',
             'workspace_revision' => 'integer',
             'plan' => 'array',
             'repairs' => 'integer',
             'feedback' => 'array',
+            'question' => 'array',
+            'answers' => 'array',
+            'kept_assumptions' => 'array',
+            'question_limit' => 'integer',
             'context' => 'array',
             'review' => 'array',
+            'environment' => 'array',
             'lease_expires_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
@@ -138,6 +163,31 @@ class Run extends Model
     }
 
     /**
+     * Get when the run's time and tool operations started to count: when it
+     * started, or when the owner last asked it to keep trying or go on,
+     * which gives it as much again.
+     */
+    public function budgetSince(): ?CarbonImmutable
+    {
+        // Going on after the AI service let it down counts from then too:
+        // the time it waited was not the change's.
+        $keptTrying = $this->events()->where('type', 'status')->whereIn('data->reason', ['kept_trying', 'went_on'])->reorder('sequence', 'desc')->value('created_at');
+
+        return $keptTrying === null ? $this->started_at : CarbonImmutable::parse($keptTrying);
+    }
+
+    /**
+     * Get how many repairs the run may make. Each time the owner asks it to
+     * keep trying, it gets as many again, so the limit is never final.
+     */
+    public function repairLimit(): int
+    {
+        $keptTrying = $this->events()->where('type', 'status')->where('data->reason', 'kept_trying')->count();
+
+        return (int) config('builder.construction.budgets.repairs') * (1 + $keptTrying);
+    }
+
+    /**
      * Keep the lease for at least the given time, for a command that blocks
      * the worker longer than a lease lasts, so the run is not taken over
      * while the command still runs.
@@ -162,19 +212,24 @@ class Run extends Model
     /**
      * Append an event to the run's log.
      *
-     * Call this inside a transaction that holds the run's row lock, so the
-     * sequence numbers stay gapless and ordered.
+     * The run's row lock is held while the next sequence number is taken,
+     * so they stay gapless and ordered when two processes write at once
+     * (the tests written beside the coder). A caller that holds the lock
+     * already keeps it.
      *
      * @param  array<string, mixed>  $data
      */
     public function recordEvent(string $type, array $data = []): RunEvent
     {
-        $sequence = (int) RunEvent::query()->where('run_id', $this->id)->max('sequence') + 1;
+        return DB::transaction(function () use ($type, $data) {
+            self::query()->whereKey($this->id)->lockForUpdate()->value('id');
+            $sequence = (int) RunEvent::query()->where('run_id', $this->id)->max('sequence') + 1;
 
-        return $this->events()->create([
-            'sequence' => $sequence,
-            'type' => $type,
-            'data' => $data,
-        ]);
+            return $this->events()->create([
+                'sequence' => $sequence,
+                'type' => $type,
+                'data' => $data,
+            ]);
+        });
     }
 }

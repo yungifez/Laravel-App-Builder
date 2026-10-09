@@ -7,6 +7,7 @@ use App\Workspaces\Contracts\WorkspaceDriver;
 use App\Workspaces\WorkspaceSpec;
 use Closure;
 use RuntimeException;
+use Throwable;
 
 class FakeWorkspaceDriver implements WorkspaceDriver
 {
@@ -41,10 +42,28 @@ class FakeWorkspaceDriver implements WorkspaceDriver
         return 'fake-'.count($this->created);
     }
 
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult
+    /**
+     * How many times exec() calls "whileRunning" before the command ends.
+     */
+    public int $runningTicks = 0;
+
+    /** @var list<list<string>> */
+    public array $stopped = [];
+
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = [], ?Closure $whileRunning = null): CommandResult
     {
         $this->executed[] = ['workspace' => $workspaceId, 'command' => $command, 'timeout' => $timeoutSeconds];
         $this->environments[] = $environment;
+
+        for ($tick = 0; $whileRunning !== null && $tick < $this->runningTicks; $tick++) {
+            try {
+                $whileRunning();
+            } catch (Throwable $exception) {
+                $this->stopped[] = $command;
+
+                throw $exception;
+            }
+        }
 
         return $this->onExec !== null
             ? ($this->onExec)($workspaceId, $command, $timeoutSeconds)
@@ -64,9 +83,11 @@ class FakeWorkspaceDriver implements WorkspaceDriver
         $this->files["{$workspaceId}:{$path}"] = $contents;
     }
 
-    public function readFile(string $workspaceId, string $path): string
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string
     {
-        return $this->files["{$workspaceId}:{$path}"] ?? throw new RuntimeException("No such file [{$path}].");
+        $contents = $this->files["{$workspaceId}:{$path}"] ?? throw new RuntimeException("No such file [{$path}].");
+
+        return $tailBytes === null ? $contents : ($tailBytes <= 0 ? '' : substr($contents, -$tailBytes));
     }
 
     /** @var list<array{workspace: string, command: list<string>, port: int}> */

@@ -2,10 +2,17 @@
 
 namespace App\Previews;
 
+use App\Actions\Previews\FindStoppedPreviews;
+use App\Actions\Previews\GrantPreviewAccess;
 use App\Enums\PreviewStatus;
+use App\Jobs\ClosePreview;
 use App\Models\Preview;
+use App\Models\PreviewRebuild;
+use App\Workspaces\RunnerDoor;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Cookie;
@@ -30,6 +37,18 @@ class PreviewGateway
     public const SESSION_PATH = '__builder/session';
 
     /**
+     * The path a page of the app calls while someone can see it, so the
+     * preview keeps running (resources/preview-tools/alive.js).
+     */
+    public const ALIVE_PATH = '__builder/alive';
+
+    /**
+     * How many places one preview can be open in at once, such as the
+     * builder and a tab of its own.
+     */
+    protected const SESSIONS = 5;
+
+    /**
      * Request headers that are not forwarded: hop-by-hop headers, and ones
      * the gateway sets itself.
      *
@@ -39,6 +58,8 @@ class PreviewGateway
         'host', 'cookie', 'content-length', 'connection', 'keep-alive', 'proxy-authenticate',
         'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade',
         'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix',
+        // Only the gateway may open a runner's door.
+        'x-builder-door-key',
     ];
 
     /**
@@ -64,10 +85,21 @@ class PreviewGateway
         }
 
         if (! $this->hasSession($request, $preview)) {
-            return $this->page(403, __('Open this preview from the builder.'));
+            return $this->page(403, __('This page has closed. Open the app again from the builder, or from the link you were sent.'));
         }
 
-        $this->recordActivity($preview);
+        if ($request->path() === self::ALIVE_PATH) {
+            $this->recordActivity($preview);
+
+            return new Response('', 204, ['Cache-Control' => 'no-store']);
+        }
+
+        // Requests a page makes by itself, such as polling, do not count:
+        // a tab left open in the background would keep the app running.
+        // Opening a page does, and an open page says when it is seen.
+        if ($this->opensPage($request)) {
+            $this->recordActivity($preview);
+        }
 
         return $this->forward($request, $preview);
     }
@@ -79,46 +111,103 @@ class PreviewGateway
     {
         $grant = $request->query('grant');
 
-        $valid = $preview->status === PreviewStatus::Ready
-            && is_string($grant)
+        if (! is_string($grant)) {
+            return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));
+        }
+
+        $sharedGrant = Cache::pull(GrantPreviewAccess::sharedKey($preview, $grant));
+
+        // Someone the owner shared the app with, rather than the owner.
+        $shared = $preview->status === PreviewStatus::Ready
+            && is_array($sharedGrant)
+            && is_string($sharedGrant['generation'] ?? null)
+            && $sharedGrant['generation'] === Cache::get(GrantPreviewAccess::sharedGenerationKey($preview))
+            && (($sharedGrant['share_token_hash'] ?? null) === null
+                || $preview->project()->where('share_token_hash', $sharedGrant['share_token_hash'])->where('share_expires_at', '>', now())->exists());
+
+        // A grant is spent once: from the cache, or from the preview when the
+        // cache lost it.
+        $owner = ! $shared && $preview->status === PreviewStatus::Ready;
+        $pulled = $owner && Cache::pull(GrantPreviewAccess::ownerKey($preview, $grant)) === true;
+        $stored = $owner && ! $pulled
             && $preview->grant_hash !== null
             && hash_equals($preview->grant_hash, hash('sha256', $grant))
             && $preview->grant_expires_at?->isFuture();
+        $valid = $shared || $pulled || $stored;
 
         if (! $valid) {
-            return $this->page(403, __('This preview link has expired. Open the preview from the builder again.'));
+            return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));
         }
 
         $secret = Str::random(64);
         $minutes = (int) config('builder.preview.session_minutes');
 
-        // Spend the grant atomically, so two requests racing with the same
-        // grant cannot both get a session.
-        $spent = Preview::query()
-            ->whereKey($preview->id)
-            ->where('grant_hash', $preview->grant_hash)
-            ->update([
-                'grant_hash' => null,
-                'grant_expires_at' => null,
-                'session_hash' => hash('sha256', $secret),
-                'session_expires_at' => now()->addMinutes($minutes),
-                'updated_at' => now(),
-            ]);
+        if (! $shared) {
+            // Spend a stored grant atomically, so two requests racing with
+            // the same grant cannot both get a session.
+            $spent = Preview::query()
+                ->whereKey($preview->id)
+                ->when($stored, fn ($query) => $query->where('grant_hash', $preview->grant_hash))
+                ->update([
+                    'grant_hash' => null,
+                    'grant_expires_at' => null,
+                    'session_hash' => hash('sha256', $secret),
+                    'session_expires_at' => now()->addMinutes($minutes),
+                    'updated_at' => now(),
+                ]);
 
-        if ($spent !== 1) {
-            return $this->page(403, __('This preview link has expired. Open the preview from the builder again.'));
+            if ($spent !== 1) {
+                return $this->page(403, __('This link to the app has expired. Open the app again from the builder, or from the link you were sent.'));
+            }
         }
 
-        $response = new RedirectResponse('/');
+        // The owner can have the app open in the builder and in a tab of its
+        // own at once, so a new session does not end the ones before it.
+        // People the owner shared it with have sessions of their own, so
+        // they never end the owner's.
+        $key = $shared ? self::sharedSessionsKey($preview, $sharedGrant['generation']) : self::sessionsKey($preview);
+        /** @var array<string, int> $open */
+        $open = Cache::get($key, []);
+        $sessions = collect($open)
+            ->filter(fn (int $expires) => $expires > now()->getTimestamp())
+            ->put(hash('sha256', $secret), now()->addMinutes($minutes)->getTimestamp())
+            ->sortDesc()
+            ->take($shared ? (int) config('builder.preview.shared_sessions') : self::SESSIONS);
+        Cache::put($key, $sessions->all(), now()->addMinutes($minutes));
+
+        // Every preview can show inside the builder (the app, and a change
+        // waiting for the owner), where the preview host is a third party,
+        // so its cookie is partitioned to the site that shows it.
+        // Back to the page the owner was on. Only a path on this host.
+        $to = $request->query('to');
+        $response = new RedirectResponse(is_string($to) && preg_match('#^/(?![/\\\\])#', $to) === 1 ? $to : '/');
         $response->headers->setCookie(Cookie::create(
             name: (string) config('builder.preview.cookie'),
             value: $secret,
             expire: now()->addMinutes($minutes),
             path: '/',
-            secure: config('builder.preview.scheme') === 'https',
+            secure: true,
             httpOnly: true,
-            sameSite: Cookie::SAMESITE_LAX,
+            sameSite: Cookie::SAMESITE_NONE,
+            partitioned: true,
         ));
+
+        // A cookie of the app's own that came with the grant, such as the
+        // session of the person the owner signs in as.
+        $cookie = Cache::pull(GrantPreviewAccess::cookieKey($preview, $grant));
+
+        if (is_array($cookie)) {
+            $response->headers->setCookie(Cookie::create(
+                name: (string) $cookie['name'],
+                value: (string) $cookie['value'],
+                expire: now()->addMinutes((int) $cookie['minutes']),
+                path: '/',
+                secure: true,
+                httpOnly: true,
+                sameSite: Cookie::SAMESITE_NONE,
+                partitioned: true,
+            ));
+        }
 
         return $response;
     }
@@ -130,11 +219,40 @@ class PreviewGateway
     {
         $secret = $request->cookies->get((string) config('builder.preview.cookie'));
 
-        return $preview->status === PreviewStatus::Ready
-            && is_string($secret)
-            && $preview->session_hash !== null
-            && hash_equals($preview->session_hash, hash('sha256', $secret))
-            && (bool) $preview->session_expires_at?->isFuture();
+        if ($preview->status !== PreviewStatus::Ready || ! is_string($secret)) {
+            return false;
+        }
+
+        $hash = hash('sha256', $secret);
+
+        if ($preview->session_hash !== null && hash_equals($preview->session_hash, $hash)) {
+            return (bool) $preview->session_expires_at?->isFuture();
+        }
+
+        $expires = Cache::get(self::sessionsKey($preview), [])[$hash]
+            ?? Cache::get(self::sharedSessionsKey($preview), [])[$hash]
+            ?? null;
+
+        return is_int($expires) && $expires > now()->getTimestamp();
+    }
+
+    /**
+     * Where the sessions of a preview still open wait, so the owner can
+     * have it open in more than one place.
+     */
+    public static function sessionsKey(Preview $preview): string
+    {
+        return "previews:{$preview->id}:sessions";
+    }
+
+    /**
+     * Where the sessions of people the owner shared the app with wait.
+     */
+    public static function sharedSessionsKey(Preview $preview, ?string $generation = null): string
+    {
+        $generation ??= (string) Cache::get(GrantPreviewAccess::sharedGenerationKey($preview), 'none');
+
+        return "previews:{$preview->id}:shared-sessions:{$generation}";
     }
 
     /**
@@ -149,6 +267,17 @@ class PreviewGateway
 
         $preview->update(['last_seen_at' => now()]);
         $preview->workspace?->update(['last_activity_at' => now()]);
+    }
+
+    /**
+     * Tell whether the request opens a page. Browsers say so; a client
+     * that does not, such as curl, is counted as a person.
+     */
+    protected function opensPage(Request $request): bool
+    {
+        $mode = $request->headers->get('Sec-Fetch-Mode');
+
+        return $mode === null || $mode === 'navigate';
     }
 
     /**
@@ -189,9 +318,9 @@ class PreviewGateway
             $options['multipart'] = $this->multipart($request);
         }
 
-        $pending = Http::withOptions(['allow_redirects' => false, 'decode_content' => false])
+        $pending = app(RunnerDoor::class)->prepare(Http::withOptions(['allow_redirects' => false, 'decode_content' => false])
             ->timeout((int) config('builder.preview.request_timeout'))
-            ->withHeaders($headers);
+            ->withHeaders($headers), (string) $preview->upstream_url);
 
         if ($isMultipart) {
             $pending = $pending->asMultipart();
@@ -204,7 +333,9 @@ class PreviewGateway
         try {
             $upstream = $pending->send($request->getMethod(), rtrim((string) $preview->upstream_url, '/').$request->getRequestUri(), $options);
         } catch (ConnectionException) {
-            return $this->page(502, __('The preview is not responding. Start it again from the builder.'));
+            $this->noteStopped($preview);
+
+            return $this->page(502, __('The preview is not responding. Start it again from the builder.'), tellBuilder: true);
         }
 
         $response = new Response($upstream->body(), $upstream->status());
@@ -216,8 +347,110 @@ class PreviewGateway
         }
 
         $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
+        $this->letBuilderShow($response);
+
+        $this->addScript($response, File::get(resource_path('preview-tools/alive.js')));
+        // The builder's "Fill the form" button works on every page.
+        $this->addScript($response, File::get(resource_path('preview-tools/fill.js')));
+
+        if ($preview->editable) {
+            $this->prepareForEditing($response);
+        } else {
+            $this->reportPages($response);
+        }
 
         return $response;
+    }
+
+    /**
+     * Mark a running app that no longer answers as stopped at once, with
+     * our reason, so a reload or another tab shows it stopped instead of
+     * waiting for `previews:reap`. One page asks for many files that fail
+     * together, so only one request checks and the rest just get the page.
+     * A copy that is starting or taking a change can be closed for a
+     * moment, so only a ready copy whose port stays silent counts. The box
+     * is removed on the previews queue, so this answer stays quick.
+     */
+    protected function noteStopped(Preview $preview): void
+    {
+        rescue(fn () => Cache::lock("previews:{$preview->id}:lost", 30)->get(function () use ($preview) {
+            $preview = $preview->fresh();
+
+            if ($preview?->status !== PreviewStatus::Ready
+                || PreviewRebuild::query()->where('preview_id', $preview->id)->where('status', 'running')->exists()
+                || app(FindStoppedPreviews::class)->answers($preview)) {
+                return;
+            }
+
+            $preview->update(['status' => PreviewStatus::Stopped, 'error' => __('This is our fault: the app stopped on our side. Start it again.'), 'stopped_at' => now()]);
+            ClosePreview::dispatch($preview);
+        }));
+    }
+
+    /**
+     * Let the builder show the app in a frame, as a working app. Only the
+     * builder's origin may frame it. There the preview host is a third
+     * party, so the app's own cookies (its session, its form tokens) would
+     * be refused and every sign-in or form would fail: they are relayed
+     * the way a framed site's cookies must be, kept apart for the builder.
+     */
+    protected function letBuilderShow(Response $response): void
+    {
+        $response->headers->remove('X-Frame-Options');
+        $response->headers->set('Content-Security-Policy', 'frame-ancestors '.self::builderOrigin(), false);
+
+        foreach ($response->headers->getCookies() as $cookie) {
+            $response->headers->removeCookie($cookie->getName(), $cookie->getPath(), $cookie->getDomain());
+            $response->headers->setCookie($cookie->withSecure(true)->withSameSite(Cookie::SAMESITE_NONE)->withPartitioned(true));
+        }
+    }
+
+    /**
+     * Add the point-and-edit overlay to an editable preview's pages.
+     */
+    protected function prepareForEditing(Response $response): void
+    {
+        $this->addScript($response, File::get((string) config('builder.preview.overlay')));
+    }
+
+    /**
+     * Let the builder follow the pages of a preview that is not edited,
+     * such as a change the owner tries: each page says where it is, and
+     * the builder's back, forward and page list move it.
+     */
+    protected function reportPages(Response $response): void
+    {
+        $this->addScript($response, File::get(resource_path('preview-tools/pages.js')));
+    }
+
+    /**
+     * Add a script for the builder to the end of an HTML page.
+     */
+    protected function addScript(Response $response, string $script): void
+    {
+        $body = (string) $response->getContent();
+        $position = strripos($body, '</body>');
+        $encoded = ! in_array(strtolower((string) $response->headers->get('Content-Encoding', 'identity')), ['', 'identity'], true);
+
+        if ($encoded || $position === false || ! str_contains(strtolower((string) $response->headers->get('Content-Type')), 'text/html')) {
+            return;
+        }
+
+        $tag = '<script data-builder-origin="'.e(self::builderOrigin()).'">'.$script.'</script>';
+
+        $response->setContent(substr_replace($body, $tag, $position, 0));
+        $response->headers->remove('Content-Length');
+    }
+
+    /**
+     * Get the origin of the builder (scheme, host and port of APP_URL).
+     */
+    public static function builderOrigin(): string
+    {
+        $url = parse_url((string) config('app.url'));
+        $port = isset($url['port']) ? ':'.$url['port'] : '';
+
+        return ($url['scheme'] ?? 'http').'://'.($url['host'] ?? 'localhost').$port;
     }
 
     /**
@@ -283,10 +516,20 @@ class PreviewGateway
     /**
      * Render a short plain page for the preview host.
      */
-    protected function page(int $status, string $message): Response
+    protected function page(int $status, string $message, bool $tellBuilder = false): Response
     {
+        // A builder showing the app hears that it stopped, so it can offer
+        // to start it again instead of showing this page. The builder page
+        // can load this frame before it listens, as when it was drawn on the
+        // server; it then says hello, and hears it again.
+        $origin = json_encode(self::builderOrigin(), JSON_UNESCAPED_SLASHES);
+        $script = $tellBuilder
+            ? '<script>parent.postMessage({builder:true,type:"lost"},'.$origin.');'
+                .'addEventListener("message",function(e){if(e.origin==='.$origin.'&&e.source===parent&&e.data&&e.data.builder===true&&e.data.type==="hello"){parent.postMessage({builder:true,type:"lost"},'.$origin.')}})</script>'
+            : '';
+
         return new Response(
-            '<!doctype html><meta charset="utf-8"><title>Preview</title><p style="font-family:sans-serif;margin:3rem">'.e($message).'</p>',
+            '<!doctype html><meta charset="utf-8"><title>Preview</title><p style="font-family:sans-serif;margin:3rem">'.e($message).'</p>'.$script,
             $status,
             ['Content-Type' => 'text/html; charset=utf-8', 'X-Robots-Tag' => 'noindex, nofollow', 'Cache-Control' => 'no-store'],
         );

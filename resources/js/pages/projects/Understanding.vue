@@ -1,0 +1,1522 @@
+<script setup lang="ts">
+import {
+    Form,
+    Head,
+    Link,
+    router,
+    setLayoutProps,
+    usePoll,
+} from '@inertiajs/vue3';
+import {
+    Check,
+    ChevronRight,
+    CircleAlert,
+    CircleCheck,
+    CircleDashed,
+    Link2,
+    LoaderCircle,
+    SearchCheck,
+    ShieldCheck,
+    Unlink,
+} from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
+import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import HealthFixController from '@/actions/App/Http/Controllers/HealthFixController';
+import ProjectHealthCheckController from '@/actions/App/Http/Controllers/ProjectHealthCheckController';
+import ProjectNotesFixController from '@/actions/App/Http/Controllers/ProjectNotesFixController';
+import ExploreAppPanel from '@/components/ExploreAppPanel.vue';
+import InputError from '@/components/InputError.vue';
+import NotesDraftPanel from '@/components/NotesDraftPanel.vue';
+import NotesPart from '@/components/NotesPart.vue';
+import PartsMap from '@/components/PartsMap.vue';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { when } from '@/lib/when';
+import { index, show } from '@/routes/projects';
+import { update as updateCareful } from '@/routes/projects/careful-areas';
+import { update as updateCompatibility } from '@/routes/projects/compatibility';
+import { index as developers } from '@/routes/projects/developers';
+import {
+    show as showUnderstanding,
+    update as updateUnderstanding,
+} from '@/routes/projects/understanding';
+import type {
+    CheckFinding,
+    Exploration,
+    NotesDraft,
+    NotesSection,
+    ProjectSummary,
+    UnderstandingArea,
+} from '@/types';
+
+const props = defineProps<{
+    project: Pick<ProjectSummary, 'id' | 'name'>;
+    // The app's own tests, as last run; the builder's header links here
+    // with this count.
+    tests: number | null;
+    // What those tests check, by file, while no parts are described.
+    checks: { name: string; checks: string[] }[];
+    revision: string | null;
+    about: { introduction: string; sections: NotesSection[] };
+    guidance: string | null;
+    // The outside services the app is connected to, by name only.
+    services: { name: string; provider: string }[];
+    // What the owner might add later, as offered with kept changes.
+    later: string[];
+    // Earlier wordings of the guidance, newest first, and who wrote each.
+    guidanceHistory: {
+        text: string;
+        at: string | null;
+        by: string | null;
+        mine: boolean;
+    }[];
+    // What the owner wants the app to achieve, in their words.
+    goal: string | null;
+    // Whether changes keep the app's old data and links working; chosen
+    // when the owner set it, otherwise it follows whether the app is used.
+    compatibility: { keep: boolean; chosen: boolean; in_use: boolean };
+    areas: UnderstandingArea[];
+    problems: string[];
+    changes: { id: string; summary: string; at: string | null }[];
+    // All the changes kept; changes lists only the latest.
+    kept: number;
+    // The owner's last look at this page, and how many changes were kept
+    // after it; null on a first look.
+    since: string | null;
+    fresh: number;
+    looks: number;
+    // Problems caught and fixed before the owner saw the kept changes.
+    caught: number;
+    // Shortcuts in the code fixed on my own in the background, still kept.
+    tidied: number;
+    // Across the kept changes: tests they added, and screens found to fit.
+    proven: { tests: number; screens: number };
+    // The product decisions behind kept changes, newest change first, then
+    // answers only the notes hold (no change).
+    decisions: {
+        change: string | null;
+        summary: string | null;
+        at: string | null;
+        question: string | null;
+        decision: string;
+        by: 'owner' | 'builder';
+    }[];
+    // How many decisions there are in all.
+    decided: number;
+    draft: NotesDraft | null;
+    exploration: Exploration | null;
+    check?: CheckFinding[];
+    // The full checks of the app's current version, while they run and
+    // once done; null before any, or when the app changed since.
+    health: {
+        active: boolean;
+        findings: CheckFinding[];
+        fixable: boolean;
+    } | null;
+}>();
+
+const checking = ref(false);
+
+// The notes' gaps first, then what the app's own checks found.
+const findings = computed(() => [
+    ...(props.check ?? []),
+    ...(props.health?.findings ?? []),
+]);
+
+// The full checks take minutes, so the page follows them.
+const healthPoll = usePoll(3000, { only: ['health'] }, { autoStart: false });
+
+watch(
+    () => props.health?.active === true,
+    (active) => (active ? healthPoll.start() : healthPoll.stop()),
+    { immediate: true },
+);
+
+// "today" and "yesterday" read on their own; a date needs "on".
+function onDay(at: string | null): string {
+    const said = when(at);
+
+    return said === '' || said === 'today' || said === 'yesterday'
+        ? said
+        : `on ${said}`;
+}
+
+// Kept after the owner's last look at this page.
+function isNew(at: string | null): boolean {
+    return (
+        props.since !== null &&
+        at !== null &&
+        new Date(at).getTime() > new Date(props.since).getTime()
+    );
+}
+
+// What the owner asked for in a part, counted in one line: how many things,
+// and how many a test still checks, when the latest test run says.
+function askedForSummary(area: UnderstandingArea): string {
+    const count = area.asked_for.length;
+    const lost = area.asked_for.filter((item) => item.checked === false).length;
+    const things = `${count} ${count === 1 ? 'thing' : 'things'} you asked for`;
+
+    if (lost > 0) {
+        return `${things}, ${lost} whose test has changed since`;
+    }
+
+    return area.asked_for.some((item) => item.checked === null)
+        ? `${things}, each proved by a test`
+        : `${things}, each still checked by a test`;
+}
+
+// Enough of a part's checks to show what they cover, without a wall of text.
+const CHECKS_SHOWN = 8;
+
+// Notes are Markdown; the owner reads them as plain text. Lines wrapped
+// in the file are joined, and list markers become bullets.
+function plain(text: string): string {
+    return text
+        .replace(/\*\*(.+?)\*\*|__(.+?)__/g, '$1$2')
+        .replace(/([^\n])\n(?!\s*[-*]\s|\n)\s*/g, '$1 ')
+        .replace(/^\s*[-*]\s+/gm, '• ');
+}
+
+type Entry = { term: string | null; text: string };
+
+// A notes section is usually a list of "**Name**: what it means" lines
+// (people, terms). Split it so each entry can stand on its own tile.
+function entries(body: string): Entry[] {
+    return body
+        .replace(/\n(?!\s*[-*]\s)\s*/g, ' ')
+        .split('\n')
+        .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+        .filter((line) => line !== '')
+        .map((line) => {
+            const named = line.match(/^\*\*(.+?)\*\*\s*[:—–-]\s*(.+)$/);
+
+            if (named) {
+                return { term: named[1], text: capitalise(named[2]) };
+            }
+
+            const bold = line.match(/\*\*(.+?)\*\*/);
+
+            return {
+                term: bold ? capitalise(bold[1]) : null,
+                text: plain(line),
+            };
+        });
+}
+
+// The editor shows each named entry as "Name: what it means", without the
+// list marks and bold the notes keep, and puts them back on save. An
+// unchanged entry comes back exactly as it was stored.
+function editable(body: string): string {
+    return body
+        .replace(/\n(?!\s*[-*]\s)\s*/g, ' ')
+        .split('\n')
+        .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+        .filter((line) => line !== '')
+        .map((line) => {
+            const named = line.match(/^\*\*(.+?)\*\*\s*[:—–-]\s*(.+)$/);
+
+            return named ? `${named[1]}: ${named[2]}` : line;
+        })
+        .join('\n');
+}
+
+function toNotes(body: string): string {
+    return body
+        .split('\n')
+        .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+        .filter((line) => line !== '')
+        .map((line) => {
+            const named = line.match(
+                /^(?:\*\*)?([^:*]{1,60}?)(?:\*\*)?\s*:\s*(.+)$/,
+            );
+
+            return named
+                ? `- **${named[1].trim()}**: ${named[2].trim()}`
+                : `- ${line}`;
+        })
+        .join('\n');
+}
+
+function capitalise(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const sections = computed(() =>
+    props.about.sections.map((section) => {
+        const items = entries(section.body);
+
+        return {
+            ...section,
+            items,
+            tiles: items.length > 0 && items.every((item) => item.term),
+        };
+    }),
+);
+
+const rules = computed(() =>
+    props.areas.reduce((total, area) => total + area.rules.length, 0),
+);
+
+// The header's count leads, in the same words, and how many of those tests
+// the kept changes added follows it.
+const tests = computed(() => {
+    const added = props.proven.tests;
+
+    if (props.tests === null) {
+        return added > 0
+            ? [`${added} ${added === 1 ? 'test' : 'tests'} added`]
+            : [];
+    }
+
+    const total = `${props.tests} ${props.tests === 1 ? 'test' : 'tests'}`;
+
+    return [added > 0 ? `${total}, ${added} added by changes` : total];
+});
+
+// The other counts, each said only when there is something to count.
+const counts = computed(() =>
+    [
+        [props.areas.length, 'part', 'parts'],
+        [rules.value, 'rule', 'rules'],
+        // Every click in the design editor is saved; together they count
+        // as one change, as they do before going online.
+        [props.kept + Math.min(props.looks, 1), 'change kept', 'changes kept'],
+        [props.decided, 'decision', 'decisions'],
+        [
+            props.caught,
+            'problem fixed before you saw it',
+            'problems fixed before you saw them',
+        ],
+        [
+            props.tidied,
+            'thing tidied in the background',
+            'things tidied in the background',
+        ],
+        [
+            props.proven.screens,
+            'screen checked on a phone',
+            'screens checked on a phone',
+        ],
+    ]
+        // Zeros say nothing the empty sections below don't already say.
+        .filter(([count]) => count !== 0)
+        .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`),
+);
+
+// How much I know, said in one quiet line under the heading.
+const facts = computed(() => [...tests.value, ...counts.value].join(' · '));
+
+// Linking a part to another scrolls there and briefly marks it, so the
+// owner sees which card the link meant.
+const marked = ref<string | null>(null);
+
+function visit(key: string): void {
+    document
+        .getElementById(`part-${key}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    marked.value = key;
+    window.setTimeout(() => (marked.value = null), 1600);
+}
+
+// The owner rules out a wrong connection, or puts one back. Either way the
+// part keeps the full list, so a wrong click is one click to undo.
+function setNotConnected(area: UnderstandingArea, keys: string[]): void {
+    router.put(
+        updateUnderstanding(props.project.id).url,
+        {
+            part: `not_connected:${area.key}`,
+            body: keys.join('\n'),
+            revision: props.revision,
+        },
+        { preserveScroll: true },
+    );
+}
+
+function ruleOut(area: UnderstandingArea, key: string): void {
+    setNotConnected(area, [...area.not_connected.map((c) => c.to), key]);
+}
+
+function putBack(area: UnderstandingArea, key: string): void {
+    setNotConnected(
+        area,
+        area.not_connected.map((c) => c.to).filter((to) => to !== key),
+    );
+}
+
+function runCheck(): void {
+    router.post(
+        ProjectHealthCheckController.store.url(props.project.id),
+        {},
+        {
+            only: ['check', 'health'],
+            preserveScroll: true,
+            onStart: () => (checking.value = true),
+            onFinish: () => (checking.value = false),
+        },
+    );
+}
+
+// After a fix to the notes, only the notes need checking again.
+function recheckNotes(): void {
+    router.reload({
+        only: ['check'],
+        onStart: () => (checking.value = true),
+        onFinish: () => (checking.value = false),
+    });
+}
+
+watch(
+    () => props.project,
+    (project) =>
+        setLayoutProps({
+            breadcrumbs: [
+                { title: 'Your apps', href: index() },
+                { title: project.name, href: show(project.id) },
+                {
+                    title: 'Your business',
+                    href: showUnderstanding(project.id),
+                },
+            ],
+        }),
+    { immediate: true },
+);
+// Why changes keep, or do not keep, the old way working, in the owner's
+// words. A new app nobody uses yet is changed cleanly; one in use carries
+// what it has forward. The owner can choose either.
+const compatibilityReason = computed(() => {
+    const { keep, chosen, in_use } = props.compatibility;
+
+    if (chosen) {
+        return keep
+            ? 'You chose this. Changes carry what your app already has forward.'
+            : 'You chose this. Changes are made cleanly, without keeping the old way working.';
+    }
+
+    return in_use
+        ? 'On, because people may use your app. Changes carry what it already has forward.'
+        : 'Off, because nobody uses your app yet. Changes are made cleanly, without keeping the old way working.';
+});
+
+// Changes to a part the owner is careful with go back for a fix over
+// smaller problems too, not only the ones a test run proves.
+function setCareful(area: string, careful: boolean): void {
+    router.put(
+        updateCareful(props.project.id).url,
+        { area, careful },
+        { preserveScroll: true },
+    );
+}
+
+function setCompatibility(keep: boolean | null): void {
+    router.put(
+        updateCompatibility(props.project.id).url,
+        { keep_old_working: keep },
+        { preserveScroll: true },
+    );
+}
+</script>
+
+<template>
+    <Head :title="`${project.name}: your business`" />
+
+    <div
+        class="mx-auto flex max-w-5xl flex-col gap-20 px-4 pt-12 pb-24 sm:px-8"
+    >
+        <NotesDraftPanel
+            v-if="draft !== null"
+            :project-id="project.id"
+            :draft="draft"
+        />
+        <ExploreAppPanel
+            v-else-if="exploration !== null"
+            :project-id="project.id"
+            :exploration="exploration"
+        />
+
+        <p v-if="revision === null" class="text-sm text-muted-foreground">
+            This app has no history yet, so there is nothing to show.
+        </p>
+
+        <template v-else>
+            <!-- What the app is for, and how much I know about it -->
+            <section data-test="about">
+                <NotesPart
+                    :project-id="project.id"
+                    :revision="revision"
+                    part="introduction"
+                    :text="about.introduction"
+                    label="what it is for"
+                    variant="icon"
+                >
+                    <h1
+                        v-if="about.introduction"
+                        class="max-w-3xl pr-10 font-display text-4xl leading-tight tracking-tight text-balance"
+                    >
+                        {{ plain(about.introduction) }}
+                    </h1>
+                    <h1
+                        v-else
+                        class="font-display text-4xl text-muted-foreground"
+                    >
+                        What is your app for?
+                    </h1>
+                </NotesPart>
+
+                <div class="mt-4 max-w-3xl" data-test="goal">
+                    <NotesPart
+                        :project-id="project.id"
+                        :revision="revision"
+                        :part="`section:Goal`"
+                        :text="goal ?? ''"
+                        label="the goal"
+                        :rows="2"
+                        hint="For example: fewer phone calls to the front desk."
+                        :variant="goal ? 'icon' : 'text'"
+                    >
+                        <p v-if="goal" class="pr-10 text-lg">
+                            <span class="text-muted-foreground">Goal:</span>
+                            {{ plain(goal) }}
+                        </p>
+                        <p v-else class="text-sm text-muted-foreground">
+                            What should this app achieve? Tell me, and I will
+                            say how each change helps.
+                        </p>
+                    </NotesPart>
+                </div>
+
+                <div
+                    class="mt-4 flex max-w-3xl items-start gap-3"
+                    data-test="compatibility"
+                >
+                    <Checkbox
+                        id="keep-old-working"
+                        class="mt-1"
+                        :model-value="compatibility.keep"
+                        @update:model-value="setCompatibility($event === true)"
+                    />
+                    <div class="min-w-0">
+                        <label for="keep-old-working" class="font-medium"
+                            >Keep old information and links working</label
+                        >
+                        <p
+                            class="text-sm text-muted-foreground"
+                            data-test="compatibility-reason"
+                        >
+                            {{ compatibilityReason }}
+                            <button
+                                v-if="compatibility.chosen"
+                                type="button"
+                                class="ml-1 underline underline-offset-2 hover:text-foreground"
+                                data-test="compatibility-automatic"
+                                @click="setCompatibility(null)"
+                            >
+                                Decide for me
+                            </button>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+                    <p
+                        v-if="facts"
+                        class="text-muted-foreground"
+                        data-test="facts"
+                    >
+                        {{ facts }}
+                    </p>
+                    <Button
+                        variant="outline"
+                        class="h-11 gap-1.5 select-none sm:ml-auto sm:h-9"
+                        :disabled="checking || health?.active"
+                        data-test="check-button"
+                        @click="runCheck"
+                    >
+                        <LoaderCircle
+                            v-if="checking || health?.active"
+                            class="size-4 animate-spin"
+                        />
+                        <SearchCheck v-else class="size-4" />
+                        Check my app
+                    </Button>
+                </div>
+
+                <!-- Quick check: gaps between these notes and the app -->
+                <div
+                    v-if="check !== undefined || health"
+                    class="mt-4 space-y-2"
+                    data-test="quick-check"
+                >
+                    <p
+                        v-if="health?.active"
+                        class="flex items-center gap-2 text-sm text-muted-foreground"
+                        data-test="health-running"
+                    >
+                        <LoaderCircle class="size-4 animate-spin" />
+                        Running your app's tests and checks. This takes a few
+                        minutes.
+                    </p>
+                    <p
+                        v-if="
+                            check !== undefined &&
+                            findings.length === 0 &&
+                            !health?.active
+                        "
+                        class="flex items-center gap-2 text-sm"
+                        data-test="check-clear"
+                    >
+                        <CircleCheck class="size-4 text-green-600" />
+                        No obvious problems found.
+                    </p>
+                    <ul
+                        v-if="findings.length"
+                        class="space-y-2"
+                        data-test="check-findings"
+                    >
+                        <li
+                            v-for="finding in findings"
+                            :key="finding.title"
+                            class="flex gap-2 text-sm"
+                        >
+                            <CircleAlert
+                                class="mt-0.5 size-4 shrink-0 text-amber-500"
+                            />
+                            <div class="min-w-0">
+                                <p>{{ finding.title }}</p>
+                                <Collapsible v-if="finding.details.length">
+                                    <CollapsibleTrigger
+                                        class="min-h-11 text-xs text-muted-foreground underline-offset-4 select-none hover:underline sm:min-h-0"
+                                    >
+                                        Details
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                        <ul
+                                            class="mt-1 space-y-0.5 font-mono text-xs break-all text-muted-foreground"
+                                        >
+                                            <li
+                                                v-for="detail in finding.details"
+                                                :key="detail"
+                                            >
+                                                {{ detail }}
+                                            </li>
+                                        </ul>
+                                    </CollapsibleContent>
+                                </Collapsible>
+                                <!-- Only a change to the app fixes it: one
+                                     tap asks for that change. -->
+                                <Form
+                                    v-if="finding.ask"
+                                    v-bind="
+                                        FeatureRequestController.store.form(
+                                            project.id,
+                                        )
+                                    "
+                                    v-slot="{ errors, processing }"
+                                    class="mt-1"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="prompt"
+                                        :value="finding.ask"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="ask-fix"
+                                    >
+                                        Fix it
+                                    </Button>
+                                    <InputError
+                                        class="mt-1"
+                                        :message="errors.prompt"
+                                    />
+                                </Form>
+                                <!-- Notes that point at nothing: taking
+                                     those lines out is the whole fix. -->
+                                <Form
+                                    v-if="finding.fix && revision"
+                                    v-bind="
+                                        ProjectNotesFixController.store.form(
+                                            project.id,
+                                        )
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    v-slot="{ errors, processing }"
+                                    class="mt-1"
+                                    @success="recheckNotes"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="part"
+                                        :value="finding.fix.part"
+                                    />
+                                    <input
+                                        v-for="item in finding.fix.remove"
+                                        :key="item"
+                                        type="hidden"
+                                        name="remove[]"
+                                        :value="item"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="revision"
+                                        :value="revision"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="fix-notes"
+                                    >
+                                        Remove from the notes
+                                    </Button>
+                                    <InputError
+                                        class="mt-1"
+                                        :message="errors.fix"
+                                    />
+                                </Form>
+                                <Form
+                                    v-if="finding.confirm && revision"
+                                    v-bind="
+                                        updateUnderstanding.form(project.id)
+                                    "
+                                    :options="{ preserveScroll: true }"
+                                    v-slot="{ errors, processing }"
+                                    class="mt-1"
+                                    @success="recheckNotes"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="part"
+                                        :value="finding.confirm.part"
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="revision"
+                                        :value="revision"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="confirm-notes"
+                                    >
+                                        These notes are still right
+                                    </Button>
+                                    <InputError
+                                        class="mt-1"
+                                        :message="errors.body"
+                                    />
+                                </Form>
+                            </div>
+                        </li>
+                    </ul>
+                    <!-- What the app's own checks found: the builder
+                         fixes it, so a finding is never a dead end. -->
+                    <Form
+                        v-if="health?.fixable"
+                        v-bind="HealthFixController.store.form(project.id)"
+                        v-slot="{ errors, processing }"
+                    >
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            class="h-11 select-none sm:h-8"
+                            :disabled="processing"
+                            data-test="fix-health"
+                        >
+                            Fix it
+                        </Button>
+                        <InputError class="mt-1" :message="errors.fix" />
+                    </Form>
+                </div>
+            </section>
+
+            <!-- The parts of the app: a map of how they tie together, then
+                 one card each with everything I know about that part -->
+            <section class="space-y-4" data-test="areas">
+                <h2
+                    class="flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
+                >
+                    How your app works
+                    <span
+                        v-if="areas.length"
+                        class="font-normal text-muted-foreground tabular-nums"
+                        >{{ areas.length }}</span
+                    >
+                </h2>
+
+                <template v-if="areas.length === 0">
+                    <p class="text-sm text-muted-foreground">
+                        No parts are described yet.<template
+                            v-if="checks.length"
+                        >
+                            Your app's tests already check these.</template
+                        >
+                    </p>
+                    <!-- Until parts are described, the tests say what the
+                         app does, so "see what they check" has an answer -->
+                    <ul
+                        v-if="checks.length"
+                        class="divide-y border-y"
+                        data-test="app-checks"
+                    >
+                        <li v-for="group in checks" :key="group.name">
+                            <details class="group text-sm">
+                                <summary
+                                    class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 select-none hover:text-foreground"
+                                >
+                                    <ChevronRight
+                                        class="size-3.5 text-muted-foreground transition-transform group-open:rotate-90"
+                                    />
+                                    {{ group.name }}
+                                    <span
+                                        class="text-muted-foreground tabular-nums"
+                                        >{{ group.checks.length }}</span
+                                    >
+                                </summary>
+                                <ul
+                                    class="space-y-1.5 pb-3 pl-5 text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="check in group.checks"
+                                        :key="check"
+                                        class="flex gap-2"
+                                    >
+                                        <CircleCheck
+                                            class="mt-1 size-3 shrink-0 text-green-600"
+                                        />
+                                        {{ check }}
+                                    </li>
+                                </ul>
+                            </details>
+                        </li>
+                    </ul>
+                </template>
+
+                <template v-else>
+                    <!-- More than four parts crowd a phone-sized ring; the rows
+                         below say the same thing there -->
+                    <PartsMap
+                        :class="areas.length > 4 && 'hidden sm:block'"
+                        :areas="areas"
+                        @visit="visit"
+                    />
+
+                    <ul class="divide-y border-y">
+                        <li
+                            v-for="area in areas"
+                            :id="`part-${area.key}`"
+                            :key="area.key"
+                            :class="[
+                                'grid scroll-mt-20 gap-6 py-8 transition-colors duration-linger md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-12',
+                                marked === area.key && 'bg-muted/40',
+                            ]"
+                            :data-test="`part-${area.key}`"
+                        >
+                            <div class="space-y-3">
+                                <h3
+                                    class="flex items-center gap-2 text-xl font-semibold tracking-tight break-words"
+                                >
+                                    {{ area.name }}
+                                    <!-- Counted from what the app's tests ran, when known -->
+                                    <span
+                                        v-if="
+                                            area.checked_by
+                                                ? true
+                                                : area.checked_by === null &&
+                                                  area.tested
+                                        "
+                                        class="flex items-center gap-1 text-xs font-normal tracking-normal text-muted-foreground"
+                                        title="Tests check this part"
+                                        data-test="part-checked"
+                                    >
+                                        <ShieldCheck
+                                            class="size-3.5 text-green-600"
+                                        />
+                                        {{
+                                            area.checked_by
+                                                ? `Checked by ${area.checked_by} ${area.checked_by === 1 ? 'test' : 'tests'}`
+                                                : 'Tested'
+                                        }}
+                                    </span>
+                                    <span
+                                        v-else-if="area.checked_by === 0"
+                                        class="flex items-center gap-1 text-xs font-normal tracking-normal text-muted-foreground"
+                                        title="No test runs this part yet"
+                                        data-test="part-unchecked"
+                                    >
+                                        <CircleDashed
+                                            class="size-3.5 text-amber-600"
+                                        />
+                                        Nothing checks this yet
+                                    </span>
+                                </h3>
+                                <NotesPart
+                                    :project-id="project.id"
+                                    :revision="revision"
+                                    :part="`summary:${area.key}`"
+                                    :text="area.summary ?? ''"
+                                    label="what it does"
+                                    :rows="3"
+                                    variant="icon"
+                                >
+                                    <p class="pr-8 text-muted-foreground">
+                                        {{
+                                            area.summary ?? 'Not described yet.'
+                                        }}
+                                    </p>
+                                </NotesPart>
+                                <div
+                                    class="flex items-start gap-3"
+                                    :data-test="`careful-${area.key}`"
+                                >
+                                    <Checkbox
+                                        :id="`careful-${area.key}`"
+                                        class="mt-0.5"
+                                        :model-value="area.careful"
+                                        @update:model-value="
+                                            setCareful(
+                                                area.key,
+                                                $event === true,
+                                            )
+                                        "
+                                    />
+                                    <label
+                                        :for="`careful-${area.key}`"
+                                        class="text-sm"
+                                    >
+                                        <span class="font-medium"
+                                            >Be extra careful here</span
+                                        >
+                                        <span
+                                            class="block text-muted-foreground"
+                                            >Changes to this part go back for a
+                                            fix over smaller problems too.</span
+                                        >
+                                    </label>
+                                </div>
+                                <ul
+                                    v-if="area.behaviors.length"
+                                    class="flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium"
+                                    aria-label="People can"
+                                >
+                                    <li
+                                        v-for="behavior in area.behaviors"
+                                        :key="behavior"
+                                    >
+                                        {{ behavior }}
+                                    </li>
+                                </ul>
+                                <p
+                                    v-if="area.connections.length"
+                                    class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground"
+                                >
+                                    <Link2 class="size-3.5" />
+                                    <span
+                                        v-for="connection in area.connections"
+                                        :key="connection.to"
+                                        class="inline-flex items-center"
+                                    >
+                                        <button
+                                            type="button"
+                                            :class="[
+                                                'min-h-11 underline-offset-4 select-none hover:text-foreground sm:min-h-6',
+                                                connection.strength === 'strong'
+                                                    ? 'underline'
+                                                    : 'underline decoration-dashed',
+                                            ]"
+                                            :title="connection.reason"
+                                            @click="visit(connection.to)"
+                                        >
+                                            {{ connection.name }}
+                                        </button>
+                                        <button
+                                            v-if="revision !== null"
+                                            type="button"
+                                            class="inline-flex size-11 items-center justify-center rounded-sm hover:text-foreground sm:size-6"
+                                            :aria-label="`${area.name} is not connected to ${connection.name}`"
+                                            title="Not connected"
+                                            data-test="not-connected"
+                                            @click="
+                                                ruleOut(area, connection.to)
+                                            "
+                                        >
+                                            <Unlink class="size-3" />
+                                        </button>
+                                    </span>
+                                </p>
+                                <p
+                                    v-if="area.not_connected.length"
+                                    class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground"
+                                >
+                                    <span
+                                        v-for="connection in area.not_connected"
+                                        :key="connection.to"
+                                    >
+                                        <span class="line-through">{{
+                                            connection.name
+                                        }}</span>
+                                        <button
+                                            v-if="revision !== null"
+                                            type="button"
+                                            class="ml-1.5 min-h-11 underline underline-offset-4 hover:text-foreground sm:min-h-6"
+                                            data-test="connected-after-all"
+                                            @click="
+                                                putBack(area, connection.to)
+                                            "
+                                        >
+                                            Connected after all
+                                        </button>
+                                    </span>
+                                </p>
+                                <!-- The proof behind the count, in the tests' own words -->
+                                <details
+                                    v-if="area.checks.length"
+                                    class="group text-sm"
+                                    data-test="part-checks"
+                                >
+                                    <summary
+                                        class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    >
+                                        <ChevronRight
+                                            class="size-3.5 transition-transform group-open:rotate-90"
+                                        />
+                                        What the tests check
+                                    </summary>
+                                    <ul
+                                        class="mt-2 space-y-1.5 pl-5 text-muted-foreground"
+                                    >
+                                        <li
+                                            v-for="check in area.checks.slice(
+                                                0,
+                                                CHECKS_SHOWN,
+                                            )"
+                                            :key="check"
+                                            class="flex gap-2"
+                                        >
+                                            <CircleCheck
+                                                class="mt-1 size-3 shrink-0 text-green-600"
+                                            />
+                                            {{ check }}
+                                        </li>
+                                        <li
+                                            v-if="
+                                                area.checks.length >
+                                                CHECKS_SHOWN
+                                            "
+                                            class="pl-5"
+                                        >
+                                            and
+                                            {{
+                                                area.checks.length -
+                                                CHECKS_SHOWN
+                                            }}
+                                            more
+                                        </li>
+                                    </ul>
+                                </details>
+                                <!-- A part nothing checks: one tap asks for its tests -->
+                                <Form
+                                    v-else-if="area.checked_by === 0"
+                                    v-bind="
+                                        FeatureRequestController.store.form(
+                                            project.id,
+                                        )
+                                    "
+                                    v-slot="{ processing }"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="prompt"
+                                        :value="`Add tests that check ${area.name} works as described`"
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-11 select-none sm:h-8"
+                                        :disabled="processing"
+                                        data-test="part-ask-tests"
+                                    >
+                                        Ask for tests
+                                    </Button>
+                                </Form>
+                                <!-- Product simplification the owner can ask
+                                     for (direction 18 §13); nothing is removed
+                                     until they say so -->
+                                <Link
+                                    v-if="area.behaviors.length > 1"
+                                    :href="
+                                        show(project.id, {
+                                            query: {
+                                                ask: `Show me the simplest version of ${area.name}, with fewer choices for people to make. Ask me before you remove anything.`,
+                                            },
+                                        })
+                                    "
+                                    class="-my-2 inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline sm:min-h-0"
+                                    data-test="part-simplify"
+                                >
+                                    Simplify this
+                                </Link>
+                            </div>
+
+                            <div class="min-w-0 space-y-6">
+                                <NotesPart
+                                    :project-id="project.id"
+                                    :revision="revision"
+                                    :part="`rules:${area.key}`"
+                                    :text="area.rules.join('\n')"
+                                    :label="`the rules for ${area.name}`"
+                                    :rows="Math.max(3, area.rules.length + 1)"
+                                    hint="One rule per line."
+                                    variant="icon"
+                                >
+                                    <p
+                                        class="mb-3 text-sm font-medium text-muted-foreground"
+                                    >
+                                        Must always be true
+                                    </p>
+                                    <ul
+                                        v-if="area.rules.length"
+                                        class="space-y-2.5 pr-8"
+                                    >
+                                        <li
+                                            v-for="rule in area.rules"
+                                            :key="rule"
+                                            class="flex gap-2.5"
+                                        >
+                                            <Check
+                                                class="mt-1 size-3.5 shrink-0 text-muted-foreground"
+                                            />
+                                            <span class="min-w-0">{{
+                                                plain(rule)
+                                            }}</span>
+                                        </li>
+                                    </ul>
+                                    <p
+                                        v-else
+                                        class="text-sm text-muted-foreground"
+                                    >
+                                        No rules yet.
+                                    </p>
+                                </NotesPart>
+                                <!-- The owner's own requests, each proved by a test when kept -->
+                                <details
+                                    v-if="area.asked_for.length"
+                                    class="group text-sm"
+                                    data-test="part-asked-for"
+                                >
+                                    <summary
+                                        class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-muted-foreground select-none hover:text-foreground sm:min-h-6"
+                                    >
+                                        <ChevronRight
+                                            class="size-3.5 transition-transform group-open:rotate-90"
+                                        />
+                                        {{ askedForSummary(area) }}
+                                    </summary>
+                                    <ul class="mt-3 space-y-2.5 pl-5">
+                                        <li
+                                            v-for="item in area.asked_for"
+                                            :key="item.text"
+                                            class="flex gap-2.5"
+                                        >
+                                            <CircleDashed
+                                                v-if="item.checked === false"
+                                                class="mt-1 size-3.5 shrink-0 text-amber-600"
+                                            />
+                                            <ShieldCheck
+                                                v-else
+                                                class="mt-1 size-3.5 shrink-0 text-green-600"
+                                            />
+                                            <span class="min-w-0">
+                                                {{ item.text }}
+                                                <span
+                                                    v-if="
+                                                        item.checked === false
+                                                    "
+                                                    class="text-amber-700 dark:text-amber-500"
+                                                    data-test="asked-for-unchecked"
+                                                    >The test that proved this
+                                                    has changed or gone.</span
+                                                >
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </details>
+                            </div>
+                        </li>
+                    </ul>
+                </template>
+            </section>
+
+            <!-- People, terms and any other notes, side by side -->
+            <div
+                v-if="sections.length"
+                class="grid gap-16 lg:grid-cols-2 lg:gap-12"
+            >
+                <section
+                    v-for="section in sections"
+                    :key="section.heading"
+                    :data-test="`section-${section.heading}`"
+                >
+                    <NotesPart
+                        :project-id="project.id"
+                        :revision="revision"
+                        :part="`section:${section.heading}`"
+                        :text="
+                            section.tiles
+                                ? editable(section.body)
+                                : section.body
+                        "
+                        :to-notes="section.tiles ? toNotes : undefined"
+                        :label="section.heading.toLowerCase()"
+                        :rows="6"
+                        :hint="
+                            section.tiles
+                                ? 'One per line, as Name: what it means.'
+                                : undefined
+                        "
+                        variant="icon"
+                    >
+                        <template #heading>
+                            <h2
+                                class="mb-4 flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
+                            >
+                                {{ section.heading }}
+                                <span
+                                    v-if="section.tiles"
+                                    class="font-normal text-muted-foreground tabular-nums"
+                                    >{{ section.items.length }}</span
+                                >
+                            </h2>
+                        </template>
+                        <dl v-if="section.tiles" class="divide-y border-y">
+                            <div
+                                v-for="item in section.items"
+                                :key="item.term ?? item.text"
+                                class="flex gap-4 py-3"
+                            >
+                                <dt
+                                    class="w-24 shrink-0 font-medium break-words"
+                                >
+                                    {{ item.term }}
+                                </dt>
+                                <dd
+                                    class="min-w-0 break-words text-muted-foreground"
+                                >
+                                    {{ item.text }}
+                                </dd>
+                            </div>
+                        </dl>
+                        <p
+                            v-else
+                            class="max-w-prose whitespace-pre-line text-muted-foreground"
+                        >
+                            {{ plain(section.body) }}
+                        </p>
+                    </NotesPart>
+                </section>
+            </div>
+
+            <!-- What the app is connected to, and what could come next -->
+            <div
+                v-if="services.length || later.length"
+                class="grid gap-16 lg:grid-cols-2 lg:gap-12"
+            >
+                <section v-if="services.length" data-test="services">
+                    <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
+                        Connected services
+                    </h2>
+                    <ul class="space-y-2.5">
+                        <li
+                            v-for="service in services"
+                            :key="service.name"
+                            class="flex gap-2.5"
+                        >
+                            <Check
+                                class="mt-1 size-3.5 shrink-0 text-muted-foreground"
+                            />
+                            <span class="min-w-0"
+                                >{{ service.name }}
+                                <span class="text-muted-foreground"
+                                    >with {{ service.provider }}</span
+                                ></span
+                            >
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- Follow-ups offered with kept changes; one tap asks -->
+                <section v-if="later.length" data-test="later">
+                    <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
+                        Things to add later
+                    </h2>
+                    <ul class="space-y-1">
+                        <li v-for="idea in later" :key="idea">
+                            <Link
+                                :href="
+                                    show(project.id, { query: { ask: idea } })
+                                "
+                                class="-mx-2 flex min-h-11 items-center rounded-md px-2 hover:bg-accent sm:min-h-9"
+                                data-test="later-idea"
+                                >{{ idea }}</Link
+                            >
+                        </li>
+                    </ul>
+                </section>
+            </div>
+
+            <!-- How it should be built, and what changed so far -->
+            <div class="grid gap-16 lg:grid-cols-2 lg:gap-12">
+                <section data-test="guidance">
+                    <NotesPart
+                        :project-id="project.id"
+                        :revision="revision"
+                        :part="`section:Engineering direction`"
+                        :text="guidance ?? ''"
+                        label="guidance"
+                        :rows="6"
+                        hint="One point per line works well."
+                        placeholder="For example: Keep all payments in one place, so changing the payment company later is easy."
+                        :variant="guidance ? 'icon' : 'text'"
+                    >
+                        <template #heading>
+                            <h2
+                                class="mb-4 text-xl font-semibold tracking-[-0.02em]"
+                            >
+                                Guidance from your developer
+                            </h2>
+                        </template>
+                        <p
+                            v-if="guidance"
+                            class="max-w-prose whitespace-pre-line"
+                        >
+                            {{ plain(guidance) }}
+                        </p>
+                        <p v-else class="text-sm text-muted-foreground">
+                            None yet. I follow anything written here in every
+                            change.
+                        </p>
+                    </NotesPart>
+                    <!-- Changes to the guidance are kept like changes to the
+                         code, so the owner can see what it said before. -->
+                    <Collapsible
+                        v-if="guidanceHistory.length"
+                        data-test="guidance-history"
+                    >
+                        <CollapsibleTrigger
+                            class="min-h-11 text-xs text-muted-foreground select-none hover:underline sm:min-h-0"
+                        >
+                            Earlier versions ({{ guidanceHistory.length }})
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <ol class="mt-2 space-y-4">
+                                <li
+                                    v-for="version in guidanceHistory"
+                                    :key="`${version.at}-${version.text}`"
+                                >
+                                    <p class="text-xs text-muted-foreground">
+                                        {{
+                                            [
+                                                version.mine
+                                                    ? 'You'
+                                                    : version.by,
+                                                when(version.at),
+                                            ]
+                                                .filter(Boolean)
+                                                .join(', ')
+                                        }}
+                                    </p>
+                                    <p
+                                        class="max-w-prose text-sm whitespace-pre-line text-muted-foreground"
+                                    >
+                                        {{ plain(version.text) }}
+                                    </p>
+                                </li>
+                            </ol>
+                        </CollapsibleContent>
+                    </Collapsible>
+                    <!-- Guidance can also come from one of our developers,
+                         and what the owner keeps of it lands here. -->
+                    <Link
+                        :href="developers(project.id).url"
+                        class="-ml-3 inline-flex h-11 items-center rounded-md px-3 text-sm text-muted-foreground transition-colors select-none hover:bg-accent hover:text-foreground sm:h-8"
+                        data-test="guidance-ask-developer"
+                    >
+                        Ask a developer
+                    </Link>
+                </section>
+
+                <section data-test="what-changed">
+                    <h2 class="mb-4 text-xl font-semibold tracking-[-0.02em]">
+                        What changed
+                    </h2>
+                    <p
+                        v-if="fresh > 0"
+                        class="-mt-2 mb-4 text-sm text-muted-foreground"
+                        data-test="changed-since"
+                    >
+                        {{ fresh }}
+                        {{ fresh === 1 ? 'change' : 'changes' }} since you last
+                        looked {{ onDay(since) }}.
+                    </p>
+
+                    <ol
+                        v-if="changes.length || looks > 0"
+                        class="relative ml-1 border-l pl-5"
+                    >
+                        <li
+                            v-for="change in changes"
+                            :key="change.id"
+                            class="relative"
+                        >
+                            <span
+                                class="absolute top-4 -left-[1.6rem] size-2.5 rounded-full border-2 border-background bg-foreground"
+                                aria-hidden="true"
+                            />
+                            <Link
+                                :href="
+                                    show(project.id, {
+                                        query: { change: change.id },
+                                    })
+                                "
+                                class="-mx-2 flex min-h-11 items-baseline justify-between gap-4 rounded-md px-2 py-2.5 transition-colors duration-quick hover:bg-muted/50"
+                            >
+                                <span class="min-w-0"
+                                    >{{ change.summary
+                                    }}<span
+                                        v-if="isNew(change.at)"
+                                        class="ml-2 rounded-sm bg-foreground/10 px-1.5 py-0.5 text-xs font-medium text-foreground"
+                                        data-test="change-new"
+                                        >New</span
+                                    ></span
+                                >
+                                <span
+                                    class="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                    >{{ when(change.at) }}</span
+                                >
+                            </Link>
+                        </li>
+                        <li v-if="looks > 0" class="relative py-2.5">
+                            <span
+                                class="absolute top-4 -left-[1.6rem] size-2.5 rounded-full border-2 border-background bg-muted-foreground/50"
+                                aria-hidden="true"
+                            />
+                            <span class="text-muted-foreground"
+                                >{{
+                                    changes.length ? 'And the' : 'The'
+                                }}
+                                changes you made to how it looks.</span
+                            >
+                        </li>
+                    </ol>
+                    <p v-else class="text-sm text-muted-foreground">
+                        No changes kept yet.
+                    </p>
+                </section>
+            </div>
+
+            <section v-if="decisions.length" data-test="decisions">
+                <h2
+                    class="mb-1 flex items-baseline gap-2 text-xl font-semibold tracking-[-0.02em]"
+                >
+                    Decisions
+                    <span
+                        class="font-normal text-muted-foreground tabular-nums"
+                        >{{ decided }}</span
+                    >
+                </h2>
+                <p class="mb-4 max-w-prose text-sm text-muted-foreground">
+                    Choices made along the way that your app now follows.
+                </p>
+                <ul class="border-t">
+                    <li
+                        v-for="(item, index) in decisions"
+                        :key="`${item.change}-${index}`"
+                        :class="
+                            decisions[index + 1]?.change === item.change
+                                ? 'pt-3'
+                                : 'border-b py-3'
+                        "
+                    >
+                        <p
+                            v-if="item.question"
+                            class="text-sm text-muted-foreground"
+                        >
+                            {{ item.question }}
+                        </p>
+                        <div class="flex items-start justify-between gap-4">
+                            <p class="max-w-prose min-w-0 break-words">
+                                {{ item.decision }}
+                            </p>
+                            <Link
+                                :href="
+                                    show(project.id, {
+                                        query: {
+                                            ask: `Change this: “${item.decision}”\n\nInstead, `,
+                                        },
+                                    })
+                                "
+                                class="-my-2 inline-flex min-h-11 shrink-0 items-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline sm:min-h-0"
+                                data-test="change-decision"
+                            >
+                                Change
+                            </Link>
+                        </div>
+                        <p
+                            v-if="
+                                item.change === null &&
+                                decisions[index + 1]?.change !== item.change
+                            "
+                            class="mt-1 text-xs text-muted-foreground"
+                        >
+                            You chose this
+                        </p>
+                        <Link
+                            v-else-if="
+                                decisions[index + 1]?.change !== item.change
+                            "
+                            :href="
+                                show(project.id, {
+                                    query: { change: item.change },
+                                })
+                            "
+                            class="mt-1 inline-flex min-h-11 items-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline sm:min-h-0"
+                        >
+                            {{
+                                item.by === 'owner'
+                                    ? 'You chose this'
+                                    : 'I chose this and you kept it'
+                            }}
+                            {{ onDay(item.at) }}
+                        </Link>
+                    </li>
+                </ul>
+            </section>
+
+            <Collapsible v-if="problems.length">
+                <CollapsibleTrigger
+                    class="min-h-11 text-xs text-muted-foreground select-none hover:underline sm:min-h-0"
+                >
+                    Details: some notes could not be read
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                    <ul class="mt-1 font-mono text-xs text-muted-foreground">
+                        <li v-for="problem in problems" :key="problem">
+                            {{ problem }}
+                        </li>
+                    </ul>
+                </CollapsibleContent>
+            </Collapsible>
+        </template>
+    </div>
+</template>

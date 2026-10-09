@@ -14,6 +14,10 @@ return [
     |
     */
 
+    'forge' => [
+        'token' => env('FORGE_API_TOKEN'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

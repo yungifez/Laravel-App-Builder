@@ -4,6 +4,7 @@ namespace App\Workspaces\Contracts;
 
 use App\Workspaces\CommandResult;
 use App\Workspaces\WorkspaceSpec;
+use Closure;
 
 interface WorkspaceDriver
 {
@@ -16,10 +17,15 @@ interface WorkspaceDriver
      * Run a command inside the workspace, killing it after the timeout. The
      * environment variables reach this command only.
      *
+     * While the command runs, "whileRunning" is called several times a second.
+     * When it throws, the command and everything it started are stopped
+     * before the exception is passed on.
+     *
      * @param  list<string>  $command
      * @param  array<string, string>  $environment
+     * @param  (Closure(): void)|null  $whileRunning
      */
-    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = []): CommandResult;
+    public function exec(string $workspaceId, array $command, int $timeoutSeconds, array $environment = [], ?Closure $whileRunning = null): CommandResult;
 
     /**
      * Copy a local directory into the workspace's working directory, skipping
@@ -33,14 +39,16 @@ interface WorkspaceDriver
     public function writeFile(string $workspaceId, string $path, string $contents): void;
 
     /**
-     * Read a file from inside the workspace.
+     * Read a file from inside the workspace. With tailBytes, read at most
+     * that many bytes from its end before transferring it to the caller.
      */
-    public function readFile(string $workspaceId, string $path): string;
+    public function readFile(string $workspaceId, string $path, ?int $tailBytes = null): string;
 
     /**
      * Start a long-running process in the workspace, such as the app's web
      * server, listening on the given port. It runs until the workspace is
-     * destroyed.
+     * destroyed. Port 0 is for a process that listens on none, such as a
+     * build in watch mode.
      *
      * @param  list<string>  $command
      */

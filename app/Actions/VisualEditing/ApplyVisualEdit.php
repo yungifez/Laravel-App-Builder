@@ -1,0 +1,136 @@
+<?php
+
+namespace App\Actions\VisualEditing;
+
+use App\Models\Preview;
+use App\Models\User;
+use App\Models\VisualEdit;
+use App\Projects\Exceptions\RepositoryConflict;
+use App\Projects\ProjectRepository;
+use App\VisualEditing\DesignDrafts;
+use App\VisualEditing\ElementName;
+use App\VisualEditing\FormattedRevisions;
+use App\VisualEditing\SourceLocation;
+use App\VisualEditing\TailwindClasses;
+use App\VisualEditing\TemplateElement;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+
+class ApplyVisualEdit
+{
+    public function __construct(
+        private ProjectRepository $repository,
+        private FollowLocation $followLocation,
+        private FormattedRevisions $formatted,
+        private DesignDrafts $designDrafts,
+        private ReadAppColors $readAppColors,
+        private ReadAppTheme $readAppTheme,
+    ) {}
+
+    /**
+     * Change how one element looks on one device and commit the file to the
+     * project; the commit rebuilds the preview. No model is involved: the
+     * classes are rewritten in place, keeping every class the edit does not
+     * touch.
+     *
+     * The owner edits what the inspector showed them at "revision", with the
+     * classes they expect the element to have. When the project moved on
+     * since, or the element's classes are not the expected ones (a model or
+     * another person changed them), the edit is refused so nothing is
+     * overwritten.
+     *
+     * @param  array<string, int|float|string|null>  $changes  Property values, in pixels and words
+     *
+     * @throws ValidationException when the edit cannot be made in place.
+     */
+    public function handle(Preview $preview, User $owner, SourceLocation $location, string $revision, string $expected, string $device, array $changes): VisualEdit
+    {
+        $project = $preview->project;
+        // Formatting since the owner's version changed nothing they see.
+        $revision = $this->formatted->latest($project, $revision);
+
+        if (! $preview->editable) {
+            throw ValidationException::withMessages(['edit' => __('I can\'t change this version of your app here. Ask me to change it instead.')]);
+        }
+
+        // An edit on the app waits in a draft until the owner keeps it.
+        $this->designDrafts->open($preview, $owner);
+
+        // The location is where the running preview says the element is;
+        // the owner may be editing a newer version while it rebuilds.
+        $location = $preview->revision === null ? $location : $this->followLocation->handle($project, $preview->revision, $revision, $location);
+
+        if ($location === null) {
+            throw ValidationException::withMessages(['edit' => __('Your last change is still going in. Try again in a moment.')]);
+        }
+
+        $contents = $this->repository->show($project, $revision, $location->file);
+        $element = $contents === null ? null : TemplateElement::at($contents, $location->line, $location->column);
+
+        if ($element === null || ! $element->editable()) {
+            throw ValidationException::withMessages(['edit' => __('This part cannot be changed here. Ask me to change it instead.')]);
+        }
+
+        $before = $element->classes['value'] ?? '';
+
+        if (! TailwindClasses::same($before, $expected)) {
+            throw ValidationException::withMessages(['edit' => __('This part was changed since you picked it. Pick it again to see how it looks now.')]);
+        }
+
+        try {
+            $after = TailwindClasses::write($before, $device, $changes, $this->readAppColors->names($project), $this->readAppTheme->handle($project));
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages(['edit' => __('That value does not fit here. Pick another one.')]);
+        }
+
+        if ($after === $before) {
+            throw ValidationException::withMessages(['edit' => __('Nothing changed.')]);
+        }
+
+        try {
+            $sha = $this->repository->commitFiles(
+                $project,
+                $revision,
+                [$location->file => $element->withClasses($contents, $after)],
+                $this->message($element, $location, $device),
+                ['name' => $owner->name, 'email' => $owner->email],
+                $preview->branch(),
+            );
+        } catch (RepositoryConflict $exception) {
+            throw ValidationException::withMessages(['edit' => $exception->getMessage()]);
+        }
+
+        // The new commit rebuilds the editable preview (ProjectCommitted).
+        return $project->visualEdits()->create([
+            'experiment_id' => $project->experiment_id,
+            'feature_request_id' => $preview->designing()?->id,
+            'user_id' => $owner->id,
+            'file' => $location->file,
+            'line' => $location->line,
+            'column' => $location->column,
+            'tag' => $element->tag,
+            'device' => $device,
+            'changes' => $changes,
+            'classes_before' => $before,
+            'classes_after' => $after,
+            'base_revision' => $revision,
+            'commit_sha' => $sha,
+        ]);
+    }
+
+    /**
+     * Describe the edit in the commit message.
+     */
+    protected function message(TemplateElement $element, SourceLocation $location, string $device): string
+    {
+        $on = match ($device) {
+            'md' => ' on tablets and up',
+            'lg' => ' on desktops',
+            default => '',
+        };
+
+        $name = ElementName::for($element->tag);
+
+        return "Change how {$name} looks{$on}\n\nIn {$location}.";
+    }
+}

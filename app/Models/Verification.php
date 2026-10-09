@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\ChecksStoppedBecause;
 use App\Enums\VerificationStatus;
+use App\Models\Concerns\HasPublicId;
 use Database\Factories\VerificationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,22 +17,30 @@ use Illuminate\Support\Carbon;
  * on top of every change it follows up on.
  *
  * @property int $id
+ * @property string $uuid Names the row in links and requests
  * @property int $feature_request_id
  * @property int|null $run_id
  * @property int|null $workspace_id
  * @property VerificationStatus $status
- * @property list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string}>|null $results
+ * @property list<array{name: string, stage: string, outcome: string, exit_code: int|null, timed_out: bool, duration_ms: int, output: string, tests?: list<array{file: string, name: string, outcome: string, message?: string}>, at_start?: string, new_problems?: list<string>}>|null $results
+ * @property array{pages: list<array<string, mixed>>, signed_in?: bool, shots?: list<array{screen: string, width: int, path: string}>}|null $screens
+ * @property list<array{rule: string, path: string, line: int}>|null $shortcuts What the shortcut scan found in the files the change touched, or null when it did not run
+ * @property array{strict?: list<array{kind: string, model: string, attributes: list<string>, at: string|null, test: string}>, new_tests?: list<array{file: string, name: string, without_change: string}>, mutants?: array{tried: int, caught: int, survived: list<array{file: string, line: int, was: string, now: string}>}, refusals?: array<string, bool>, routes?: array{added?: list<array{route: string, middleware: list<string>, planned?: bool}>, removed?: list<string>, changed?: list<array{route: string, lost: list<string>, gained: list<string>}>}, new_code?: array{lines: int, run: int, own_tests_only: int, unrun: array<string, list<int>>}, traces?: array{requests: int, reached: int, unseen: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, test: string|null}>, repeats: list<array{path: string, line: int, count: int, route: string}>}, boundaries?: array{phased: int, unknown: int, existing: int, findings: list<array{kind: string, route: string, what: string, at: string|null, in: string|null, test: string|null}>, read?: list<array{kind: string, what: string, at: string, in: string}>}, coupling?: array{known: int, findings: list<array{from: string, to: string, caller: string, callee: string, route: string, test: string|null}>}, conventions?: array{conventions: array<string, array{role: string, places: int, of: int}>, findings: list<array{work: string, role: string, route: string, at: string, in: string, test: string|null}>}, drift?: array{areas: array<string, array{requests: int, effects: int, per: float|int}>, findings: list<array{area: string, per: float|int, ceiling: float|int, far: bool, name: string}>}, containment?: array{services: int, findings: list<array{route: string, what: string, at: string, in: string|null, from: list<string>, home: list<string>, test: string|null}>}, faults?: array{points: int, run: int, missed: int, existing: int, findings: list<array{kind: string, route: string, failed: string, what: string, at: string|null, test: string}>}, roles?: array{tried: int, changed: list<array{route: string, actor: string, before: string, after: string}>, new: array<string, array<string, string>>, findings: list<array{route: string, actor: string, before: string, after: string}>}, migrations?: array{added: list<string>, edited: list<string>, up: bool|null, down: bool|null, again: bool|null, failed: string|null, output: string|null, risks: list<array{rule: string, migration: string, table: string, column: string|null, sql: string}>}, queued?: list<array{class: string, kind: string, at: string, missing: list<string>}>, owners?: list<array{model: string, table: string, column: string, at: string, guard: string|null, policy: string|null}>, narrowed?: list<array{path: string, table: string, column: string, kind: string, before: list<string>, after: list<string>, rows: int|null, failing: int|null, reason?: string}>, messages?: list<array{class: string, channels: list<string>, at: string}>, packages?: array{changes: list<array{name: string, manager: string, from: string|null, to: string|null, direct: bool}>, problems: list<array{name: string, manager: string, version: string, at: string, direct: bool, license: list<string>, source: string|null, rules: list<string>}>}, earlier_rules?: list<string>}|null $evidence What running the app showed about the change itself, by kind: with and without the change, request by request while its tests ran, and with one failure caused at a time; a kind that was not measured is absent
  * @property string|null $error
+ * @property ChecksStoppedBecause|null $stopped_because Why the checks stopped before any check ran, or null when they did not
+ * @property bool $interrupted The checks stopped because of a problem on our side, so they say nothing about the change
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['run_id', 'workspace_id', 'status', 'results', 'error', 'started_at', 'finished_at'])]
+#[Fillable(['run_id', 'workspace_id', 'status', 'results', 'screens', 'shortcuts', 'evidence', 'error', 'stopped_because', 'interrupted', 'started_at', 'finished_at'])]
 class Verification extends Model
 {
     /** @use HasFactory<VerificationFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * Get the attributes that should be cast.
@@ -41,7 +51,12 @@ class Verification extends Model
     {
         return [
             'status' => VerificationStatus::class,
+            'stopped_because' => ChecksStoppedBecause::class,
             'results' => 'array',
+            'screens' => 'array',
+            'shortcuts' => 'array',
+            'evidence' => 'array',
+            'interrupted' => 'boolean',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
@@ -65,5 +80,18 @@ class Verification extends Model
     public function run(): BelongsTo
     {
         return $this->belongsTo(Run::class);
+    }
+
+    /**
+     * Pick the picture that best shows the app: the front page when it was
+     * pictured, otherwise the first screen, at its widest.
+     */
+    public function cover(): ?int
+    {
+        $shots = collect($this->screens['shots'] ?? [])->map(fn (array $shot, int $index) => [...$shot, 'index' => $index]);
+        $front = collect($this->screens['pages'] ?? [])->firstWhere('path', '/')['screen'] ?? null;
+        $screen = $shots->contains('screen', $front) ? $front : $shots->first()['screen'] ?? null;
+
+        return $shots->where('screen', $screen)->sortByDesc('width')->first()['index'] ?? null;
     }
 }

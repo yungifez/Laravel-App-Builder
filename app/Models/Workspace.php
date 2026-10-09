@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\RunStatus;
 use App\Enums\WorkspaceStatus;
 use Database\Factories\WorkspaceFactory;
 use DateTimeInterface;
@@ -18,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property string $driver
  * @property string|null $driver_id
+ * @property string|null $baseline_commit The commit a run's change is measured against
  * @property WorkspaceStatus $status
  * @property string $image
  * @property float $cpus
@@ -26,10 +28,12 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_activity_at
  * @property Carbon|null $expires_at
  * @property Carbon|null $destroyed_at
+ * @property Carbon|null $cleanup_failed_at When removing its environment last failed
+ * @property string|null $cleanup_error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['driver', 'driver_id', 'status', 'image', 'cpus', 'memory_mb', 'pids', 'last_activity_at', 'expires_at', 'destroyed_at'])]
+#[Fillable(['driver', 'driver_id', 'baseline_commit', 'status', 'image', 'cpus', 'memory_mb', 'pids', 'last_activity_at', 'expires_at', 'destroyed_at', 'cleanup_failed_at', 'cleanup_error'])]
 class Workspace extends Model
 {
     /** @use HasFactory<WorkspaceFactory> */
@@ -48,6 +52,7 @@ class Workspace extends Model
             'last_activity_at' => 'datetime',
             'expires_at' => 'datetime',
             'destroyed_at' => 'datetime',
+            'cleanup_failed_at' => 'datetime',
         ];
     }
 
@@ -80,7 +85,16 @@ class Workspace extends Model
     {
         $query->where('status', WorkspaceStatus::Ready)
             ->where(fn (Builder $query) => $query
-                ->where('last_activity_at', '<', $idleSince)
+                ->where(fn (Builder $query) => $query
+                    ->where('last_activity_at', '<', $idleSince)
+                    // The owner's own tool may work on a change in its own
+                    // folder for longer than that, and its tries, preview
+                    // and file tools need this copy. Its connection running
+                    // out stops the change and lets the copy go.
+                    ->whereNotExists(fn ($runs) => $runs->from('runs')
+                        ->whereColumn('runs.workspace_id', 'workspaces.id')
+                        ->where('runs.driver', 'worker')
+                        ->where('runs.status', RunStatus::Implementing)))
                 ->orWhere('expires_at', '<', $now));
     }
 }

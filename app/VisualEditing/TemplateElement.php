@@ -1,0 +1,240 @@
+<?php
+
+namespace App\VisualEditing;
+
+/**
+ * An element's start tag in a Vue template or a Blade view, found at the
+ * line and column the preview's source locator stamped, and its classes
+ * when they can be edited in place.
+ *
+ * Classes are editable when they are written as a static `class="…"`, as
+ * the first string of `:class="cn('…', …)"`, or as the first entry of a
+ * Blade `@class(['…', …])` when it holds for every state. Any other
+ * `:class` binding or `@class`, or a class with `{{ }}` in it, depends on
+ * the app's state, so it is left to the coding agent.
+ */
+class TemplateElement
+{
+    /**
+     * @param  string  $tag  The tag as written, such as "div" or "Button"
+     * @param  int  $start  Offset of the tag's "<"
+     * @param  int  $end  Offset just after the start tag's ">"
+     * @param  array{offset: int, length: int, value: string}|null  $classes  Where the editable classes are
+     * @param  bool  $dynamic  Whether the classes also depend on a binding that is not editable
+     */
+    public function __construct(
+        public string $tag,
+        public int $start,
+        public int $end,
+        public ?array $classes,
+        public bool $dynamic,
+    ) {}
+
+    /**
+     * Find the element whose "<" is at the line and column (both from 1).
+     */
+    public static function at(string $contents, int $line, int $column): ?self
+    {
+        $offset = self::offset($contents, $line, $column);
+
+        return $offset === null ? null : self::atOffset($contents, $offset);
+    }
+
+    /**
+     * Find the element whose "<" is at the offset.
+     */
+    public static function atOffset(string $contents, int $offset): ?self
+    {
+        if (($contents[$offset] ?? '') !== '<' || preg_match('/\G<([A-Za-z][\w.:-]*)/', $contents, $match, 0, $offset) !== 1) {
+            return null;
+        }
+
+        $tag = $match[1];
+        $position = $offset + strlen($match[0]);
+        $length = strlen($contents);
+        $static = null;
+        $bound = null;
+
+        // Read the attributes up to the tag's closing ">", honouring quotes.
+        while ($position < $length) {
+            if (preg_match('/\G\s*(\/?>)/', $contents, $close, 0, $position) === 1) {
+                $end = $position + strlen($close[0]);
+
+                return new self($tag, $offset, $end, $static ?? self::fromClassHelper($bound), $bound !== null && ($static !== null || self::fromClassHelper($bound) === null));
+            }
+
+            // Blade inside a start tag: an echo such as
+            // {{ $attributes->merge(…) }}, or a directive with arguments
+            // such as @class([…]). Either may hold a ">" that is not the
+            // tag's end.
+            if (preg_match('/\G\s*(\{\{.*?\}\}|\{!!.*?!!\})/s', $contents, $echo, 0, $position) === 1) {
+                $position += strlen($echo[0]);
+
+                continue;
+            }
+
+            if (preg_match('/\G\s*@(\w+)\s*\(/', $contents, $directive, 0, $position) === 1) {
+                $after = self::balanced($contents, $position + strlen($directive[0]) - 1);
+                $bound = $directive[1] === 'class' ? ['offset' => $position, 'length' => $after - $position, 'value' => substr($contents, $position, $after - $position)] : $bound;
+                $position = $after;
+
+                continue;
+            }
+
+            if (preg_match('/\G\s*([^\s=\/>"\']+)(?:\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>"\']+)))?/', $contents, $attribute, PREG_OFFSET_CAPTURE, $position) !== 1) {
+                return null;
+            }
+
+            $name = $attribute[1][0];
+            $value = self::captured($attribute);
+
+            // Classes printed by Blade are the app's to choose. Tailwind's
+            // own "@" (as in "@container") is a class like any other.
+            if ($name === 'class' && $value !== null && preg_match('/\{\{|\{!!|@(?:if|unless|isset|auth|guest|can|env|production|foreach|else|endif)\b/', $value['value']) === 1) {
+                $bound = $value;
+            } elseif ($name === 'class' && $value !== null) {
+                $static = $value;
+            } elseif (in_array($name, [':class', 'v-bind:class'], true) && $value !== null) {
+                $bound = $value;
+            }
+
+            $position += strlen($attribute[0][0]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the contents with the element's editable classes replaced, adding
+     * a static class attribute when the element has none. A static class
+     * attribute left with no classes goes, as it was before one was added.
+     */
+    public function withClasses(string $contents, string $classes): string
+    {
+        if ($this->classes !== null) {
+            $before = substr($contents, $this->start, $this->classes['offset'] - $this->start);
+
+            if (trim($classes) === '' && preg_match('/\s+class\s*=\s*["\']$/', $before, $attribute) === 1) {
+                $from = $this->classes['offset'] - strlen($attribute[0]);
+
+                return substr_replace($contents, '', $from, $this->classes['offset'] + $this->classes['length'] + 1 - $from);
+            }
+
+            return substr_replace($contents, $classes, $this->classes['offset'], $this->classes['length']);
+        }
+
+        if (trim($classes) === '') {
+            return $contents;
+        }
+
+        $afterTag = $this->start + 1 + strlen($this->tag);
+
+        return substr_replace($contents, ' class="'.$classes.'"', $afterTag, 0);
+    }
+
+    /**
+     * Determine whether the element's classes can be changed in place.
+     */
+    public function editable(): bool
+    {
+        return ! $this->dynamic;
+    }
+
+    /**
+     * Determine whether the start tag closes itself, as in `<hr />`.
+     */
+    public function selfClosing(string $contents): bool
+    {
+        return substr($contents, $this->end - 2, 2) === '/>';
+    }
+
+    /**
+     * Get the offset of a line and column (both from 1).
+     */
+    public static function offset(string $contents, int $line, int $column): ?int
+    {
+        if ($line < 1 || $column < 1) {
+            return null;
+        }
+
+        $offset = 0;
+
+        for ($current = 1; $current < $line; $current++) {
+            $next = strpos($contents, "\n", $offset);
+
+            if ($next === false) {
+                return null;
+            }
+
+            $offset = $next + 1;
+        }
+
+        $offset += $column - 1;
+
+        return $offset < strlen($contents) ? $offset : null;
+    }
+
+    /**
+     * Get the offset just after the ")" that closes the "(" at an offset,
+     * stepping over quoted strings.
+     */
+    public static function balanced(string $contents, int $offset): int
+    {
+        $depth = 0;
+        $length = strlen($contents);
+
+        for ($at = $offset; $at < $length; $at++) {
+            $character = $contents[$at];
+
+            if ($character === '"' || $character === "'") {
+                for ($at++; $at < $length && $contents[$at] !== $character; $at++) {
+                    $at += $contents[$at] === '\\' ? 1 : 0;
+                }
+            } elseif ($character === '(') {
+                $depth++;
+            } elseif ($character === ')' && --$depth === 0) {
+                return $at + 1;
+            }
+        }
+
+        return $length;
+    }
+
+    /**
+     * Get an attribute's quoted or bare value and where it is.
+     *
+     * @param  array<int, array{0: string, 1: int}>  $attribute
+     * @return array{offset: int, length: int, value: string}|null
+     */
+    protected static function captured(array $attribute): ?array
+    {
+        foreach ([2, 3, 4] as $group) {
+            if (isset($attribute[$group]) && $attribute[$group][1] >= 0) {
+                return ['offset' => $attribute[$group][1], 'length' => strlen($attribute[$group][0]), 'value' => $attribute[$group][0]];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the first string passed to cn() in a class binding, when the
+     * binding is `cn('…', …)` and that string is a plain literal. For
+     * Blade's `@class([…])`, get the first entry when it is a plain literal
+     * with no condition, as in `@class(['p-4', 'font-bold' => $active])`.
+     *
+     * @param  array{offset: int, length: int, value: string}|null  $binding
+     * @return array{offset: int, length: int, value: string}|null
+     */
+    protected static function fromClassHelper(?array $binding): ?array
+    {
+        if ($binding === null || (
+            preg_match('/^\s*cn\(\s*\'([^\'\\\\]*)\'/', $binding['value'], $match, PREG_OFFSET_CAPTURE) !== 1
+            && preg_match('/^\s*@class\s*\(\s*\[\s*(?|\'([^\'\\\\]*)\'|"([^"\\\\$]*)")\s*(?=,|\])/', $binding['value'], $match, PREG_OFFSET_CAPTURE) !== 1
+        )) {
+            return null;
+        }
+
+        return ['offset' => $binding['offset'] + $match[1][1], 'length' => strlen($match[1][0]), 'value' => $match[1][0]];
+    }
+}

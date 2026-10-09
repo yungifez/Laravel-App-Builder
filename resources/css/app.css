@@ -8,10 +8,16 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+    /* Three faces, one job each: see DESIGN.md. */
     --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
-        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Noto Color Emoji';
+        'IBM Plex Sans', 'IBM Plex Sans metric fallback', ui-sans-serif,
+        system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display:
+        'Schibsted Grotesk', 'Schibsted Grotesk metric fallback', ui-sans-serif,
+        system-ui, sans-serif;
+    --font-mono:
+        'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -40,6 +46,9 @@
 
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-panel-blue: var(--panel-blue);
+    --color-panel-green: var(--panel-green);
 
     --color-border: var(--border);
     --color-input: var(--input);
@@ -79,87 +88,180 @@
     }
 }
 
+/* A section a menu link jumps to lands below the sticky header. */
+section[id] {
+    scroll-margin-top: 4.5rem;
+}
+
 @layer utilities {
     body,
     html {
         --font-sans:
-            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
-            'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-            'Noto Color Emoji';
+            'IBM Plex Sans', 'IBM Plex Sans metric fallback', ui-sans-serif,
+            system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+            'Segoe UI Symbol', 'Noto Color Emoji';
     }
 }
 
+/* Until a face arrives, text is set in a fallback sized to it, so the
+   swap does not move it: Arial, or Liberation Sans or Arimo, which share
+   Arial's metrics, for each weight in use. size-adjust is the width of
+   UI text in the face over the fallback's; the overrides keep its line
+   height. FontSwapTest fails if the faces change and text would move. */
+@font-face {
+    font-family: 'IBM Plex Sans metric fallback';
+    font-weight: 400;
+    src:
+        local('Arial'), local('ArialMT'), local('Liberation Sans'),
+        local('Arimo');
+    size-adjust: 100.54%;
+    ascent-override: 101.95%;
+    descent-override: 27.35%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'IBM Plex Sans metric fallback';
+    font-weight: 500;
+    src:
+        local('Arial'), local('ArialMT'), local('Liberation Sans'),
+        local('Arimo');
+    size-adjust: 102.49%;
+    ascent-override: 100.01%;
+    descent-override: 26.83%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'IBM Plex Sans metric fallback';
+    font-weight: 600;
+    src:
+        local('Arial Bold'), local('Arial-BoldMT'),
+        local('Liberation Sans Bold'), local('Arimo Bold');
+    size-adjust: 96.86%;
+    ascent-override: 105.82%;
+    descent-override: 28.39%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk metric fallback';
+    font-weight: 500;
+    src:
+        local('Arial'), local('ArialMT'), local('Liberation Sans'),
+        local('Arimo');
+    size-adjust: 104.69%;
+    ascent-override: 93.28%;
+    descent-override: 24.63%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk metric fallback';
+    font-weight: 600;
+    src:
+        local('Arial Bold'), local('Arial-BoldMT'),
+        local('Liberation Sans Bold'), local('Arimo Bold');
+    size-adjust: 99.69%;
+    ascent-override: 97.96%;
+    descent-override: 25.86%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk metric fallback';
+    font-weight: 700;
+    src:
+        local('Arial Bold'), local('Arial-BoldMT'),
+        local('Liberation Sans Bold'), local('Arimo Bold');
+    size-adjust: 101.72%;
+    ascent-override: 96.01%;
+    descent-override: 25.34%;
+    line-gap-override: 0%;
+}
+
 :root {
-    --background: hsl(0 0% 100%);
-    --foreground: hsl(0 0% 3.9%);
-    --card: hsl(0 0% 100%);
-    --card-foreground: hsl(0 0% 3.9%);
+    /* Ink on paper (DESIGN.md). The page is near-white paper with a
+       trace of blue and the text is near-black ink. Blue is kept for
+       things you can press, so it is solid and deep. State colours
+       (amber, emerald, red) stay Tailwind's. */
+    --background: hsl(220 20% 98.5%);
+    --foreground: hsl(224 32% 9%);
+    --card: hsl(220 20% 98.5%);
+    --card-foreground: hsl(224 32% 9%);
     --popover: hsl(0 0% 100%);
-    --popover-foreground: hsl(0 0% 3.9%);
-    --primary: hsl(0 0% 9%);
-    --primary-foreground: hsl(0 0% 98%);
-    --secondary: hsl(0 0% 92.1%);
-    --secondary-foreground: hsl(0 0% 9%);
-    --muted: hsl(0 0% 96.1%);
-    --muted-foreground: hsl(0 0% 45.1%);
-    --accent: hsl(0 0% 96.1%);
-    --accent-foreground: hsl(0 0% 9%);
-    --destructive: hsl(0 84.2% 60.2%);
-    --destructive-foreground: hsl(0 0% 98%);
-    --border: hsl(0 0% 92.8%);
-    --input: hsl(0 0% 89.8%);
-    --ring: hsl(0 0% 3.9%);
-    --chart-1: hsl(12 76% 61%);
-    --chart-2: hsl(173 58% 39%);
-    --chart-3: hsl(197 37% 24%);
-    --chart-4: hsl(43 74% 66%);
-    --chart-5: hsl(27 87% 67%);
-    --radius: 0.5rem;
-    --sidebar-background: hsl(0 0% 98%);
-    --sidebar-foreground: hsl(240 5.3% 26.1%);
-    --sidebar-primary: hsl(0 0% 10%);
-    --sidebar-primary-foreground: hsl(0 0% 98%);
-    --sidebar-accent: hsl(0 0% 94%);
-    --sidebar-accent-foreground: hsl(0 0% 30%);
-    --sidebar-border: hsl(0 0% 91%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
-    --sidebar: hsl(0 0% 98%);
+    --popover-foreground: hsl(224 32% 9%);
+    --primary: hsl(224 82% 44%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(220 16% 94%);
+    --secondary-foreground: hsl(224 32% 9%);
+    --muted: hsl(220 16% 94%);
+    --muted-foreground: hsl(222 10% 38%);
+    --accent: hsl(220 18% 93%);
+    --accent-foreground: hsl(224 32% 9%);
+    --destructive: hsl(0 72% 46%);
+    --destructive-foreground: hsl(0 0% 100%);
+    --border: hsl(220 14% 86%);
+    --input: hsl(220 12% 78%);
+    --ring: hsl(224 82% 44%);
+    --chart-1: #102a6b;
+    --chart-2: #1f48b8;
+    --chart-3: #5f82d6;
+    --chart-4: #9bb1e4;
+    --chart-5: #cdd8f0;
+    --radius: 0.375rem;
+    --sidebar-background: hsl(220 18% 96%);
+    --sidebar-foreground: hsl(224 32% 9%);
+    --sidebar-primary: hsl(224 82% 44%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: hsl(220 18% 93%);
+    --sidebar-accent-foreground: hsl(224 32% 9%);
+    --sidebar-border: hsl(220 14% 86%);
+    --sidebar-ring: hsl(224 82% 44%);
+    --sidebar: hsl(220 18% 96%);
+    /* Soft panels that hold the product on public pages. */
+    --panel-blue: hsl(218 80% 94%);
+    --panel-green: hsl(150 40% 91%);
 }
 
 .dark {
-    --background: hsl(0 0% 3.9%);
-    --foreground: hsl(0 0% 98%);
-    --card: hsl(0 0% 3.9%);
-    --card-foreground: hsl(0 0% 98%);
-    --popover: hsl(0 0% 3.9%);
-    --popover-foreground: hsl(0 0% 98%);
-    --primary: hsl(0 0% 98%);
-    --primary-foreground: hsl(0 0% 9%);
-    --secondary: hsl(0 0% 14.9%);
-    --secondary-foreground: hsl(0 0% 98%);
-    --muted: hsl(0 0% 16.08%);
-    --muted-foreground: hsl(0 0% 63.9%);
-    --accent: hsl(0 0% 14.9%);
-    --accent-foreground: hsl(0 0% 98%);
-    --destructive: hsl(0 84% 60%);
-    --destructive-foreground: hsl(0 0% 98%);
-    --border: hsl(0 0% 14.9%);
-    --input: hsl(0 0% 14.9%);
-    --ring: hsl(0 0% 83.1%);
-    --chart-1: hsl(220 70% 50%);
-    --chart-2: hsl(160 60% 45%);
-    --chart-3: hsl(30 80% 55%);
-    --chart-4: hsl(280 65% 60%);
-    --chart-5: hsl(340 75% 55%);
-    --sidebar-background: hsl(0 0% 7%);
-    --sidebar-foreground: hsl(0 0% 95.9%);
-    --sidebar-primary: hsl(360, 100%, 100%);
+    /* The same page at night: dark paper, pale ink, a lighter blue so
+       actions still read. */
+    --background: hsl(224 16% 7%);
+    --foreground: hsl(220 16% 92%);
+    --card: hsl(224 16% 7%);
+    --card-foreground: hsl(220 16% 92%);
+    --popover: hsl(224 14% 10%);
+    --popover-foreground: hsl(220 16% 92%);
+    --primary: hsl(221 83% 53%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(224 12% 13%);
+    --secondary-foreground: hsl(220 16% 92%);
+    --muted: hsl(224 12% 13%);
+    --muted-foreground: hsl(220 8% 64%);
+    --accent: hsl(224 12% 14%);
+    --accent-foreground: hsl(220 16% 92%);
+    --destructive: hsl(0 72% 60%);
+    --destructive-foreground: hsl(0 0% 5%);
+    --border: hsl(224 10% 18%);
+    --input: hsl(224 10% 26%);
+    --ring: hsl(221 88% 64%);
+    --chart-1: #cdd8f0;
+    --chart-2: #9bb1e4;
+    --chart-3: #5f82d6;
+    --chart-4: #1f48b8;
+    --chart-5: #102a6b;
+    --sidebar-background: hsl(224 16% 6%);
+    --sidebar-foreground: hsl(220 16% 92%);
+    --sidebar-primary: hsl(221 83% 53%);
     --sidebar-primary-foreground: hsl(0 0% 100%);
-    --sidebar-accent: hsl(0 0% 15.9%);
-    --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-    --sidebar-border: hsl(0 0% 15.9%);
-    --sidebar-ring: hsl(217.2 91.2% 59.8%);
-    --sidebar: hsl(240 5.9% 10%);
+    --sidebar-accent: hsl(224 12% 13%);
+    --sidebar-accent-foreground: hsl(220 16% 92%);
+    --sidebar-border: hsl(224 10% 18%);
+    --sidebar-ring: hsl(221 88% 64%);
+    --sidebar: hsl(224 16% 6%);
+    --panel-blue: hsl(222 40% 17%);
+    --panel-green: hsl(158 26% 15%);
 }
 
 @layer base {
@@ -168,5 +270,261 @@
     }
     body {
         @apply bg-background text-foreground;
+    }
+    /* Headlines are set heavy and tight; size classes pick the scale. */
+    .font-display {
+        font-weight: 600;
+        letter-spacing: -0.03em;
+    }
+    ::selection {
+        @apply bg-primary text-primary-foreground;
+    }
+    /* Scrollbars follow the theme instead of staying light in dark mode. */
+    :root {
+        color-scheme: light;
+    }
+    .dark {
+        color-scheme: dark;
+    }
+    html,
+    body,
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(
+                in srgb,
+                var(--muted-foreground) 55%,
+                var(--background)
+            )
+            transparent;
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar,
+    *::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    html::-webkit-scrollbar-track,
+    body::-webkit-scrollbar-track,
+    *::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    html::-webkit-scrollbar-thumb,
+    body::-webkit-scrollbar-thumb,
+    *::-webkit-scrollbar-thumb {
+        min-height: 24px;
+        border: 3px solid transparent;
+        border-radius: 999px;
+        background-color: color-mix(
+            in srgb,
+            var(--muted-foreground) 55%,
+            var(--background)
+        );
+        background-clip: padding-box;
+    }
+    html::-webkit-scrollbar-thumb:hover,
+    body::-webkit-scrollbar-thumb:hover,
+    *::-webkit-scrollbar-thumb:hover {
+        background-color: color-mix(
+            in srgb,
+            var(--muted-foreground) 72%,
+            var(--background)
+        );
+    }
+    html::-webkit-scrollbar-thumb:active,
+    body::-webkit-scrollbar-thumb:active,
+    *::-webkit-scrollbar-thumb:active {
+        background-color: color-mix(
+            in srgb,
+            var(--muted-foreground) 84%,
+            var(--background)
+        );
+    }
+    html::-webkit-scrollbar-corner,
+    body::-webkit-scrollbar-corner,
+    *::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+}
+
+/*
+  Motion stays short and quiet: things settle rather than bounce. Every
+  transition eases out, so it starts at speed and lands softly.
+*/
+@theme {
+    --ease-settle: cubic-bezier(0.165, 0.84, 0.44, 1);
+    --ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
+    --default-transition-timing-function: var(--ease-settle);
+
+    /* Hover colours and toggles; small things appearing; panels sliding
+       in; a highlight fading away. */
+    --transition-duration-quick: 120ms;
+    --transition-duration-base: 200ms;
+    --transition-duration-panel: 300ms;
+    --transition-duration-linger: 700ms;
+
+    /* A soft spring that lands a little past and settles back. */
+    --ease-spring: linear(
+        0,
+        0.1797,
+        0.5256,
+        0.8392,
+        1.0377,
+        1.1189,
+        1.1191,
+        1.0812,
+        1.0375,
+        1.0051,
+        0.9882,
+        0.9841,
+        0.9872,
+        0.9927,
+        0.9977,
+        1.0007,
+        1
+    );
+}
+
+/* Pressing gives at once; letting go springs back. Colours change at
+   the quick speed either way. */
+@utility press {
+    transition-property:
+        color, background-color, border-color, box-shadow, opacity, scale;
+    transition-duration: var(--transition-duration-quick);
+    transition-timing-function: var(--ease-settle);
+
+    &:not(:active) {
+        transition-duration:
+            var(--transition-duration-quick), var(--transition-duration-quick),
+            var(--transition-duration-quick), var(--transition-duration-quick),
+            var(--transition-duration-quick), 360ms;
+        transition-timing-function:
+            var(--ease-settle), var(--ease-settle), var(--ease-settle),
+            var(--ease-settle), var(--ease-settle), var(--ease-spring);
+    }
+
+    &:active:not(:disabled) {
+        scale: 0.98;
+        transition-duration: 60ms;
+    }
+}
+
+/* On public pages a block rises into place the first time it scrolls
+   into view (the page sets data-shown). Still for people who ask for
+   less motion. */
+@utility reveal {
+    transition-property: opacity, translate;
+    transition-duration: var(--transition-duration-linger);
+    transition-timing-function: var(--ease-settle);
+
+    &:not([data-shown]) {
+        opacity: 0;
+        translate: 0 0.75rem;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        transition: none;
+
+        &:not([data-shown]) {
+            opacity: 1;
+            translate: none;
+        }
+    }
+}
+
+/* A ring that fades once, to point at something that just appeared. */
+@keyframes ring-out {
+    from {
+        box-shadow: 0 0 0 0 var(--ring);
+    }
+    30% {
+        box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 45%, transparent);
+    }
+    to {
+        box-shadow: 0 0 0 10px transparent;
+    }
+}
+
+/* A small thing that rises into place when it is swapped in. */
+@keyframes rise-in {
+    from {
+        opacity: 0;
+        translate: 0 0.375rem;
+    }
+}
+
+/* A bar that fills once, for a list that moves on by itself. */
+@keyframes fill-across {
+    from {
+        scale: 0 1;
+    }
+    to {
+        scale: 1 1;
+    }
+}
+
+/* Going to another page crossfades quickly instead of cutting. The old
+   page leaves faster than the new one arrives, so the two barely overlap. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 160ms;
+    animation-timing-function: cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+::view-transition-old(root) {
+    animation-duration: 90ms;
+}
+
+/* Owners who ask for less motion get none. */
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
+    }
+
+    *,
+    ::before,
+    ::after {
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/*
+  One screen changing layout (a tab, the chat on the whole screen)
+  crossfades like a page change, and the app slides to or from its side
+  so the owner sees where it went. The mark counts only while a morph
+  runs; see resources/js/lib/morph.ts.
+*/
+.morphing [data-morph='app'] {
+    view-transition-name: app;
+}
+
+::view-transition-group(app) {
+    animation-duration: var(--transition-duration-base);
+    animation-timing-function: var(--ease-snap);
+}
+
+/* Leaving is as quick as the old view fading, so the app never sits over
+   the chat; arriving can take its time. */
+::view-transition-old(app):only-child {
+    animation: morph-out-right 90ms var(--ease-settle) both;
+}
+
+::view-transition-new(app):only-child {
+    animation: morph-in-right var(--transition-duration-base) var(--ease-settle)
+        both;
+}
+
+@keyframes morph-out-right {
+    to {
+        opacity: 0;
+        translate: 1.5rem 0;
+    }
+}
+
+@keyframes morph-in-right {
+    from {
+        opacity: 0;
+        translate: 1.5rem 0;
     }
 }

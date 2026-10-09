@@ -1,0 +1,13 @@
+diff --git a/app/Actions/Teams/DeleteTeam.php b/app/Actions/Teams/DeleteTeam.php
+index 6a44fc6..293498e 100644
+--- a/app/Actions/Teams/DeleteTeam.php
++++ b/app/Actions/Teams/DeleteTeam.php
+@@ -26,7 +26,7 @@ class DeleteTeam
+ 
+             $workingMembers->each(function (User $member) {
+                 $fallbackTeam = $member->teams()
+-                    ->orderByDesc('personal_team')
++                    ->orderBy('personal_team')
+                     ->orderBy('teams.id')
+                     ->first();
+ 

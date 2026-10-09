@@ -42,6 +42,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // The owner's own tool, signed in through OAuth (Laravel Passport),
+        // as a connector in the Claude app, VS Code or Cursor.
+        'api' => [
+            'driver' => 'passport',
+            'provider' => 'users',
+        ],
     ],
 
     /*

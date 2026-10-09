@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\RunStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -26,6 +29,12 @@ class RunEvent extends Model
     public const UPDATED_AT = null;
 
     /**
+     * Why work goes back to be fixed: the checks failed, or the second look
+     * found something.
+     */
+    public const SENT_BACK = ['verification_failed', 'review_findings'];
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -46,5 +55,19 @@ class RunEvent extends Model
     public function run(): BelongsTo
     {
         return $this->belongsTo(Run::class);
+    }
+
+    /**
+     * Keep the moments work was sent back to be fixed: each is a problem
+     * caught before the owner saw the change.
+     *
+     * @param  Builder<RunEvent>  $query
+     */
+    #[Scope]
+    protected function sentBack(Builder $query): void
+    {
+        $query->where('type', 'status')
+            ->where('data->to', RunStatus::Implementing->value)
+            ->whereIn('data->reason', self::SENT_BACK);
     }
 }

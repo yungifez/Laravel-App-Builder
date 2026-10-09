@@ -1,0 +1,219 @@
+<?php
+
+namespace App\Actions\VisualEditing;
+
+use App\Models\Project;
+use App\Projects\ProjectRepository;
+use App\VisualEditing\FormattedRevisions;
+use App\VisualEditing\SourceLocation;
+use App\VisualEditing\TemplateElement;
+use App\VisualEditing\TemplateOrder;
+
+class FollowLocation
+{
+    /** The most commits to follow a part through, one at a time. */
+    protected const MAX_STEPS = 20;
+
+    public function __construct(
+        private ProjectRepository $repository,
+        private FormattedRevisions $formatted,
+    ) {}
+
+    /**
+     * Find where an element written at a place in one version of the app is
+     * in a later version. The running app stamps where it was built from;
+     * after a save, the newest version can be ahead of it while it
+     * rebuilds. Following the element through the lines that changed lets
+     * the owner keep editing in the meantime.
+     *
+     * Returns null when the element's own lines were rewritten in a way
+     * that cannot be followed, so nothing is edited by mistake.
+     */
+    public function handle(Project $project, string $from, string $to, SourceLocation $location): ?SourceLocation
+    {
+        return $this->follow($project, $from, $to, $location)
+            ?? $this->stepwise($project, $from, $to, $location);
+    }
+
+    /**
+     * Follow the element one commit at a time, when a part was both moved
+     * and changed since: within one commit it is only one of the two. This
+     * lets the owner move a part twice before the app is rebuilt.
+     */
+    protected function stepwise(Project $project, string $from, string $to, SourceLocation $location): ?SourceLocation
+    {
+        $commits = preg_split('/\s+/', trim($this->repository->git($project, ['rev-list', '--reverse', '--ancestry-path', "{$from}..{$to}"])->output()), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if ($commits === [] || count($commits) > self::MAX_STEPS || end($commits) !== $to) {
+            return null;
+        }
+
+        $current = $from;
+
+        foreach ($commits as $next) {
+            $location = $this->follow($project, $current, $next, $location);
+
+            if ($location === null) {
+                return null;
+            }
+
+            $current = $next;
+        }
+
+        return $location;
+    }
+
+    /**
+     * Follow the element from one version to another. An element none of
+     * whose lines changed keeps its place, shifted by the lines added or
+     * removed above it. One whose lines changed may have moved: a diff can
+     * line up two similar parts wrongly, so it is looked for by its whole
+     * text first, and followed through its lines only if that text is
+     * gone (something inside it changed).
+     */
+    protected function follow(Project $project, string $from, string $to, SourceLocation $location): ?SourceLocation
+    {
+        if ($from === $to) {
+            return $location;
+        }
+
+        $before = $this->repository->show($project, $from, $location->file);
+        $after = $this->repository->show($project, $to, $location->file);
+
+        if ($before === null || $after === null) {
+            return null;
+        }
+
+        if ($before === $after) {
+            return $location;
+        }
+
+        $element = TemplateElement::at($before, $location->line, $location->column);
+
+        if ($this->formatted->after($project, $from) === $to) {
+            return $element === null ? null : self::sameInOrder($before, $after, $element, $location);
+        }
+        $whole = $element === null ? null : collect(TemplateOrder::elements($before))->firstWhere('start', $element->start);
+
+        if ($element === null || $whole === null) {
+            return null;
+        }
+
+        $hunks = $this->hunks($project, $from, $to, $location->file);
+        [$last] = TemplateOrder::position($before, max($whole['start'], $whole['end'] - 1));
+
+        if (self::touched($hunks, $location->line, $last)) {
+            $text = substr($before, $whole['start'], $whole['end'] - $whole['start']);
+            $same = collect(TemplateOrder::elements($after))
+                ->filter(fn (array $candidate) => substr($after, $candidate['start'], $candidate['end'] - $candidate['start']) === $text);
+
+            if ($same->count() === 1) {
+                [$line, $column] = TemplateOrder::position($after, $same->first()['start']);
+
+                return new SourceLocation($location->file, $line, $column, $location->instance);
+            }
+
+            if ($same->count() > 1) {
+                return null;
+            }
+        }
+
+        $line = self::line($hunks, $location->line);
+        $followed = $line === null ? null : TemplateElement::at($after, $line, $location->column);
+
+        return $followed !== null && $followed->tag === $element->tag
+            ? new SourceLocation($location->file, (int) $line, $location->column, $location->instance)
+            : null;
+    }
+
+    /**
+     * Find the element in a formatted version of its file: formatting
+     * moves and rewrites lines, but keeps every element, in order.
+     */
+    protected static function sameInOrder(string $before, string $after, TemplateElement $element, SourceLocation $location): ?SourceLocation
+    {
+        $elements = TemplateOrder::elements($before);
+        $index = collect($elements)->search(fn (array $candidate) => $candidate['start'] === $element->start);
+        $formatted = TemplateOrder::elements($after);
+
+        if ($index === false || count($formatted) !== count($elements)) {
+            return null;
+        }
+
+        [$line, $column] = TemplateOrder::position($after, $formatted[$index]['start']);
+        $followed = TemplateElement::at($after, $line, $column);
+
+        return $followed !== null && $followed->tag === $element->tag
+            ? new SourceLocation($location->file, $line, $column, $location->instance)
+            : null;
+    }
+
+    /**
+     * Whether a diff's hunks changed any of the lines from first to last,
+     * or added lines between them.
+     *
+     * @param  list<array{int, int, int, int}>  $hunks
+     */
+    protected static function touched(array $hunks, int $first, int $last): bool
+    {
+        foreach ($hunks as [$oldStart, $oldCount]) {
+            $touched = $oldCount === 0
+                ? $oldStart >= $first && $oldStart < $last
+                : $oldStart <= $last && $oldStart + $oldCount - 1 >= $first;
+
+            if ($touched) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get where a line moved to through a diff's hunks, as [old start, old
+     * count, new start, new count]. A line inside a hunk that kept its line
+     * count (a line rewritten in place, such as new classes) keeps its
+     * place in the hunk; one inside a hunk that added or removed lines
+     * cannot be followed.
+     *
+     * @param  list<array{int, int, int, int}>  $hunks
+     */
+    public static function line(array $hunks, int $line): ?int
+    {
+        $shift = 0;
+
+        foreach ($hunks as [$oldStart, $oldCount, $newStart, $newCount]) {
+            // Lines only added go after "old start".
+            $first = $oldCount === 0 ? $oldStart + 1 : $oldStart;
+
+            if ($line < $first) {
+                break;
+            }
+
+            if ($line < $oldStart + $oldCount) {
+                return $oldCount === $newCount ? $newStart + ($line - $oldStart) : null;
+            }
+
+            $shift += $newCount - $oldCount;
+        }
+
+        return $line + $shift;
+    }
+
+    /**
+     * @return list<array{int, int, int, int}>
+     */
+    protected function hunks(Project $project, string $from, string $to, string $file): array
+    {
+        $diff = $this->repository->git($project, ['diff', '-U0', '--no-color', '--no-ext-diff', $from, $to, '--', $file])->output();
+
+        preg_match_all('/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/m', $diff, $matches, PREG_SET_ORDER);
+
+        return array_map(fn (array $match) => [
+            (int) $match[1],
+            $match[2] === '' ? 1 : (int) $match[2],
+            (int) $match[3],
+            ($match[4] ?? '') === '' ? 1 : (int) $match[4],
+        ], $matches);
+    }
+}

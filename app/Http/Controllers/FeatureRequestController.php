@@ -2,12 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\Features\RequestFeature;
+use App\Actions\Features\AskForChange;
+use App\Actions\Features\DescribeFeatureRequest;
+use App\Actions\Features\StoreRequestImages;
 use App\Http\Requests\FeatureRequestStoreRequest;
-use App\Http\Resources\FeatureRequestResource;
-use App\Http\Resources\PreviewResource;
-use App\Http\Resources\RunResource;
-use App\Http\Resources\VerificationResource;
 use App\Models\FeatureRequest;
 use App\Models\Project;
 use Illuminate\Http\RedirectResponse;
@@ -18,36 +16,29 @@ use Inertia\Response;
 class FeatureRequestController extends Controller
 {
     /**
-     * Request a feature for the project.
+     * Request a feature for the project, on top of the change the owner has
+     * not kept yet, if any.
      */
-    public function store(FeatureRequestStoreRequest $request, Project $project, RequestFeature $requestFeature): RedirectResponse
+    public function store(FeatureRequestStoreRequest $request, Project $project, AskForChange $askForChange, StoreRequestImages $storeRequestImages): RedirectResponse
     {
-        $featureRequest = $requestFeature->handle($project, $request->user(), $request->validated('prompt'));
+        $featureRequest = $askForChange->handle(
+            $project,
+            $request->user(),
+            $request->validated('prompt'),
+            $request->validated('selection'),
+            images: $storeRequestImages->handle($project, $request->file('images', [])),
+        );
 
-        return to_route('feature-requests.show', $featureRequest);
+        return to_route('projects.show', ['project' => $project, 'change' => $featureRequest->uuid]);
     }
 
     /**
      * Show a feature request: the generated change, its steps and follow-ups.
      */
-    public function show(FeatureRequest $featureRequest): Response
+    public function show(FeatureRequest $featureRequest, DescribeFeatureRequest $describeFeatureRequest): Response
     {
         Gate::authorize('view', $featureRequest->project);
 
-        return Inertia::render('feature-requests/Show', [
-            'project' => $featureRequest->project->only('id', 'name'),
-            'featureRequest' => $featureRequest->toResource(FeatureRequestResource::class),
-            'parent' => $featureRequest->parent?->only('id', 'prompt'),
-            'verification' => $featureRequest->verifications()->latest('id')->first()?->toResource(VerificationResource::class),
-            'run' => $featureRequest->latestRun?->toResource(RunResource::class),
-            'preview' => $featureRequest->previews()->latest('id')->first()?->toResource(PreviewResource::class),
-            'followUps' => $featureRequest->followUps()->latest()->get()
-                ->map(fn (FeatureRequest $followUp) => [
-                    'id' => $followUp->id,
-                    'prompt' => $followUp->prompt,
-                    'status' => $followUp->status->value,
-                    'target_step' => $followUp->target_step,
-                ]),
-        ]);
+        return Inertia::render('feature-requests/Show', $describeFeatureRequest->handle($featureRequest));
     }
 }

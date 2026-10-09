@@ -1,0 +1,9 @@
+{
+    "name": "builder-screen-check",
+    "private": true,
+    "description": "Opens pages of an app at phone, tablet and computer widths and prints one JSON line of what it measured.",
+    "type": "module",
+    "dependencies": {
+        "playwright-core": "1.63.0"
+    }
+}

@@ -10,6 +10,28 @@ use Illuminate\Support\Str;
  */
 final readonly class AgentOutcome
 {
+    /**
+     * The computer running the agent restarted or went away mid-task: no
+     * fault of the agent or the change.
+     */
+    public const RUNNER_LOST = 'runner_lost';
+
+    /**
+     * The gateway refused a call: the account used all the AI use its plan
+     * includes this month. No fault of the agent, and no other agent may
+     * take over.
+     */
+    public const USAGE_LIMIT = 'usage_limit';
+
+    /**
+     * The session a task cut off part way was to continue is gone, so the
+     * task did not start: its files still hold that session's edits.
+     */
+    public const SESSION_GONE = 'session_gone';
+
+    /**
+     * @param  list<array{kind: string, text?: string, file?: string}>  $story  What the agent did and said, in order
+     */
     public function __construct(
         public string $adapter,
         public string $provider,
@@ -22,15 +44,54 @@ final readonly class AgentOutcome
         public int $inputTokens = 0,
         public int $outputTokens = 0,
         public ?float $costUsd = null,
+        public array $story = [],
+        public int $cachedInputTokens = 0,
+        // The agent's session, which a repair pass can continue.
+        public ?string $session = null,
+        public bool $resumed = false,
     ) {}
 
     /**
-     * Read the runner's result line: the last line of its output that is a
-     * JSON object of type "result". A run that timed out or printed no result
-     * failed.
+     * Get this outcome as stopped by the account's monthly AI use, keeping
+     * what it spent.
      */
-    public static function fromRunnerOutput(string $adapter, string $provider, ?string $model, string $output, bool $timedOut): self
+    public function stoppedForUsage(): self
     {
+        return new self(
+            adapter: $this->adapter,
+            provider: $this->provider,
+            model: $this->model,
+            status: AgentOutcomeStatus::Failed,
+            summary: $this->summary,
+            errorKind: self::USAGE_LIMIT,
+            error: __('The gateway refused a call: the account used all the AI use its plan includes this month.'),
+            turns: $this->turns,
+            inputTokens: $this->inputTokens,
+            outputTokens: $this->outputTokens,
+            costUsd: $this->costUsd,
+            story: $this->story,
+            cachedInputTokens: $this->cachedInputTokens,
+            session: $this->session,
+            resumed: $this->resumed,
+        );
+    }
+
+    /**
+     * Read the runner's result line: the last line of its output that is a
+     * JSON object of type "result". A run that timed out, was lost with its
+     * runner, or printed no result failed. A lost run keeps the session it
+     * was working in, when it had named one, so it can be continued.
+     */
+    public static function fromRunnerOutput(string $adapter, string $provider, ?string $model, string $output, bool $timedOut, bool $lost, ?string $lostSession = null): self
+    {
+        if ($lost) {
+            return new self($adapter, $provider, $model, AgentOutcomeStatus::Failed,
+                errorKind: self::RUNNER_LOST,
+                error: __('The runner restarted or went away while the agent worked.'),
+                session: $lostSession,
+            );
+        }
+
         $result = null;
 
         foreach (array_reverse(explode("\n", trim($output))) as $line) {
@@ -62,7 +123,34 @@ final readonly class AgentOutcome
             inputTokens: (int) ($result['input_tokens'] ?? 0),
             outputTokens: (int) ($result['output_tokens'] ?? 0),
             costUsd: isset($result['cost_usd']) ? (float) $result['cost_usd'] : null,
+            story: self::story($result['story'] ?? []),
+            cachedInputTokens: (int) ($result['cached_input_tokens'] ?? 0),
+            session: is_string($result['session'] ?? null) && $result['session'] !== '' ? Str::limit($result['session'], 200, '') : null,
+            resumed: ($result['resumed'] ?? false) === true,
         );
+    }
+
+    /**
+     * Read the runner's story, keeping only entries of a known shape.
+     *
+     * @return list<array{kind: string, text?: string, file?: string}>
+     */
+    public static function story(mixed $story): array
+    {
+        $entries = [];
+
+        foreach (is_array($story) ? $story : [] as $entry) {
+            $kind = is_array($entry) ? ($entry['kind'] ?? null) : null;
+
+            $entries[] = match (true) {
+                in_array($kind, ['said', 'thinking'], true) && is_string($entry['text'] ?? null) => ['kind' => $kind, 'text' => Str::limit($entry['text'], 1000)],
+                in_array($kind, ['read', 'changed'], true) && is_string($entry['file'] ?? null) => ['kind' => $kind, 'file' => Str::limit($entry['file'], 500, '')],
+                $kind === 'testing' => ['kind' => 'testing'],
+                default => null,
+            };
+        }
+
+        return array_values(array_filter($entries));
     }
 
     /**
@@ -81,8 +169,11 @@ final readonly class AgentOutcome
             'error' => $this->error,
             'turns' => $this->turns,
             'input_tokens' => $this->inputTokens,
+            'cached_input_tokens' => $this->cachedInputTokens,
             'output_tokens' => $this->outputTokens,
             'cost_usd' => $this->costUsd,
+            'session' => $this->session,
+            'resumed' => $this->resumed,
         ];
     }
 }

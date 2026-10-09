@@ -1,0 +1,12 @@
+diff --git a/config/teams.php b/config/teams.php
+index 4ce5e83..9d152b0 100644
+--- a/config/teams.php
++++ b/config/teams.php
+@@ -26,7 +26,6 @@ return [
+         'admin' => [
+             'permissions' => [
+                 'team:update',
+-                'members:update-role',
+             ],
+         ],
+ 
