@@ -20,15 +20,20 @@ use Illuminate\Support\Str;
  * An address with more than one record is also sent with the person's own
  * records and someone else's last one: my project, your task.
  *
+ * A form that saves a record is also sent with someone else's record in
+ * a key that links it to its owner (a task's project_id), at an address
+ * of the person's own. It is a finding only when a saved row then points
+ * at their record: rows linked to it are counted before and after.
+ *
  * @phpstan-type Param array{name: string, model: string|null, field: string|null}
- * @phpstan-type Step array{relation: string, model: string}
+ * @phpstan-type Step array{relation: string, model: string, key: string|null}
  * @phpstan-type Owner array{path: list<Step>, end: string}
  * @phpstan-type Tenant array{relation: string, column: string|null, role: string|null}
  * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>}
- * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null}
- * @phpstan-type Sent array{status: int, invalid: bool, writes: int}
+ * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null}
+ * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null}
  * @phpstan-type Observed array{id: int, owners: bool, broke: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null}
- * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, status: int}
+ * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, status: int}
  * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
  */
 class SwapProbes
@@ -42,6 +47,11 @@ class SwapProbes
      * Only the last record in the address is someone else's.
      */
     public const LEAF = 'leaf';
+
+    /**
+     * Someone else's record is in a key of the form, not in the address.
+     */
+    public const FIELD = 'field';
 
     /**
      * How many links a record may be from its owner.
@@ -143,7 +153,7 @@ foreach ($models as $name => $class) {
 
         foreach ($relations($at, Illuminate\Database\Eloquent\Relations\BelongsTo::class) as $method => $relation) {
             $related = get_class($relation->getRelated());
-            $next = [...$path, ['relation' => $method, 'model' => class_basename($related)]];
+            $next = [...$path, ['relation' => $method, 'model' => class_basename($related), 'key' => $relation->getForeignKeyName()]];
 
             if ($related === $user || isset($tenants[class_basename($related)])) {
                 $owners[$name][] = ['path' => $next, 'end' => $related === $user ? 'user' : class_basename($related)];
@@ -170,7 +180,8 @@ foreach (app('router')->getRoutes() as $route) {
     } catch (Throwable) {
     }
 
-    if ($bound === []) {
+    // A form with no record in its address may still name one in a key.
+    if ($bound === [] && ($route->parameterNames() !== [] || ! in_array('POST', $route->methods(), true))) {
         continue;
     }
 
@@ -235,7 +246,7 @@ PHP;
                 $steps = array_values(array_filter($path, fn (mixed $step) => is_array($step) && $word($step['relation'] ?? null) && $word($step['model'] ?? null)));
 
                 if (count($steps) === count($path)) {
-                    $owners[(string) $name][] = ['path' => array_map(fn (array $step) => ['relation' => $step['relation'], 'model' => $step['model']], $steps), 'end' => $end];
+                    $owners[(string) $name][] = ['path' => array_map(fn (array $step) => ['relation' => $step['relation'], 'model' => $step['model'], 'key' => $word($step['key'] ?? null) ? $step['key'] : null], $steps), 'end' => $end];
                 }
             }
         }
@@ -287,10 +298,17 @@ PHP;
     public static function plan(array $found, array $controllers, array $tried, int $limit): array
     {
         $probes = [];
+        $fields = [];
         $skipped = 0;
 
         foreach ($found['routes'] as $route) {
-            if ($route['domain'] !== null || $route['controller'] === null || ! in_array($route['controller'], $controllers, true) || $route['params'] === []) {
+            if ($route['domain'] !== null || $route['controller'] === null || ! in_array($route['controller'], $controllers, true)) {
+                continue;
+            }
+
+            $fields = [...$fields, ...self::fields($route, $found)];
+
+            if ($route['params'] === []) {
                 continue;
             }
 
@@ -332,12 +350,60 @@ PHP;
                         continue;
                     }
 
-                    $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $leaf, 'payload' => $payload, 'mode' => $mode, 'ability' => $ability, 'team' => $team];
+                    $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $leaf, 'payload' => $payload, 'mode' => $mode, 'ability' => $ability, 'team' => $team, 'key' => null, 'target' => null];
                 }
             }
         }
 
-        return ['probes' => array_slice($probes, 0, $limit), 'skipped' => $skipped];
+        // After the addresses, so the limit keeps those first.
+        return ['probes' => array_slice([...$probes, ...$fields], 0, $limit), 'skipped' => $skipped];
+    }
+
+    /**
+     * Plan the form swaps of one route: for each method that saves a
+     * record, each key that links that record to its owner. The address
+     * holds the person's own records, so each of its records must be found
+     * on the saved one's links.
+     *
+     * @param  array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>}  $route
+     * @param  Found  $found
+     * @return list<Probe>
+     */
+    protected static function fields(array $route, array $found): array
+    {
+        $probes = [];
+        $leaf = $route['params'] === [] ? null : $route['params'][count($route['params']) - 1]['model'];
+
+        foreach (array_intersect($route['methods'], ['POST', 'PUT', 'PATCH']) as $method) {
+            $saved = $method === 'POST' ? self::posting($route['uri'], array_keys($found['owners']))[2] : $leaf;
+            $owners = $saved === null ? [] : ($found['owners'][$saved] ?? []);
+            $reached = [$saved, ...array_merge([], ...array_map(fn (array $owner) => [...array_column($owner['path'], 'model'), $owner['end'] === 'user' ? $found['user'] : $owner['end']], $owners))];
+
+            if ($saved === null || $saved === $found['user'] || array_filter($route['params'], fn (array $param) => ! in_array($param['model'], $reached, true)) !== []) {
+                continue;
+            }
+
+            /** @var list<array{name: string, model: string, field: string|null}> $params */
+            $params = $route['params'];
+            $keys = [];
+
+            foreach ($owners as $owner) {
+                $step = $owner['path'][0] ?? null;
+
+                if ($step === null || $step['key'] === null || isset($keys[$step['key']])) {
+                    continue;
+                }
+
+                // A key to the user model saves the record in a person's
+                // name; any other moves it to a record whose owner is the
+                // person or team at the end of the key's links.
+                $keys[$step['key']] = true;
+                $action = $step['model'] === $found['user'] ? 'assign' : ($method === 'POST' ? 'create' : 'update');
+                $probes[] = ['method' => $method, 'uri' => $route['uri'], 'action' => $action, 'params' => $params, 'leaf' => $saved, 'payload' => $saved, 'mode' => self::FIELD, 'ability' => null, 'team' => $owner['end'] === 'user' ? null : $owner['end'], 'key' => $step['key'], 'target' => $step['model']];
+            }
+        }
+
+        return $probes;
     }
 
     /**
@@ -370,7 +436,7 @@ PHP;
 
         foreach ($probes as $id => $probe) {
             $methods[] = sprintf(
-                "    public function test_swap_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s);\n    }",
+                "    public function test_swap_probe_%d(): void\n    {\n        \$this->probe(%d, %s, %s, %s, %s, %s, %s, %s, %s);\n    }",
                 $id,
                 $id,
                 var_export($probe['method'], true),
@@ -379,6 +445,8 @@ PHP;
                 var_export($probe['payload'], true),
                 var_export($probe['mode'], true),
                 var_export($probe['ability'], true),
+                var_export($probe['key'], true),
+                var_export($probe['target'], true),
             );
         }
 
@@ -427,10 +495,10 @@ __METHODS__
      *
      * @param  list<array{name: string, model: string, field: string|null}>  $params
      */
-    private function probe(int $id, string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability): void
+    private function probe(int $id, string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability, ?string $key, ?string $target): void
     {
         try {
-            $seen = $this->exchange($method, $uri, $params, $payload, $mode, $ability);
+            $seen = $this->exchange($method, $uri, $params, $payload, $mode, $ability, $key, $target);
         } catch (Throwable) {
             $seen = ['broke' => true];
         }
@@ -442,15 +510,17 @@ __METHODS__
 
     /**
      * Make two people with records of their own, then send as the first:
-     * with their own records, and with the second's.
+     * with their own records, and with the second's. A form swap keeps the
+     * address the first person's, puts the record in the key, and counts
+     * the saved rows that point at it.
      *
      * @param  list<array{name: string, model: string, field: string|null}>  $params
      * @return array<string, mixed>
      */
-    private function exchange(string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability): array
+    private function exchange(string $method, string $uri, array $params, ?string $payload, string $mode, ?string $ability, ?string $key, ?string $target): array
     {
         $this->listen();
-        $leaf = $params[count($params) - 1]['model'];
+        $leaf = $key === null ? $params[count($params) - 1]['model'] : (string) $payload;
         [$mine, $me] = $this->world($leaf);
         [$theirs, $them] = $this->world($leaf);
 
@@ -469,14 +539,31 @@ __METHODS__
             }, array_filter($raw, fn (mixed $value, string $key) => ! str_ends_with($key, '_id') && ! $value instanceof Model, ARRAY_FILTER_USE_BOTH));
         }
 
-        $sent = function (string $url) use ($method, $body): array {
+        $linked = fn (?Model $to) => $to === null ? null : ('App\\Models\\'.$payload)::query()->where((string) $key, $to->getKey())->count();
+        $sent = function (string $url, ?Model $to = null) use ($method, $body, $key, $linked): array {
             $this->writes = 0;
-            $response = $this->call($method, $url, $body);
-            $seen = ['status' => $response->getStatusCode(), 'invalid' => $response->getStatusCode() === 422 || session()->has('errors'), 'writes' => $this->writes];
+            $before = $linked($to);
+            $response = $this->call($method, $url, $to === null ? $body : [...$body, (string) $key => $to->getKey()]);
+            $seen = ['status' => $response->getStatusCode(), 'invalid' => $response->getStatusCode() === 422 || session()->has('errors'), 'writes' => $this->writes, 'landed' => $to === null ? null : $linked($to) - $before];
             $this->flushSession();
 
             return $seen;
         };
+
+        if ($key !== null) {
+            $own = fn (int $index) => $mine;
+
+            if (! isset($mine[$target], $theirs[$target])) {
+                return ['owners' => false];
+            }
+
+            $this->actingAs($me);
+            $control = $sent($this->address($uri, $params, $own), $mine[$target]);
+            $this->actingAs($me);
+            $swap = $sent($this->address($uri, $params, $own), $theirs[$target]);
+
+            return ['owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => null, 'policy' => null];
+        }
 
         $last = count($params) - 1;
         $this->actingAs($me);
@@ -616,7 +703,7 @@ PHP, [
     {
         $observed = [];
         $sent = fn (mixed $value) => is_array($value) && is_int($value['status'] ?? null)
-            ? ['status' => $value['status'], 'invalid' => ($value['invalid'] ?? false) === true, 'writes' => is_int($value['writes'] ?? null) ? $value['writes'] : 0]
+            ? ['status' => $value['status'], 'invalid' => ($value['invalid'] ?? false) === true, 'writes' => is_int($value['writes'] ?? null) ? $value['writes'] : 0, 'landed' => is_int($value['landed'] ?? null) ? $value['landed'] : null]
             : null;
 
         foreach (preg_split('/\R/', trim($report)) ?: [] as $line) {
@@ -683,7 +770,9 @@ PHP, [
                 continue;
             }
 
-            if ($worked($swap)) {
+            // A form swap worked only when a saved row now points at
+            // their record; an app that keeps its own key wrote, too.
+            if ($probe['mode'] === self::FIELD ? $swap['status'] < 400 && ! $swap['invalid'] && ($swap['landed'] ?? 0) > 0 : $worked($swap)) {
                 $findings[] = [...$probe, 'status' => $swap['status']];
             } else {
                 $refused++;
@@ -704,6 +793,12 @@ PHP, [
         $lines = [];
 
         foreach ($measured['findings'] as $finding) {
+            if ($finding['mode'] === self::FIELD) {
+                $lines[] = self::field($finding);
+
+                continue;
+            }
+
             $noun = AccessProbes::words($finding['leaf']);
             $whose = match ($finding['team']) {
                 null => "another person's {$noun}",
@@ -728,7 +823,7 @@ PHP, [
             $lines[] = "A signed-in person {$did}: {$finding['method']} {$finding['uri']} answered {$finding['status']}. Make this route check the {$finding['leaf']} policy, or find the {$noun} through what the person may reach.";
         }
 
-        $lines[] = "Tried {$measured['tried']} requests with someone else's records in the address; {$measured['refused']} ".($measured['refused'] === 1 ? 'was' : 'were').' refused, as they should be.';
+        $lines[] = "Tried {$measured['tried']} requests with someone else's records in the address or a form; {$measured['refused']} ".($measured['refused'] === 1 ? 'was' : 'were').' refused, as they should be.';
 
         if ($measured['shared'] > 0) {
             $lines[] = "{$measured['shared']} ".($measured['shared'] === 1 ? 'is' : 'are').' shared on purpose: the app\'s own policy allows it, or anyone can open the page.';
@@ -743,5 +838,31 @@ PHP, [
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Say what a form swap that worked let the person do.
+     *
+     * @param  Finding  $finding
+     */
+    protected static function field(array $finding): string
+    {
+        $noun = AccessProbes::words((string) $finding['payload']);
+        $target = (string) $finding['target'];
+        $words = AccessProbes::words($target);
+        $sent = "{$finding['method']} {$finding['uri']} saved one with {$finding['key']} set to";
+
+        if ($finding['action'] === 'assign') {
+            return "A signed-in person could save a {$noun} in another person's name: {$sent} them. Set {$finding['key']} from the signed-in person, not from the form.";
+        }
+
+        $whose = match ($finding['team']) {
+            null => "another person's {$words}",
+            $target => "a {$words} they are not in",
+            default => "a {$words} of another ".AccessProbes::words($finding['team']),
+        };
+        $verb = $finding['action'] === 'create' ? "put a {$noun} in" : "move a {$noun} into";
+
+        return "A signed-in person could {$verb} {$whose}: {$sent} it. Check that the {$words} the form names is one the person may reach, for example with the {$target} policy or an exists rule limited to what they may reach.";
     }
 }

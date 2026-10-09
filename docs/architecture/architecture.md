@@ -4619,6 +4619,16 @@ already tries with one record is not tried again. On a copy of the
 fixture with four planted holes, all four were found, and its own team
 routes and a route that checks its policy were refused.
 
+A form can also name a record. Each create or update form on those routes
+is also sent with the other person's record in a key that links the saved
+record to its owner (a task's `project_id`), at an address of the person's
+own. A POST with no record in the address, such as `/tasks`, is included.
+The swap counts only when a saved row then points at their record: the
+rows linked to it are counted before and after. A form whose app takes the
+key from the address, or ignores it, writes but is refused. A key to the
+user model saves a record in another person's name. These sends come after
+the address swaps, within the same limit.
+
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
 the like), its own tests run again with the clock stopped. A PHPUnit extension,

@@ -21,10 +21,10 @@ class SwapProbesTest extends TestCase
             'user' => 'User',
             'routes' => $routes,
             'owners' => [
-                'Project' => [['path' => [['relation' => 'team', 'model' => 'Team']], 'end' => 'Team']],
-                'Task' => [['path' => [['relation' => 'project', 'model' => 'Project'], ['relation' => 'team', 'model' => 'Team']], 'end' => 'Team']],
+                'Project' => [['path' => [['relation' => 'team', 'model' => 'Team', 'key' => 'team_id']], 'end' => 'Team']],
+                'Task' => [['path' => [['relation' => 'project', 'model' => 'Project', 'key' => 'project_id'], ['relation' => 'team', 'model' => 'Team', 'key' => 'team_id']], 'end' => 'Team']],
                 'Team' => [['path' => [], 'end' => 'Team']],
-                'Note' => [['path' => [['relation' => 'user', 'model' => 'User']], 'end' => 'user']],
+                'Note' => [['path' => [['relation' => 'user', 'model' => 'User', 'key' => 'user_id']], 'end' => 'user']],
                 'User' => [['path' => [], 'end' => 'user']],
             ],
             'tenants' => ['Team' => ['relation' => 'members', 'column' => 'role', 'role' => 'owner']],
@@ -64,7 +64,11 @@ class SwapProbesTest extends TestCase
             'POST /projects/{project}/tasks all create Task',
             'PUT /projects/{project}/tasks/{task} all update Task',
             'PUT /projects/{project}/tasks/{task} leaf update Task',
+            // The form keys come last: the task's project, sent as another team's.
+            'POST /projects/{project}/tasks field create Task',
+            'PUT /projects/{project}/tasks/{task} field update Task',
         ], $probes);
+        $this->assertSame(['project_id', 'Project'], [$plan['probes'][5]['key'], $plan['probes'][5]['target']]);
         $this->assertSame([0, 'Team'], [$plan['skipped'], $plan['probes'][0]['team']]);
     }
 
@@ -166,7 +170,8 @@ class SwapProbesTest extends TestCase
             json_encode(['id' => 3, 'owners' => true, 'control' => $sent(302, 1), 'swap' => $sent(500, 1)]),
         ])));
 
-        $this->assertSame([0, 4, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
+        // The fifth is the form key of the PATCH, which never reported.
+        $this->assertSame([0, 5, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
     }
 
     public function test_a_change_that_wrote_nothing_still_judges_a_refusal_but_not_a_swap_that_went_through(): void
@@ -188,7 +193,68 @@ class SwapProbesTest extends TestCase
             json_encode(['id' => 2, 'owners' => true, 'control' => $sent(302, 0, true), 'swap' => $sent(404), 'guest' => null, 'policy' => false]),
         ])));
 
-        $this->assertSame([1, 1, 2, []], [$measured['tried'], $measured['refused'], $measured['untried'], $measured['findings']]);
+        // The third untried is the PATCH's form key, which never reported.
+        $this->assertSame([1, 1, 3, []], [$measured['tried'], $measured['refused'], $measured['untried'], $measured['findings']]);
+    }
+
+    public function test_a_form_that_saved_a_row_pointing_at_someone_elses_record_is_a_finding_and_one_that_kept_its_own_key_is_not(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            // No record in the address: only the form can name one.
+            $this->route(['POST'], '/tasks', []),
+            $this->route(['PATCH'], '/projects/{project}', [['project', 'Project']], 'update'),
+            $this->route(['POST'], '/notes', [], 'store'),
+            $this->route(['POST'], '/projects/{project}/tasks', [['project', 'Project']], 'store'),
+        ]));
+        $probes = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::FIELD));
+        $sent = fn (int $status, int $writes = 1, ?int $landed = null) => compact('status', 'writes', 'landed') + ['invalid' => false];
+        $line = fn (int $id, array $control, array $swap) => json_encode(['id' => $id, 'owners' => true, 'control' => $control, 'swap' => $swap, 'guest' => null, 'policy' => null]);
+
+        $this->assertSame([
+            'POST /tasks create project_id',
+            'PATCH /projects/{project} update team_id',
+            'POST /notes assign user_id',
+            'POST /projects/{project}/tasks create project_id',
+        ], array_map(fn (array $probe) => "{$probe['method']} {$probe['uri']} {$probe['action']} {$probe['key']}", $probes));
+
+        $measured = SwapProbes::measure($probes, SwapProbes::parse(implode("\n", [
+            // Saved a task in another team's project.
+            $line(0, $sent(302, 1, 1), $sent(302, 1, 1)),
+            // Moved a project into a team the person is not in.
+            $line(1, $sent(302, 1, 0), $sent(302, 1, 1)),
+            // Saved a note in another person's name.
+            $line(2, $sent(201, 1, 1), $sent(201, 1, 1)),
+            // Wrote, but the task went to the project in the address: refused.
+            $line(3, $sent(302, 1, 1), $sent(302, 1, 0)),
+        ])));
+
+        $this->assertSame([4, 1, 0], [$measured['tried'], $measured['refused'], $measured['untried']]);
+        $said = SwapProbes::describe($measured, 0);
+        $this->assertStringContainsString('A signed-in person could put a task in a project of another team: POST /tasks saved one with project_id set to it. Check that the project the form names is one the person may reach', $said);
+        $this->assertStringContainsString('could move a project into a team they are not in: PATCH /projects/{project} saved one with team_id set to it.', $said);
+        $this->assertStringContainsString('could save a note in another person\'s name: POST /notes saved one with user_id set to them. Set user_id from the signed-in person, not from the form.', $said);
+    }
+
+    public function test_a_form_swap_proves_nothing_when_the_persons_own_send_wrote_nothing_or_was_turned_down(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['POST'], '/tasks', []),
+            $this->route(['POST'], '/notes', [], 'store'),
+            // A form for a record nobody owns, or one that only does something, names no key.
+            $this->route(['POST'], '/tags', [], 'store'),
+            $this->route(['POST'], '/projects/{project}/archive', [['project', 'Project']], 'archive'),
+        ]));
+        $probes = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'];
+        $fields = array_values(array_filter($probes, fn (array $probe) => $probe['mode'] === SwapProbes::FIELD));
+        $sent = fn (int $status, int $writes, ?int $landed, bool $invalid = false) => compact('status', 'writes', 'landed', 'invalid');
+
+        $measured = SwapProbes::measure($fields, SwapProbes::parse(implode("\n", [
+            json_encode(['id' => 0, 'owners' => true, 'control' => $sent(302, 0, 0), 'swap' => $sent(302, 1, 1)]),
+            json_encode(['id' => 1, 'owners' => true, 'control' => $sent(302, 0, 0, true), 'swap' => $sent(302, 1, 1)]),
+        ])));
+
+        $this->assertSame(['POST /tasks', 'POST /notes'], array_map(fn (array $probe) => "{$probe['method']} {$probe['uri']}", $fields));
+        $this->assertSame([0, 2, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
     }
 
     public function test_the_test_makes_each_persons_records_with_the_apps_factories(): void
@@ -202,7 +268,7 @@ class SwapProbesTest extends TestCase
 
         $this->assertStringContainsString('class SwapProbeTest extends TestCase', $test);
         $this->assertStringContainsString("\$this->probe(1, 'GET', '/projects/{project}/tasks/{task}',", $test);
-        $this->assertStringContainsString("'Task' => array ( 0 => array ( 'path' => array ( 0 => array ( 'relation' => 'project', 'model' => 'Project', ), 1 => array ( 'relation' => 'team', 'model' => 'Team', ), ), 'end' => 'Team', ), ),", $test);
+        $this->assertStringContainsString("'Task' => array ( 0 => array ( 'path' => array ( 0 => array ( 'relation' => 'project', 'model' => 'Project', 'key' => 'project_id', ), 1 => array ( 'relation' => 'team', 'model' => 'Team', 'key' => 'team_id', ), ), 'end' => 'Team', ), ),", $test);
         $this->assertStringNotContainsString("'Note' =>", $test, 'only the owners of records the swaps use');
         $this->assertStringContainsString("base_path('storage/logs/access/swaps.jsonl')", $test);
         $this->assertStringNotContainsString('__', str_replace(['__construct', '__invoke'], '', $test), 'every placeholder is filled');
