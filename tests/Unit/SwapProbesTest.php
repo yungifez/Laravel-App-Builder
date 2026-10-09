@@ -410,4 +410,76 @@ class SwapProbesTest extends TestCase
 
         $this->assertSame([0, 2, []], [$measured['tried'], $measured['untried'], $measured['findings']]);
     }
+
+    public function test_each_list_whose_records_have_a_link_to_their_owner_is_opened_with_many(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            [...$this->route(['GET'], '/projects', [], 'index'), 'loads' => ['$projects = Project::all();', "bad\x01line"]],
+            $this->route(['GET'], '/teams/{team}/projects', [['team', 'Team']], 'index'),
+            $this->route(['GET'], '/projects/{project}/tasks', [['project', 'Project']], 'index'),
+            // A list of people or of teams has no link of its own to an owner,
+            // a list in another person's notes is not on the way to the
+            // team, and an address that ends in a record is not a list.
+            $this->route(['GET'], '/users', [], 'index'),
+            $this->route(['GET'], '/teams', [], 'index'),
+            $this->route(['GET'], '/notes/{note}/projects', [['note', 'Note']], 'index'),
+            $this->route(['GET'], '/projects/{project}', [['project', 'Project']]),
+        ]));
+        $lists = array_values(array_filter(SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'], fn (array $probe) => $probe['mode'] === SwapProbes::LIST));
+
+        $this->assertSame(['$projects = Project::all();'], $found['routes'][0]['loads'], 'a line that is not plain text is not read');
+        $this->assertSame([
+            'GET /projects Project team_id Team',
+            'GET /teams/{team}/projects Project team_id Team',
+            'GET /projects/{project}/tasks Task project_id Team',
+        ], array_map(fn (array $probe) => "{$probe['method']} {$probe['uri']} {$probe['leaf']} {$probe['key']} {$probe['team']}", $lists));
+        $test = SwapProbes::test($lists, $found, 'swaps.jsonl', 25);
+        $this->assertStringContainsString('private const ROWS = 25;', $test);
+        $this->assertStringContainsString("\$this->probe(0, 'GET', '/projects', array ( ), 'Project', 'list', NULL, 'team_id', NULL, array ( ));", $test);
+        $this->assertStringContainsString("'X-Inertia' => 'true'", $test, 'Inertia props are read as well as JSON');
+    }
+
+    public function test_a_list_that_sent_every_record_is_the_changes_only_when_it_added_the_line_that_loads_it(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            [...$this->route(['GET'], '/projects', [], 'index'), 'loads' => ['$projects = Project::all();']],
+            [...$this->route(['GET'], '/teams/{team}/projects', [['team', 'Team']], 'index'), 'loads' => ['return $team->projects;']],
+            $this->route(['GET'], '/projects/{project}/tasks', [['project', 'Project']], 'index'),
+        ]));
+        $probes = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'];
+        $line = fn (int $id, int $shown) => json_encode(['id' => $id, 'owners' => true, 'control' => ['status' => 200, 'invalid' => false, 'writes' => 0], 'rows' => 60, 'shown' => $shown]);
+        $ids = array_keys(array_filter($probes, fn (array $probe) => $probe['mode'] === SwapProbes::LIST));
+
+        $lists = SwapProbes::measureLists($probes, SwapProbes::parse(implode("\n", [$line($ids[0], 60), $line($ids[1], 60), $line($ids[2], 15)])), $found, [
+            'app/Http/Controllers/ProjectController.php' => ['new' => false, 'lines' => ['        $projects = Project::all();']],
+        ]);
+
+        $this->assertSame(3, $lists['tried']);
+        $this->assertSame([['/projects', false], ['/teams/{team}/projects', true]], array_map(fn (array $finding) => [$finding['probe']['uri'], $finding['existing']], $lists['findings']));
+        $described = SwapProbes::describeLists($lists);
+        $this->assertStringContainsString('GET /projects sent all 60 projects at once ($projects = Project::all();), so the page gets slower with each one. Show a page at a time: paginate() or cursorPaginate() in its query, with links to the next page.', $described);
+        $this->assertStringContainsString('Note, not a failure: GET /teams/{team}/projects sent all 60 projects at once (return $team->projects;), as it did before this change.', $described);
+        $this->assertSame([0, 0], [SwapProbes::measure($probes, [])['tried'], SwapProbes::measure($probes, [])['untried'] - (count($probes) - count($ids))], 'the swaps do not count the lists');
+    }
+
+    public function test_a_list_that_broke_is_a_note_and_one_that_did_not_open_or_could_not_be_read_proves_nothing(): void
+    {
+        $found = (array) SwapProbes::found($this->printed([
+            $this->route(['GET'], '/projects', [], 'index'),
+        ]));
+        $probe = SwapProbes::plan($found, [self::CONTROLLER], [], 30)['probes'][0];
+        $line = fn (int $id, int $status, ?int $shown, int $rows = 60) => json_encode(['id' => $id, 'owners' => true, 'control' => ['status' => $status, 'invalid' => false, 'writes' => 0], 'rows' => $rows, 'shown' => $shown, 'exception' => $status >= 500 ? 'QueryException' : null]);
+
+        $lists = SwapProbes::measureLists([$probe, $probe, $probe, $probe, $probe], SwapProbes::parse(implode("\n", [
+            $line(0, 500, null),
+            // Sent to sign in, a Blade page, too few records made, or no records at all.
+            $line(1, 302, null),
+            $line(2, 200, null),
+            $line(3, 200, 1, 1),
+            json_encode(['id' => 4, 'owners' => false]),
+        ])), $found, []);
+
+        $this->assertSame([0, 4, []], [$lists['tried'], $lists['untried'], $lists['findings']]);
+        $this->assertSame('Note, not a failure: GET /projects broke with 60 projects (QueryException); it answered 500.', SwapProbes::describeLists($lists));
+    }
 }

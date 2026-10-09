@@ -66,6 +66,7 @@ class AccessProbeVerificationTest extends TestCase
                 'swaps' => [
                     'enabled' => true,
                     'limit' => 30,
+                    'rows' => 60,
                     'bindings' => 'bindings.php',
                     'test' => 'tests/Feature/SwapProbeTest.php',
                     'command' => self::SWAP,
@@ -416,6 +417,82 @@ class AccessProbeVerificationTest extends TestCase
         app(RequestVerification::class)->handle($change);
 
         $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Who may see and change records'));
+        $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+    }
+
+    /**
+     * A change to the projects controller, whose list loads every project
+     * of the person's team; the change added that line or another one.
+     */
+    protected function listChange(string $added): FeatureRequest
+    {
+        $load = '$projects = Project::where(\'team_id\', $request->user()->current_team_id)->get();';
+        $this->bindings = "Booting.\n".json_encode([
+            'user' => 'User',
+            'routes' => [
+                ['methods' => ['GET'], 'uri' => '/projects', 'name' => 'projects.index', 'domain' => null, 'controller' => 'App\Http\Controllers\ProjectController', 'action' => 'index', 'params' => [], 'loads' => [$load]],
+            ],
+            'owners' => ['Project' => [['path' => [['relation' => 'team', 'model' => 'Team', 'key' => 'team_id']], 'end' => 'Team']]],
+            'tenants' => ['Team' => ['relation' => 'members', 'column' => 'role', 'role' => 'owner']],
+        ]);
+
+        return FeatureRequest::factory()->generated()->create(['patch' => implode("\n", [
+            'diff --git a/app/Http/Controllers/ProjectController.php b/app/Http/Controllers/ProjectController.php',
+            '--- a/app/Http/Controllers/ProjectController.php',
+            '+++ b/app/Http/Controllers/ProjectController.php',
+            '@@ -1 +1,2 @@',
+            ' <?php',
+            '+        '.($added === 'load' ? $load : '// Projects'),
+            '',
+        ])]);
+    }
+
+    public function test_a_list_the_change_loads_whole_fails_the_checks_and_says_how(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"rows":60,"shown":60}'];
+        $this->answer([]);
+        $change = $this->listChange('load');
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Long lists show a page at a time');
+        $this->assertSame('failed', $result['outcome']);
+        $this->assertStringContainsString('GET /projects sent all 60 projects at once ($projects = Project::where(\'team_id\', $request->user()->current_team_id)->get();), so the page gets slower with each one. Show a page at a time: paginate()', $result['output']);
+        $this->assertSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+        $this->assertStringContainsString('private const ROWS = 60;', (string) collect($this->driver->files)->first(fn (string $content, string $path) => str_ends_with($path, ':tests/Feature/SwapProbeTest.php')));
+    }
+
+    public function test_a_list_that_was_whole_before_the_change_or_shows_a_page_at_a_time_passes(): void
+    {
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"rows":60,"shown":60}'];
+        $this->answer([]);
+        $change = $this->listChange('other');
+
+        app(RequestVerification::class)->handle($change);
+
+        $result = collect($change->verifications()->sole()->results)->firstWhere('name', 'Long lists show a page at a time');
+        $this->assertSame('passed', $result['outcome']);
+        $this->assertStringStartsWith('Note, not a failure: GET /projects sent all 60 projects at once', $result['output']);
+        $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
+
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"rows":60,"shown":15}'];
+        $paged = $this->listChange('load');
+
+        app(RequestVerification::class)->handle($paged);
+
+        $this->assertSame('Opened 1 lists with many records each; each showed a page at a time.', collect($paged->verifications()->sole()->results)->firstWhere('name', 'Long lists show a page at a time')['output']);
+    }
+
+    public function test_a_list_that_could_not_be_read_adds_no_check(): void
+    {
+        // A Blade page, not JSON or Inertia props.
+        $this->swaps = ['{"id":0,"owners":true,"control":{"status":200,"invalid":false,"writes":0},"rows":60,"shown":null}'];
+        $this->answer([]);
+        $change = $this->listChange('load');
+
+        app(RequestVerification::class)->handle($change);
+
+        $this->assertNull(collect($change->verifications()->sole()->results)->firstWhere('name', 'Long lists show a page at a time'));
         $this->assertNotSame(VerificationStatus::Failed, $change->verifications()->sole()->status);
     }
 }

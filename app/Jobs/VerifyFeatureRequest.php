@@ -1525,7 +1525,7 @@ class VerifyFeatureRequest implements ShouldQueue
      */
     protected function probeAccess(WorkspaceDriver $driver, RunWorkspaceCommand $runWorkspaceCommand, Workspace $workspace, FeatureRequest $featureRequest): bool
     {
-        /** @var array{enabled: bool, probes: int, test: string, models: string, routes: array{command: list<string>, report: string}, command: list<string>, timeout: int, report: string, swaps: array{enabled: bool, limit: int, bindings: string, test: string, command: list<string>, report: string}} $config */
+        /** @var array{enabled: bool, probes: int, test: string, models: string, routes: array{command: list<string>, report: string}, command: list<string>, timeout: int, report: string, swaps: array{enabled: bool, limit: int, rows: int, bindings: string, test: string, command: list<string>, report: string}} $config */
         $config = config('builder.verification.access');
 
         if (! $config['enabled']) {
@@ -1619,9 +1619,10 @@ class VerifyFeatureRequest implements ShouldQueue
             }
 
             $swapped = ['tried' => 0, 'refused' => 0, 'shared' => 0, 'findings' => [], 'untried' => 0];
+            $lists = ['tried' => 0, 'findings' => [], 'broke' => [], 'untried' => 0];
 
             if ($swaps['probes'] !== [] && $found !== null) {
-                $driver->writeFile((string) $workspace->driver_id, $config['swaps']['test'], SwapProbes::test($swaps['probes'], $found, $config['swaps']['report']));
+                $driver->writeFile((string) $workspace->driver_id, $config['swaps']['test'], SwapProbes::test($swaps['probes'], $found, $config['swaps']['report'], $config['swaps']['rows']));
                 $command = $runWorkspaceCommand->handle($workspace, [...$config['swaps']['command'], $config['swaps']['test']], $config['timeout']);
                 $runWorkspaceCommand->handle($workspace, ['rm', '-f', $config['swaps']['test']], 30);
 
@@ -1630,11 +1631,20 @@ class VerifyFeatureRequest implements ShouldQueue
                 }
 
                 $durationMs += (int) $command->duration_ms;
-                $swapped = SwapProbes::measure($swaps['probes'], SwapProbes::parse($read($config['swaps']['report'])));
+                $observed = SwapProbes::parse($read($config['swaps']['report']));
+                $swapped = SwapProbes::measure($swaps['probes'], $observed);
+                $lists = SwapProbes::measureLists($swaps['probes'], $observed, $found, InputProbes::changed(array_map(fn (FeatureRequest $request) => $request->patch, $featureRequest->lineage())));
+            }
+
+            // Only lists the change loaded whole stop it.
+            $listed = array_filter($lists['findings'], fn (array $finding) => ! $finding['existing']) === [];
+
+            if ($lists['tried'] > 0 || $lists['broke'] !== []) {
+                $this->addResult(__('Long lists show a page at a time'), 'checks', $listed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, output: SwapProbes::describeLists($lists));
             }
 
             if ($measured['tried'] === 0 && $swapped['tried'] === 0) {
-                return true;
+                return $listed;
             }
 
             // Which rules of earlier kept changes this change broke, for the
@@ -1651,7 +1661,7 @@ class VerifyFeatureRequest implements ShouldQueue
             ]));
             $this->addResult(__('Who may see and change records'), 'checks', $passed ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, durationMs: $durationMs, output: $output);
 
-            return $passed;
+            return $passed && $listed;
         } catch (CommandLost $exception) {
             throw $exception;
         } catch (Throwable $exception) {

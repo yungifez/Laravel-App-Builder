@@ -4705,6 +4705,20 @@ a copy of the fixture whose tasks link to a project with no cascade, removing
 a project was found; a team removal that refused while it had projects was
 not.
 
+A list page on those controllers is opened with 60 of the person's own records
+(`BUILDER_LIST_PROBE_ROWS`), all linked to the same owner as the first. A list
+is a GET whose address ends in a model's name, such as `projects` or
+`teams/{team}/projects`. Inertia apps are asked for the page's props. The
+records' route keys are counted in the JSON or in the props. When all of them
+come back, the list has no pages, and it gets slower with each record. It
+fails the check "Long lists show a page at a time" only when a line of the
+list's action that loads it (`->get()`, `::all()`, or the relation of the
+list's name loaded whole) is a line the change added. A list that was like this
+before is a note. A list that broke with many records is a note too. A page
+that is not JSON or Inertia cannot be read, so it proves nothing. On a copy of
+the fixture, a JSON list and an Inertia list that loaded every row were found,
+and a list with `paginate(15)` was not.
+
 **Dates at the edges (the time engine of direction 32).** When the change adds
 app code that works with dates (`now()`, Carbon, `addMonth()`, `endOfDay()` and
 the like), its own tests run again with the clock stopped. A PHPUnit extension,

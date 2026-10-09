@@ -41,16 +41,24 @@ use Illuminate\Support\Str;
  * links, and links the database does not enforce prove nothing, so
  * neither is tried.
  *
+ * A list page is opened with many records of the person's own, all linked
+ * to the same owner. When every one of them comes back, in the JSON or in
+ * the page's Inertia props, the list has no pages: it gets slower with
+ * each record. It stops the change only when the lines that load the list
+ * are lines the change added; a list that was like this already is a note.
+ *
  * @phpstan-type Param array{name: string, model: string|null, field: string|null}
  * @phpstan-type Step array{relation: string, model: string, key: string|null}
  * @phpstan-type Owner array{path: list<Step>, end: string}
  * @phpstan-type Tenant array{relation: string, column: string|null, role: string|null}
- * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
+ * @phpstan-type Found array{user: string, routes: list<array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>}>, owners: array<string, list<Owner>>, tenants: array<string, Tenant>, children: array<string, list<Step>>}
  * @phpstan-type Probe array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>}
  * @phpstan-type Sent array{status: int, invalid: bool, writes: int, landed: int|null, raised: list<string>}
- * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null}
+ * @phpstan-type Observed array{id: int, owners: bool, broke: bool, none: bool, control: Sent|null, swap: Sent|null, guest: int|null, policy: bool|null, children: list<string>, exception: string|null, rows: int|null, shown: int|null}
  * @phpstan-type Finding array{method: string, uri: string, action: string, params: list<array{name: string, model: string, field: string|null}>, leaf: string, payload: string|null, mode: string, ability: string|null, team: string|null, key: string|null, target: string|null, named: list<string>, status: int, raised: list<string>, children: list<string>, exception: string|null}
  * @phpstan-type Measured array{tried: int, refused: int, shared: int, findings: list<Finding>, untried: int}
+ * @phpstan-type Listed array{probe: Probe, rows: int, status: int, line: string|null, existing: bool}
+ * @phpstan-type Lists array{tried: int, findings: list<Listed>, broke: list<Listed>, untried: int}
  */
 class SwapProbes
 {
@@ -78,6 +86,11 @@ class SwapProbes
      * The person's own record, removed while other records hang off it.
      */
     public const CHILDREN = 'children';
+
+    /**
+     * A list page, opened with many of the person's own records.
+     */
+    public const LIST = 'list';
 
     /**
      * The fields that give a person more than the form offers: rights, a
@@ -191,7 +204,7 @@ foreach ($models as $name => $class) {
 
             if ($related === $user || isset($tenants[class_basename($related)])) {
                 $owners[$name][] = ['path' => $next, 'end' => $related === $user ? 'user' : class_basename($related)];
-            } elseif (count($next) < $depth && ! in_array(class_basename($related), array_column($next, 'model'), true) && $related !== $class) {
+            } elseif (count($next) < $depth && ! in_array(class_basename($related), array_column($path, 'model'), true) && $related !== $class) {
                 $queue[] = [$related, $next];
             }
         }
@@ -214,20 +227,26 @@ foreach (app('router')->getRoutes() as $route) {
     } catch (Throwable) {
     }
 
+    // A list of a model, as projects or teams/{team}/projects is.
+    $last = Illuminate\Support\Str::afterLast(rtrim($route->uri(), '/'), '/');
+    $lists = in_array('GET', $route->methods(), true) && ! str_starts_with($last, '{') && isset($models[Illuminate\Support\Str::studly(Illuminate\Support\Str::singular($last))]);
+
     // A form with no record in its address may still name one in a key,
     // or save the person's own account.
-    if ($bound === [] && ($route->parameterNames() !== [] || array_intersect(['POST', 'PUT', 'PATCH'], $route->methods()) === [])) {
+    if ($bound === [] && ! $lists && ($route->parameterNames() !== [] || array_intersect(['POST', 'PUT', 'PATCH'], $route->methods()) === [])) {
         continue;
     }
 
     // The extra fields the route's code names, in its action or its form
     // request: those the form asks for.
     $source = '';
+    $body = '';
 
     try {
         if ($route->getControllerClass() !== null) {
             $action = new ReflectionMethod($route->getControllerClass(), $route->getActionMethod() === $route->getControllerClass() ? '__invoke' : $route->getActionMethod());
             $source = implode('', array_slice(file((string) $action->getFileName()) ?: [], $action->getStartLine() - 1, $action->getEndLine() - $action->getStartLine() + 1));
+            $body = $source;
 
             foreach ($action->getParameters() as $parameter) {
                 $type = $parameter->getType();
@@ -247,6 +266,16 @@ foreach (app('router')->getRoutes() as $route) {
 
     $named = array_values(array_filter($raised, fn (string $field) => preg_match('/[\'"]'.$field.'[\'".]/', $source) === 1));
 
+    // The lines of a list's action that load every row: get(), all(), or
+    // the relation of that name loaded whole.
+    $loads = [];
+
+    foreach ($lists ? preg_split('/\R/', $body) ?: [] : [] as $text) {
+        if (count($loads) < 5 && strlen(trim($text)) <= 200 && preg_match('/->get\(\s*[\[)]|::all\(\s*\)|->'.preg_quote(Illuminate\Support\Str::camel($last), '/').'\b(?!\s*\()/', $text) === 1) {
+            $loads[] = trim($text);
+        }
+    }
+
     $params = [];
 
     foreach ($route->parameterNames() as $param) {
@@ -263,6 +292,7 @@ foreach (app('router')->getRoutes() as $route) {
         'action' => $route->getActionMethod(),
         'params' => $params,
         'named' => $named,
+        'loads' => $loads,
     ];
 }
 
@@ -354,6 +384,7 @@ PHP;
                 'action' => is_string($route['action'] ?? null) ? $route['action'] : null,
                 'params' => $params,
                 'named' => array_values(array_intersect(self::RAISED, is_array($route['named'] ?? null) ? $route['named'] : [])),
+                'loads' => array_values(array_filter(is_array($route['loads'] ?? null) ? $route['loads'] : [], fn (mixed $line) => is_string($line) && strlen($line) <= 200 && preg_match('/[\x00-\x1f]/', $line) !== 1)),
             ];
         }
 
@@ -389,6 +420,7 @@ PHP;
         $fields = [];
         $raises = [];
         $removals = [];
+        $lists = [];
         $skipped = 0;
 
         foreach ($found['routes'] as $route) {
@@ -398,6 +430,7 @@ PHP;
 
             $fields = [...$fields, ...self::fields($route, $found)];
             $raises = [...$raises, ...self::raises($route, $found)];
+            $lists = [...$lists, ...self::lists($route, $found)];
 
             if ($route['params'] === []) {
                 continue;
@@ -451,7 +484,7 @@ PHP;
         }
 
         // After the addresses, so the limit keeps those first.
-        return ['probes' => array_slice([...$probes, ...$fields, ...$raises, ...$removals], 0, $limit), 'skipped' => $skipped];
+        return ['probes' => array_slice([...$probes, ...$fields, ...$raises, ...$lists, ...$removals], 0, $limit), 'skipped' => $skipped];
     }
 
     /**
@@ -534,6 +567,39 @@ PHP;
     }
 
     /**
+     * Plan the list of one route: a GET whose address ends in a model's
+     * name, as projects or teams/{team}/projects does. Its records must
+     * reach their owner through a link of their own, so many can be made
+     * for one owner, and each record in the address must be on that way.
+     *
+     * @param  array{methods: list<string>, uri: string, name: string|null, domain: string|null, controller: string|null, action: string|null, params: list<Param>, named: list<string>, loads: list<string>}  $route
+     * @param  Found  $found
+     * @return list<Probe>
+     */
+    protected static function lists(array $route, array $found): array
+    {
+        $last = Str::afterLast(rtrim($route['uri'], '/'), '/');
+        $leaf = Str::studly(Str::singular($last));
+        $owner = $found['owners'][$leaf][0] ?? null;
+        $step = $owner['path'][0] ?? null;
+
+        if (! in_array('GET', $route['methods'], true) || str_starts_with($last, '{') || $leaf === $found['user'] || $owner === null || $step === null || $step['key'] === null) {
+            return [];
+        }
+
+        $reached = [...array_column($owner['path'], 'model'), $owner['end'] === 'user' ? $found['user'] : $owner['end']];
+
+        if (array_filter($route['params'], fn (array $param) => ! in_array($param['model'], $reached, true)) !== []) {
+            return [];
+        }
+
+        /** @var list<array{name: string, model: string, field: string|null}> $params */
+        $params = $route['params'];
+
+        return [['method' => 'GET', 'uri' => $route['uri'], 'action' => 'list', 'params' => $params, 'leaf' => $leaf, 'payload' => $leaf, 'mode' => self::LIST, 'ability' => null, 'team' => $owner['end'] === 'user' ? null : $owner['end'], 'key' => $step['key'], 'target' => null, 'named' => []]];
+    }
+
+    /**
      * What a POST to a record's address does: adds the record named after
      * it (projects/{project}/tasks adds a task), or does something to the
      * record itself (orders/{order}/refund). No policy ability is known
@@ -557,7 +623,7 @@ PHP;
      * @param  list<Probe>  $probes
      * @param  Found  $found
      */
-    public static function test(array $probes, array $found, string $report): string
+    public static function test(array $probes, array $found, string $report, int $rows = 60): string
     {
         $methods = [];
 
@@ -619,6 +685,11 @@ class SwapProbeTest extends TestCase
      */
     private const CHILDREN = __CHILDREN__;
 
+    /**
+     * How many records each list is opened with.
+     */
+    private const ROWS = __ROWS__;
+
     private int $writes = 0;
 
     private bool $listening = false;
@@ -638,6 +709,7 @@ __METHODS__
             $seen = match ($mode) {
                 'raise' => $this->raise($method, $uri, $params, (string) $payload, $named),
                 'children' => $this->removal($method, $uri, $params),
+                'list' => $this->listing($uri, $params, (string) $payload, (string) $key),
                 default => $this->exchange($method, $uri, $params, $payload, $mode, $ability, $key, $target),
             };
         } catch (Throwable) {
@@ -850,6 +922,55 @@ __METHODS__
     }
 
     /**
+     * Open a list with many records of the person's own, all linked to
+     * the same owner as the first, and count how many of them came back:
+     * as JSON, or as the page's Inertia props. A page that is not either
+     * cannot be read.
+     *
+     * @param  list<array{name: string, model: string, field: string|null}>  $params
+     * @return array<string, mixed>
+     */
+    private function listing(string $uri, array $params, string $leaf, string $key): array
+    {
+        [$records, $me] = $this->world($leaf);
+
+        if ($me === null) {
+            return ['owners' => false];
+        }
+
+        $first = $records[$leaf];
+        $class = get_class($first);
+        $class::factory()->count(self::ROWS - 1)->create([$key => $first->getAttribute($key)]);
+        $mine = $class::query()->where($key, $first->getAttribute($key))->get()->map(fn (Model $record) => (string) $record->getRouteKey())->all();
+        $field = $first->getRouteKeyName();
+        $url = $this->address($uri, $params, fn (int $index) => $records);
+        $inertia = class_exists(\Inertia\Inertia::class);
+
+        $this->actingAs($me);
+        $response = $this->get($url, $inertia ? ['X-Inertia' => 'true', 'X-Inertia-Version' => (string) \Inertia\Inertia::getVersion()] : []);
+
+        // The first send tells the assets' version; the second sends it.
+        if ($inertia && $response->getStatusCode() === 409) {
+            $response = $this->get($url, ['X-Inertia' => 'true', 'X-Inertia-Version' => (string) \Inertia\Inertia::getVersion()]);
+        }
+
+        $data = json_decode((string) $response->getContent(), true);
+        $shown = [];
+        $walk = function (mixed $value) use (&$walk, &$shown, $field): void {
+            foreach (is_array($value) ? $value : [] as $name => $item) {
+                if ($name === $field && (is_int($item) || is_string($item))) {
+                    $shown[(string) $item] = true;
+                }
+
+                $walk($item);
+            }
+        };
+        $walk($data);
+
+        return ['owners' => true, 'control' => ['status' => $response->getStatusCode(), 'invalid' => false, 'writes' => 0, 'landed' => null, 'raised' => []], 'rows' => count($mine), 'shown' => is_array($data) ? count(array_intersect($mine, array_keys($shown))) : null, 'exception' => $response->exception === null ? null : class_basename($response->exception)];
+    }
+
+    /**
      * A valid form for a record, from the app's factory: no keys, no
      * records, and none of the extra fields.
      *
@@ -966,6 +1087,7 @@ PHP, [
             '__TENANTS__' => self::export($found['tenants']),
             '__USER__' => var_export($found['user'], true),
             '__RAISED__' => self::export(self::RAISED),
+            '__ROWS__' => (string) max(2, $rows),
             '__CHILDREN__' => self::export(array_intersect_key($found['children'], array_flip($removed))),
             '__METHODS__' => implode("\n\n", $methods),
             '__REPORT__' => var_export($report, true),
@@ -1007,6 +1129,8 @@ PHP, [
                     'policy' => is_bool($data['policy'] ?? null) ? $data['policy'] : null,
                     'children' => array_values(array_filter(is_array($data['children'] ?? null) ? $data['children'] : [], fn (mixed $name) => is_string($name) && preg_match('/^\w+$/', $name) === 1)),
                     'exception' => is_string($data['exception'] ?? null) && preg_match('/^\w+$/', $data['exception']) === 1 ? $data['exception'] : null,
+                    'rows' => is_int($data['rows'] ?? null) ? $data['rows'] : null,
+                    'shown' => is_int($data['shown'] ?? null) ? $data['shown'] : null,
                 ];
             }
         }
@@ -1036,8 +1160,8 @@ PHP, [
         foreach ($probes as $id => $probe) {
             $seen = $observed[$id] ?? null;
 
-            // No extra field to send: nothing was tried.
-            if ($seen !== null && $seen['none']) {
+            // No extra field to send: nothing was tried. Lists are judged apart.
+            if (($seen !== null && $seen['none']) || $probe['mode'] === self::LIST) {
                 continue;
             }
             $control = $seen['control'] ?? null;
@@ -1084,6 +1208,92 @@ PHP, [
         }
 
         return ['tried' => $refused + count($findings), 'refused' => $refused, 'shared' => $shared, 'findings' => $findings, 'untried' => $untried];
+    }
+
+    /**
+     * Judge each list. All of the person's records came back at once: the
+     * list has no pages. It is the change's when a line of the list's
+     * action that loads it is a line the change added to that controller;
+     * a list that was like this before is only a note. A list that broke
+     * with many records is a note too, as a page that broke with one is
+     * not told apart from it.
+     *
+     * @param  list<Probe>  $probes
+     * @param  array<int, Observed>  $observed
+     * @param  Found  $found
+     * @param  array<string, array{new: bool, lines: list<string>}>  $changed  Lines the change added, by path
+     * @return Lists
+     */
+    public static function measureLists(array $probes, array $observed, array $found, array $changed): array
+    {
+        $lists = ['tried' => 0, 'findings' => [], 'broke' => [], 'untried' => 0];
+
+        foreach ($probes as $id => $probe) {
+            if ($probe['mode'] !== self::LIST) {
+                continue;
+            }
+
+            $seen = $observed[$id] ?? null;
+            $status = $seen['control']['status'] ?? null;
+            $rows = $seen['rows'] ?? null;
+
+            if ($seen !== null && $status !== null && $status >= 500 && $rows !== null) {
+                $lists['broke'][] = ['probe' => $probe, 'rows' => $rows, 'status' => $status, 'line' => $seen['exception'], 'existing' => true];
+
+                continue;
+            }
+
+            if ($seen === null || $status !== 200 || $rows === null || $rows < 2 || $seen['shown'] === null) {
+                $lists['untried']++;
+
+                continue;
+            }
+
+            $lists['tried']++;
+
+            if ($seen['shown'] < $rows) {
+                continue;
+            }
+
+            $route = collect($found['routes'])->first(fn (array $route) => $route['uri'] === $probe['uri'] && in_array('GET', $route['methods'], true));
+            $controller = $route['controller'] ?? null;
+            $path = is_string($controller) && str_starts_with($controller, 'App\\') ? 'app/'.str_replace('\\', '/', substr($controller, 4)).'.php' : null;
+            $added = array_map(trim(...), $path === null ? [] : ($changed[$path]['lines'] ?? []));
+            $line = collect($route['loads'] ?? [])->first(fn (string $load) => in_array($load, $added, true));
+
+            $lists['findings'][] = ['probe' => $probe, 'rows' => $rows, 'status' => $status, 'line' => $line ?? ($route['loads'][0] ?? null), 'existing' => $line === null];
+        }
+
+        return $lists;
+    }
+
+    /**
+     * Say what the lists showed, for the agent that repairs the change.
+     *
+     * @param  Lists  $lists
+     */
+    public static function describeLists(array $lists): string
+    {
+        $lines = [];
+
+        foreach ($lists['findings'] as $finding) {
+            $noun = Str::plural(AccessProbes::words($finding['probe']['leaf']));
+            $at = $finding['line'] === null ? '' : " ({$finding['line']})";
+            $sent = "{$finding['probe']['method']} {$finding['probe']['uri']} sent all {$finding['rows']} {$noun} at once{$at}";
+
+            $lines[] = $finding['existing']
+                ? "Note, not a failure: {$sent}, as it did before this change. It gets slower with each one."
+                : "{$sent}, so the page gets slower with each one. Show a page at a time: paginate() or cursorPaginate() in its query, with links to the next page.";
+        }
+
+        foreach ($lists['broke'] as $broke) {
+            $noun = Str::plural(AccessProbes::words($broke['probe']['leaf']));
+            $exception = $broke['line'] === null ? '' : " ({$broke['line']})";
+
+            $lines[] = "Note, not a failure: {$broke['probe']['method']} {$broke['probe']['uri']} broke with {$broke['rows']} {$noun}{$exception}; it answered {$broke['status']}.";
+        }
+
+        return $lines === [] ? "Opened {$lists['tried']} lists with many records each; each showed a page at a time." : implode("\n", $lines);
     }
 
     /**

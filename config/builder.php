@@ -1182,10 +1182,13 @@ return [
             // is written and run to read the routes that bind models and
             // whose each model is; "swaps" sends each route of a controller
             // the change touched with the person's own records, then with
-            // another person's. At most "limit" are tried.
+            // another person's. At most "limit" are tried. Each list on
+            // those controllers is opened with "rows" of the person's own
+            // records; all of them coming back means it has no pages.
             'swaps' => [
                 'enabled' => (bool) env('BUILDER_SWAP_PROBES', true),
                 'limit' => (int) env('BUILDER_SWAP_PROBE_LIMIT', 30),
+                'rows' => (int) env('BUILDER_LIST_PROBE_ROWS', 60),
                 'bindings' => 'storage/logs/access/bindings.php',
                 'test' => 'tests/Feature/SwapProbeTest.php',
                 'command' => ['sh', '-c', 'rm -f storage/logs/access/swaps.jsonl && { php artisan test "$1" > storage/logs/access/swaps.log 2>&1 || true; }', 'sh'],
