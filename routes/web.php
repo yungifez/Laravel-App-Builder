@@ -9,6 +9,7 @@ use App\Features\NewMessages;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\QueuedWork;
+use App\Http\Controllers\CacheFixController;
 use App\Http\Controllers\ChangelogController;
 use App\Http\Controllers\CheckFixController;
 use App\Http\Controllers\ClearedProblemController;
@@ -166,6 +167,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('projects/{project}/name', [ProjectNameController::class, 'update'])->name('projects.name.update');
     Route::put('projects/{project}/compatibility', [ProjectCompatibilityController::class, 'update'])->name('projects.compatibility.update');
     Route::put('projects/{project}/careful-areas', [ProjectCarefulAreaController::class, 'update'])->name('projects.careful-areas.update');
+    Route::post('feature-requests/{featureRequest}/cache-fixes', [CacheFixController::class, 'store'])->name('feature-requests.cache-fixes.store');
     Route::put('feature-requests/{featureRequest}/finding-proposals/{kind}', [FeatureRequestFindingProposalController::class, 'update'])->where('kind', '[a-z_]+')->name('feature-requests.finding-proposals.update');
     Route::post('projects/{project}/services/{service}', [ProjectServiceController::class, 'store'])->whereIn('service', array_keys(config('builder.services', [])))->name('projects.services.store');
     Route::post('projects/{project}/share', [ProjectShareController::class, 'store'])->name('projects.share.store');

@@ -70,7 +70,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->roles($verification), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('saved values'), $this->narrowed($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('going online'), $this->caches($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->roles($verification), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('saved values'), $this->narrowed($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('going online'), $this->caches($featureRequest, $verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -671,7 +671,7 @@ class DescribeProof
      *
      * @return list<array{kind: string, text: string}>
      */
-    protected function caches(Verification $verification): array
+    protected function caches(FeatureRequest $featureRequest, Verification $verification): array
     {
         $result = collect($verification->results ?? [])->firstWhere('name', ProductionCaches::CHECK);
         $old = ($result['at_start'] ?? null) === 'failed';
@@ -680,8 +680,9 @@ class DescribeProof
             $result === null => [],
             $result['outcome'] === 'passed' => [['kind' => 'passed', 'text' => __('Your app can still go online with this change.')]],
             $result['outcome'] !== 'failed' => [],
-            $old && ($result['new_problems'] ?? []) === [] => [['kind' => 'gap', 'text' => __('Your app could not go online before this change either: :why. Ask me to fix it.', ['why' => ProductionCaches::meaning(explode("\n", trim((string) $result['output'])))])]],
-            default => [['kind' => 'gap', 'text' => __('Your app would not go online with this change: :why.', ['why' => ProductionCaches::meaning($old ? $result['new_problems'] : explode("\n", trim((string) $result['output'])))])]],
+            // Not the change's fault, so its fix is an ask of its own.
+            ProductionCaches::failedBefore($result) => [['kind' => 'gap', 'text' => __('Your app could not go online before this change either: :why.', ['why' => ProductionCaches::meaning(explode("\n", trim((string) $result['output'])))]), 'fix' => ['change' => $featureRequest->uuid]]],
+            default => [['kind' => 'gap', 'text' => __('Your app would not go online with this change: :why.', ['why' => ProductionCaches::meaning($old ? ($result['new_problems'] ?? []) : explode("\n", trim((string) $result['output'])))])]],
         };
     }
 

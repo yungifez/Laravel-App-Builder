@@ -12,6 +12,7 @@ import {
 } from '@lucide/vue';
 import { router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import CacheFixController from '@/actions/App/Http/Controllers/CacheFixController';
 import FeatureRequestAcceptedFindingController from '@/actions/App/Http/Controllers/FeatureRequestAcceptedFindingController';
 import FeatureRequestFindingProposalController from '@/actions/App/Http/Controllers/FeatureRequestFindingProposalController';
 import type { ProofLine } from '@/types';
@@ -35,7 +36,9 @@ const expanded = computed(() => props.open || opened.value);
 // caught, how far the tests reached) always shows last.
 const gaps = computed(() => props.proof.filter((line) => line.kind === 'gap'));
 const gapsShown = computed(() =>
-    expanded.value ? gaps.value : gaps.value.filter((line) => line.decision),
+    expanded.value
+        ? gaps.value
+        : gaps.value.filter((line) => line.decision || line.fix),
 );
 const passes = computed(() => {
     const passed = props.proof.filter((line) => line.kind === 'passed');
@@ -97,6 +100,17 @@ function answer(
             onFinish: () => (deciding.value = null),
         },
     );
+}
+
+// A problem from before the change is fixed as its own ask, which opens
+// once made; a second tap opens the same one.
+const fixing = ref(false);
+
+function fix(change: string): void {
+    fixing.value = true;
+    router.visit(CacheFixController.store(change), {
+        onFinish: () => (fixing.value = false),
+    });
 }
 
 // What the folded passes checked, so the fold says it ("such as safety,
@@ -263,6 +277,16 @@ const icons = {
                         @click="decide(line.decision)"
                     >
                         I want it this way
+                    </button>
+                    <button
+                        v-if="line.fix"
+                        type="button"
+                        class="mt-0.5 flex min-h-11 items-center font-medium text-foreground underline-offset-2 select-none hover:underline disabled:opacity-50 sm:min-h-6"
+                        :disabled="fixing"
+                        data-test="change-proof-fix"
+                        @click="fix(line.fix.change)"
+                    >
+                        Fix it
                     </button>
                 </div>
             </li>

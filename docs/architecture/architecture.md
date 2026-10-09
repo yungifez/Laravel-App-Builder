@@ -1937,6 +1937,9 @@ finding (`AcceptFindings`). Each is on by default and has its own switch.
   that fails, and only problems the change adds go back. The owner reads, for
   example, "Your app would not go online with this change: two pages share a
   name."
+  When the app could not go online before the change either, the line has
+  "Fix it". It asks for the fix as its own change on the app as it is, with
+  what the check printed for the builder, and a second tap opens the same one.
 
 **Scope by risk, never by diff size.** "Small" is a property of meaning: a
 three-line authorization change is riskier than a 200-line isolated component.

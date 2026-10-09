@@ -75,6 +75,17 @@ class ProductionCaches
     }
 
     /**
+     * Determine if the check failed on the app as it was before the change,
+     * and the change added no problem of its own.
+     *
+     * @param  array<string, mixed>|null  $result
+     */
+    public static function failedBefore(?array $result): bool
+    {
+        return ($result['outcome'] ?? null) === 'failed' && ($result['at_start'] ?? null) === 'failed' && ($result['new_problems'] ?? []) === [];
+    }
+
+    /**
      * Say in the owner's words what stops the app going online, from the
      * lines the script printed: each kind once, in the order found.
      *

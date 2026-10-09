@@ -547,7 +547,7 @@ class ChangeProofTest extends TestCase
         $this->assertSame([['gap', 'Your app would not go online with this change: two pages share a name.']], $said(['outcome' => 'failed', 'exit_code' => 1, 'output' => $dupe]));
         // Broken before too: only what the change added is the change's.
         $this->assertSame([['gap', 'Your app would not go online with this change: two pages share a name.']], $said(['outcome' => 'failed', 'exit_code' => 1, 'output' => "{$setting}\n{$dupe}", 'at_start' => 'failed', 'new_problems' => [$dupe]]));
-        $this->assertSame([['gap', 'Your app could not go online before this change either: one of its settings cannot be prepared ahead of time. Ask me to fix it.']], $said(['outcome' => 'failed', 'exit_code' => 1, 'output' => $setting, 'at_start' => 'failed', 'new_problems' => []]));
+        $this->assertSame([['gap', 'Your app could not go online before this change either: one of its settings cannot be prepared ahead of time.']], $said(['outcome' => 'failed', 'exit_code' => 1, 'output' => $setting, 'at_start' => 'failed', 'new_problems' => []]));
         $this->assertSame([], $said(['outcome' => 'not_applicable']));
     }
 
