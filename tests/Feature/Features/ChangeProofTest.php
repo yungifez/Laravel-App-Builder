@@ -13,6 +13,7 @@ use App\Features\NarrowedFormats;
 use App\Features\NewMessages;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
+use App\Features\ProductionCaches;
 use App\Features\QueuedWork;
 use App\Models\FeatureRequest;
 use App\Models\Run;
@@ -527,6 +528,27 @@ class ChangeProofTest extends TestCase
         $this->assertSame([['passed', 'The code follows Laravel\'s usual structure, and it uses no PHP functions known to be unsafe.']], $said(['outcome' => 'passed']));
         $this->assertSame([['gap', 'Your app broke Laravel\'s structure rules before this change, and the change adds no problem ahead of those. I see only the first problem of each kind, so a new one behind them stays hidden until they are fixed. Ask me to fix them.']], $said(['outcome' => 'failed', 'at_start' => 'failed', 'new_problems' => []]));
         $this->assertSame([['gap', 'I did not check the code against Laravel\'s structure rules. Your app\'s tests do not use a version of Pest that has them.']], $said(['outcome' => 'not_applicable']));
+    }
+
+    public function test_whether_the_app_can_still_go_online_is_said_in_the_owners_words()
+    {
+        $said = function (array $result) {
+            $request = FeatureRequest::factory()->generated()->create();
+            Verification::factory()->for($request)->create(['status' => VerificationStatus::Passed, 'results' => [
+                ['name' => ProductionCaches::CHECK, 'stage' => 'checks', 'exit_code' => 0, 'timed_out' => false, 'duration_ms' => 5, 'output' => '', ...$result],
+            ]]);
+
+            return collect(app(DescribeProof::class)->handle($request))->filter(fn (array $line) => str_contains($line['text'], 'go online'))->map(fn (array $line) => [$line['kind'], $line['text']])->values()->all();
+        };
+        $dupe = 'route: Unable to prepare route [b] for serialization. Another route has already been assigned name [home].';
+        $setting = 'config: Your configuration files could not be serialized because the value at "app.f" is non-serializable.';
+
+        $this->assertSame([['passed', 'Your app can still go online with this change.']], $said(['outcome' => 'passed']));
+        $this->assertSame([['gap', 'Your app would not go online with this change: two pages share a name.']], $said(['outcome' => 'failed', 'exit_code' => 1, 'output' => $dupe]));
+        // Broken before too: only what the change added is the change's.
+        $this->assertSame([['gap', 'Your app would not go online with this change: two pages share a name.']], $said(['outcome' => 'failed', 'exit_code' => 1, 'output' => "{$setting}\n{$dupe}", 'at_start' => 'failed', 'new_problems' => [$dupe]]));
+        $this->assertSame([['gap', 'Your app could not go online before this change either: one of its settings cannot be prepared ahead of time. Ask me to fix it.']], $said(['outcome' => 'failed', 'exit_code' => 1, 'output' => $setting, 'at_start' => 'failed', 'new_problems' => []]));
+        $this->assertSame([], $said(['outcome' => 'not_applicable']));
     }
 
     public function test_new_emails_and_text_messages_are_said_until_the_owner_approves_them()

@@ -47,6 +47,7 @@ class DescribeFeatureRequest
         'PHP formatting' => 'Checking the code is tidy',
         'Frontend format and lint' => 'Checking the screens\' code is tidy',
         'TypeScript' => 'Reading the screens\' code for mistakes',
+        'Production caches' => 'Checking your app can go online',
     ];
 
     public function __construct(

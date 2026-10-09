@@ -3,6 +3,7 @@
 use App\Enums\Consequence;
 use App\Features\ArchPresets;
 use App\Features\CodeShortcuts;
+use App\Features\ProductionCaches;
 use App\Runs\Tools\ApplyPatch;
 use App\Runs\Tools\ListFiles;
 use App\Runs\Tools\ReadFile;
@@ -1303,6 +1304,10 @@ return [
             // architecture presets (§12). Before Pest 3 there are none, so
             // the check does not apply. It prints the first problem of each.
             ['name' => ArchPresets::CHECK, 'command' => ['sh', '-c', ArchPresets::script()], 'timeout' => 300, 'needs' => ArchPresets::NEEDS],
+            // Whether a host can still prepare the app for going online
+            // (§12): Laravel's caches, cleared again after, so the checks
+            // that follow read the live files.
+            ['name' => ProductionCaches::CHECK, 'command' => ['sh', '-c', ProductionCaches::script()], 'timeout' => 300, 'needs' => ProductionCaches::NEEDS],
             ['name' => 'PHP formatting', 'command' => ['vendor/bin/pint', '--test'], 'timeout' => 300, 'files' => ['php'], 'light_repair' => true, 'needs' => 'vendor/bin/pint'],
             ['name' => 'Frontend format and lint', 'command' => ['npx', 'vp', 'check', '--no-error-on-unmatched-pattern'], 'timeout' => 300, 'files' => ['ts', 'vue', 'js', 'mjs', 'css', 'json', 'md'], 'needs' => 'node_modules/.bin/vp'],
             ['name' => 'TypeScript', 'command' => ['npm', 'run', 'types:check'], 'timeout' => 300, 'needs' => 'tsconfig.json'],

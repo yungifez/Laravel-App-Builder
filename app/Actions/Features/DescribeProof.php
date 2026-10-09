@@ -24,6 +24,7 @@ use App\Features\NewTests;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
+use App\Features\ProductionCaches;
 use App\Features\QueuedWork;
 use App\Features\RoleProbes;
 use App\Features\ScreenCheck;
@@ -69,7 +70,7 @@ class DescribeProof
             return [];
         }
 
-        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->roles($verification), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('saved values'), $this->narrowed($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
+        $lines = [...$this->checks($verification, $featureRequest), ...$this->caught($featureRequest), ...$this->added($featureRequest, $verification), ...$this->about(__('safety'), $this->safety($featureRequest)), ...$this->about(__('sign-in'), $this->access($featureRequest, $verification)), ...$this->roles($verification), ...$this->about(__('stored information'), $this->stored($featureRequest, $verification)), ...$this->about(__('saved values'), $this->narrowed($featureRequest, $verification)), ...$this->about(__('background work'), $this->queued($featureRequest, $verification)), ...$this->about(__('whose records'), $this->owners($featureRequest, $verification)), ...$this->about(__('packages'), $this->packages($featureRequest, $verification)), ...$this->about(__('messages'), $this->messages($featureRequest, $verification)), ...$this->about(__('structure'), $this->structure($verification)), ...$this->about(__('going online'), $this->caches($verification)), ...$this->about(__('speed'), $this->shortcuts($featureRequest, $verification)), ...$this->drift($featureRequest, $verification), ...$this->about(__('your colours'), $this->colours($featureRequest)), ...$this->about(__('pictures'), $this->pictures($featureRequest)), ...$this->about(__('phones and tablets'), $this->screens($featureRequest, $verification)), ...$this->code($verification), ...$this->about(__('what it saves'), $this->watched($verification)), ...$this->about(__('when it saves'), $this->steady($featureRequest, $verification)), ...$this->about(__('what goes wrong'), $this->failed($featureRequest, $verification)), ...$this->reach($featureRequest->latestRun, $verification), ...$this->corrected($featureRequest->latestRun), ...$this->approach($featureRequest->latestRun), ...$this->guidance($featureRequest), ...$this->rules($featureRequest)];
 
         // Two measurements can find the same gap; it is said once.
         return $this->asked($featureRequest, array_values(collect($lines)->unique('text')->all()));
@@ -178,7 +179,7 @@ class DescribeProof
                 $separate = true;
             } elseif ($result['stage'] === 'checks' && isset($result['tests'])) {
                 $tests += count(array_filter($result['tests'], fn (array $test) => $test['outcome'] === 'passed'));
-            } elseif ($result['stage'] === 'checks' && $result['name'] !== ArchPresets::CHECK) {
+            } elseif ($result['stage'] === 'checks' && ! in_array($result['name'], [ArchPresets::CHECK, ProductionCaches::CHECK], true)) {
                 $others++;
             }
         }
@@ -660,6 +661,27 @@ class DescribeProof
             $result['outcome'] === 'not_applicable' => [['kind' => 'gap', 'text' => __('I did not check the code against Laravel\'s structure rules. Your app\'s tests do not use a version of Pest that has them.')]],
             $result['outcome'] === 'failed' && ($result['at_start'] ?? null) === 'failed' && ($result['new_problems'] ?? []) === [] => [['kind' => 'gap', 'text' => __('Your app broke Laravel\'s structure rules before this change, and the change adds no problem ahead of those. I see only the first problem of each kind, so a new one behind them stays hidden until they are fixed. Ask me to fix them.')]],
             default => [],
+        };
+    }
+
+    /**
+     * Say whether a host can still prepare the app for going online (§12).
+     * A problem the change brought is also sent back with the other failed
+     * checks; the owner hears what it would do, in their words.
+     *
+     * @return list<array{kind: string, text: string}>
+     */
+    protected function caches(Verification $verification): array
+    {
+        $result = collect($verification->results ?? [])->firstWhere('name', ProductionCaches::CHECK);
+        $old = ($result['at_start'] ?? null) === 'failed';
+
+        return match (true) {
+            $result === null => [],
+            $result['outcome'] === 'passed' => [['kind' => 'passed', 'text' => __('Your app can still go online with this change.')]],
+            $result['outcome'] !== 'failed' => [],
+            $old && ($result['new_problems'] ?? []) === [] => [['kind' => 'gap', 'text' => __('Your app could not go online before this change either: :why. Ask me to fix it.', ['why' => ProductionCaches::meaning(explode("\n", trim((string) $result['output'])))])]],
+            default => [['kind' => 'gap', 'text' => __('Your app would not go online with this change: :why.', ['why' => ProductionCaches::meaning($old ? $result['new_problems'] : explode("\n", trim((string) $result['output'])))])]],
         };
     }
 

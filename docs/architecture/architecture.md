@@ -1928,6 +1928,15 @@ finding (`AcceptFindings`). Each is on by default and has its own switch.
   checks authorization on records that belong to someone. Not covered:
   authorization on routes that touch no owned table, and the size of a
   controller.
+- **Going online** (`ProductionCaches`): a check that runs Laravel's config,
+  route, event and view caches in the verification copy, as a host does when
+  it puts the app online. It never runs in the preview, which keeps reading
+  the live files, and it clears the caches however it ends. It runs the four
+  framework caches, not `optimize`, because packages add steps to that one
+  that may reach a database or the internet. It prints one line for each cache
+  that fails, and only problems the change adds go back. The owner reads, for
+  example, "Your app would not go online with this change: two pages share a
+  name."
 
 **Scope by risk, never by diff size.** "Small" is a property of meaning: a
 three-line authorization change is riskier than a 200-line isolated component.
