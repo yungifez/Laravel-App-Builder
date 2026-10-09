@@ -3910,6 +3910,15 @@ the code, so drift is found without a model and the owner fixes it in place:
   notes name that no test proves any more, with the same "Remove from the
   notes". It uses only tests seen after the part's notes were last saved, so
   a behaviour just added for a change still in progress is not listed.
+- **The full checks with it.** "Check my app" also runs the setup, every
+  check and the package lookups (`composer audit`, `npm audit`) on the app's
+  current commit, in a fresh workspace, as publishing does
+  (`RequestHealthCheck`, `CheckProjectHealth`, one `HealthCheck` row). Nothing
+  in the app changes. A second click while one runs gets the same check. The
+  page polls while it runs, then adds what it found to the same list: checks
+  that do not pass and packages with known problems, by name only. What a
+  check said stays with the builder. A check of an earlier commit is not
+  shown. A failure on our side says "This is our fault".
 - **Notes written before later code.** Each notes file's save time is set
   against `git log` of its part's paths since then. A part with at least
   `BUILDER_STALE_NOTES_MIN_FILES` (3) later-changed files, not counting its

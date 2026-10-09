@@ -233,6 +233,16 @@ class Project extends Model
     }
 
     /**
+     * Get the full checks of the app's version the owner asked for.
+     *
+     * @return HasMany<HealthCheck, $this>
+     */
+    public function healthChecks(): HasMany
+    {
+        return $this->hasMany(HealthCheck::class);
+    }
+
+    /**
      * Get the times the project was published, or tried to be.
      *
      * @return HasMany<Deployment, $this>

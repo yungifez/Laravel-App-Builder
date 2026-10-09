@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Form, Head, Link, router, setLayoutProps } from '@inertiajs/vue3';
+import {
+    Form,
+    Head,
+    Link,
+    router,
+    setLayoutProps,
+    usePoll,
+} from '@inertiajs/vue3';
 import {
     Check,
     ChevronRight,
@@ -14,6 +21,7 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import FeatureRequestController from '@/actions/App/Http/Controllers/FeatureRequestController';
+import ProjectHealthCheckController from '@/actions/App/Http/Controllers/ProjectHealthCheckController';
 import ProjectNotesFixController from '@/actions/App/Http/Controllers/ProjectNotesFixController';
 import ExploreAppPanel from '@/components/ExploreAppPanel.vue';
 import InputError from '@/components/InputError.vue';
@@ -102,9 +110,27 @@ const props = defineProps<{
     draft: NotesDraft | null;
     exploration: Exploration | null;
     check?: CheckFinding[];
+    // The full checks of the app's current version, while they run and
+    // once done; null before any, or when the app changed since.
+    health: { active: boolean; findings: CheckFinding[] } | null;
 }>();
 
 const checking = ref(false);
+
+// The notes' gaps first, then what the app's own checks found.
+const findings = computed(() => [
+    ...(props.check ?? []),
+    ...(props.health?.findings ?? []),
+]);
+
+// The full checks take minutes, so the page follows them.
+const healthPoll = usePoll(3000, { only: ['health'] }, { autoStart: false });
+
+watch(
+    () => props.health?.active === true,
+    (active) => (active ? healthPoll.start() : healthPoll.stop()),
+    { immediate: true },
+);
 
 // "today" and "yesterday" read on their own; a date needs "on".
 function onDay(at: string | null): string {
@@ -319,6 +345,20 @@ function putBack(area: UnderstandingArea, key: string): void {
 }
 
 function runCheck(): void {
+    router.post(
+        ProjectHealthCheckController.store.url(props.project.id),
+        {},
+        {
+            only: ['check', 'health'],
+            preserveScroll: true,
+            onStart: () => (checking.value = true),
+            onFinish: () => (checking.value = false),
+        },
+    );
+}
+
+// After a fix to the notes, only the notes need checking again.
+function recheckNotes(): void {
     router.reload({
         only: ['check'],
         onStart: () => (checking.value = true),
@@ -488,12 +528,12 @@ function setCompatibility(keep: boolean | null): void {
                     <Button
                         variant="outline"
                         class="h-11 gap-1.5 select-none sm:ml-auto sm:h-9"
-                        :disabled="checking"
+                        :disabled="checking || health?.active"
                         data-test="check-button"
                         @click="runCheck"
                     >
                         <LoaderCircle
-                            v-if="checking"
+                            v-if="checking || health?.active"
                             class="size-4 animate-spin"
                         />
                         <SearchCheck v-else class="size-4" />
@@ -503,21 +543,38 @@ function setCompatibility(keep: boolean | null): void {
 
                 <!-- Quick check: gaps between these notes and the app -->
                 <div
-                    v-if="check !== undefined"
-                    class="mt-4"
+                    v-if="check !== undefined || health"
+                    class="mt-4 space-y-2"
                     data-test="quick-check"
                 >
                     <p
-                        v-if="check.length === 0"
+                        v-if="health?.active"
+                        class="flex items-center gap-2 text-sm text-muted-foreground"
+                        data-test="health-running"
+                    >
+                        <LoaderCircle class="size-4 animate-spin" />
+                        Running your app's tests and checks. This takes a few
+                        minutes.
+                    </p>
+                    <p
+                        v-if="
+                            check !== undefined &&
+                            findings.length === 0 &&
+                            !health?.active
+                        "
                         class="flex items-center gap-2 text-sm"
                         data-test="check-clear"
                     >
                         <CircleCheck class="size-4 text-green-600" />
                         No obvious problems found.
                     </p>
-                    <ul v-else class="space-y-2" data-test="check-findings">
+                    <ul
+                        v-if="findings.length"
+                        class="space-y-2"
+                        data-test="check-findings"
+                    >
                         <li
-                            v-for="finding in check"
+                            v-for="finding in findings"
                             :key="finding.title"
                             class="flex gap-2 text-sm"
                         >
@@ -557,7 +614,7 @@ function setCompatibility(keep: boolean | null): void {
                                     :options="{ preserveScroll: true }"
                                     v-slot="{ errors, processing }"
                                     class="mt-1"
-                                    @success="runCheck"
+                                    @success="recheckNotes"
                                 >
                                     <input
                                         type="hidden"
@@ -598,7 +655,7 @@ function setCompatibility(keep: boolean | null): void {
                                     :options="{ preserveScroll: true }"
                                     v-slot="{ errors, processing }"
                                     class="mt-1"
-                                    @success="runCheck"
+                                    @success="recheckNotes"
                                 >
                                     <input
                                         type="hidden"

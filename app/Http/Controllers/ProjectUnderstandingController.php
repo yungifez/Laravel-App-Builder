@@ -157,6 +157,20 @@ class ProjectUnderstandingController extends Controller
                 ? null
                 : fn () => $estimateExploration->handle($project),
             'check' => Inertia::optional(fn () => $revision === null ? [] : $checkProjectNotes->handle($project)),
+            // The full checks the owner asked for with the quick check, while
+            // they run and once done. One on an earlier version is out of date.
+            'health' => function () use ($project, $repository, $revision) {
+                $healthCheck = $revision === null ? null : $project->healthChecks()->latest('id')->first();
+
+                if ($healthCheck === null || (! $healthCheck->status->active() && $healthCheck->commit_sha !== $repository->head($project))) {
+                    return null;
+                }
+
+                return [
+                    'active' => $healthCheck->status->active(),
+                    'findings' => $healthCheck->status->active() ? [] : $healthCheck->findings(),
+                ];
+            },
         ]);
     }
 
