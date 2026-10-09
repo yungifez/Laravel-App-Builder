@@ -3166,6 +3166,64 @@ reads the preview's workspace, so the app itself does not change.
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 
+### Live updates
+
+Proposed, not built, and paused by the owner on 2026-10-08. A change one
+person makes shows at once in another person's tab, with Laravel
+broadcasting and Reverb, and the owner sets up nothing.
+
+**Today.** The coder can add it: `install:broadcasting --reverb` asks only
+for `laravel/*`, `laravel-echo`, `pusher-js` and `@laravel/echo-vue`, which
+are all on the package allowlist. It does not work in the preview, for three
+reasons:
+
+- Reverb writes its keys and `BROADCAST_CONNECTION=reverb` into `.env` only.
+  A preview starts from `.env.example`, where the starter kit has
+  `BROADCAST_CONNECTION=log`. Each broadcast goes to the log.
+- The build gets no `VITE_REVERB_*`, so Echo has no key. The page that
+  listens is expected to fail in the browser. This is read from the code;
+  nobody has run it yet.
+- Nothing serves the socket. The preview runs only `php -S`, and the
+  gateway drops `Upgrade`: a PHP relay cannot carry a WebSocket.
+
+**Design: one Reverb for all previews.** Reverb serves many apps from one
+server, each with its own id, key and secret. Its app list comes from a
+provider that the `ApplicationManager` lets us replace (`extend`).
+
+- A second `reverb:start` process of the control plane serves previews. It
+  is not the control plane's own Reverb: it has its own port and host, and
+  its provider lists only running previews. The control plane's app is
+  never in it.
+- A preview of an app with `laravel/reverb` in `composer.lock` gets an app
+  id, key and secret of its own, kept encrypted on the preview. Its allowed
+  origin is the preview's URL, so a share link works, and no other origin
+  does. The provider stops listing it when the preview stops.
+- The preview environment sets `BROADCAST_CONNECTION=reverb` and the
+  `REVERB_*` values for the server side. `REVERB_HOST` is the private
+  address the workspace reaches the server at. The build and the watcher
+  get `VITE_REVERB_*` with the public host, which the browser uses. The
+  real environment wins over `.env` for Laravel and for Vite, so nothing
+  is written into the app.
+- The browser connects straight to the preview Reverb host. The gateway is
+  not involved. Private channels still sign in through the gateway
+  (`/broadcasting/auth` is a normal POST with the preview's session).
+- Previews run queued work at once, so `ShouldBroadcast` events go out
+  in the request.
+
+One Reverb process for each preview was rejected. It needs a port, a
+WebSocket relay in the gateway and memory for each preview, for no gain in
+isolation: Reverb keeps apps apart by their id.
+
+**The coder.** The brief says: add live updates with
+`install:broadcasting --reverb`. List the `REVERB_*` names in `.env.example`
+with no values. Tests fake broadcasting. New apps do not start with
+broadcasting installed; it comes with the first change that needs it, and
+works in the preview with no setup.
+
+**Published apps.** On Forge, the site's Reverb daemon serves the app,
+with keys in the site's environment (§32.5). On Laravel Cloud, its managed
+Reverb does the same.
+
 ## 16. Model gateway and credentials
 
 Every model call, from the control plane or a runtime, goes through one metered
@@ -5773,6 +5831,13 @@ change the workspace while its command runs. This closes that gap.
   for state and destroys what the runner no longer has.
 - On Cloud, `ServePreviewHosts` and the gateway are not registered (the role
   decides). They exist in exactly one place at a time.
+- **Live updates** (decided 2026-10-08, paused by the owner, §15). Each runner runs one Reverb
+  for its previews, at `ws.r1.preview.example.com` under the same wildcard
+  certificate, so the socket sits next to the app. A central one would put
+  every preview's traffic through the control plane. A runner has no
+  database of previews: the control plane sends each preview's keys,
+  signed, the way it sends grants. On a dev machine the local runner has
+  its own Reverb in the same way.
 
 ### 32.6 Project sources
 
