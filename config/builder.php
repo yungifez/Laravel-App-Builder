@@ -76,6 +76,16 @@ return [
         // The current starter kit lives on its main branch; its tagged
         // releases are older Laravel versions.
         'template_package' => env('BUILDER_TEMPLATE_PACKAGE', 'laravel/vue-starter-kit:dev-main'),
+        // The phone app an owner can add beside their app: a NativePHP
+        // Laravel app that talks to theirs. `php artisan projects:mobile-template`
+        // puts the package below there, moved to the versions in "packages",
+        // with its screen components registered.
+        'mobile_template' => env('BUILDER_MOBILE_TEMPLATE_PATH', storage_path('app/private/mobile-template')),
+        'mobile_template_package' => env('BUILDER_MOBILE_TEMPLATE_PACKAGE', 'nativephp/mobile-starter'),
+        'mobile_packages' => ['nativephp/mobile:^4.6', 'nativephp/mobile-ui:^0.8'],
+        // The start of each phone app's store id, before the app's own name:
+        // "com.example.brightcleaning". Owners change it before publishing.
+        'mobile_app_id_prefix' => env('BUILDER_MOBILE_APP_ID_PREFIX', 'com.example'),
         // Build the first version of a new app from the owner's sentence,
         // as its first change, so they see their app and not the template's
         // welcome page. Each new app then spends model calls at once.

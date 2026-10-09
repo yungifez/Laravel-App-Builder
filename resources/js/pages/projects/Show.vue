@@ -63,6 +63,7 @@ import FeatureRequestPreviewController from '@/actions/App/Http/Controllers/Feat
 import PreviewController from '@/actions/App/Http/Controllers/PreviewController';
 import PreviewProblemFixController from '@/actions/App/Http/Controllers/PreviewProblemFixController';
 import ProjectExperimentController from '@/actions/App/Http/Controllers/ProjectExperimentController';
+import ProjectPhoneAppController from '@/actions/App/Http/Controllers/ProjectPhoneAppController';
 import ProjectPreviewController from '@/actions/App/Http/Controllers/ProjectPreviewController';
 import AppData from '@/components/AppData.vue';
 import AppEmails from '@/components/AppEmails.vue';
@@ -853,6 +854,15 @@ const startingIdea = ref(false);
 const renaming = ref(false);
 const sharing = ref(false);
 const usingOwnTool = ref(false);
+
+// The phone app opens as soon as it is made; it starts as the template.
+function addPhoneApp() {
+    router.post(
+        ProjectPhoneAppController.store.url(props.project.id),
+        {},
+        { onError: (errors) => toast.error(Object.values(errors)[0]) },
+    );
+}
 const connecting = ref(false);
 const usingIdea = ref(false);
 
@@ -1394,6 +1404,35 @@ function sendOnEnter(event: KeyboardEvent): void {
                 >
                     <Pencil class="size-4" />
                     Rename…
+                </DropdownMenuItem>
+                <!-- A phone app is its own app that talks to this one. -->
+                <DropdownMenuItem
+                    v-if="project.phone.parent || project.phone.app"
+                    as-child
+                >
+                    <Link
+                        :href="
+                            showProject(
+                                (project.phone.parent ?? project.phone.app)!.id,
+                            ).url
+                        "
+                        data-test="phone-app-open"
+                    >
+                        <Smartphone class="size-4" />
+                        {{
+                            project.phone.parent
+                                ? `Open ${project.phone.parent.name}`
+                                : 'Open the phone app'
+                        }}
+                    </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    v-else-if="project.phone.available"
+                    data-test="phone-app-add"
+                    @select="addPhoneApp"
+                >
+                    <Smartphone class="size-4" />
+                    Add a phone app
                 </DropdownMenuItem>
                 <DropdownMenuItem as-child>
                     <Link

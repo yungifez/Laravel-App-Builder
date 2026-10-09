@@ -37,6 +37,7 @@ use App\Features\NewTests;
 use App\Features\OwnedRecords;
 use App\Features\PackagePolicy;
 use App\Features\PatchSummary;
+use App\Features\PhoneAppSecrets;
 use App\Features\ProtectedInputs;
 use App\Features\QueuedWork;
 use App\Features\ReplayProbes;
@@ -252,6 +253,7 @@ class VerifyFeatureRequest implements ShouldQueue
                 $this->compareWithStart($driver, $runWorkspaceCommand, $workspace, $featureRequest);
             }
             $this->auditPackages($driver, $runWorkspaceCommand, $workspace, $featureRequest);
+            $checksPassed = $this->checkPhoneSecrets($driver, $workspace, $featureRequest) && $checksPassed;
             $this->observeShortcuts($driver, $runWorkspaceCommand, $workspace, $featureRequest);
 
             // Before the protected acceptance tests are copied in, so the map
@@ -678,6 +680,25 @@ class VerifyFeatureRequest implements ShouldQueue
                 $this->compareAuditWithStart($driver, $runWorkspaceCommand, $workspace, $featureRequest, $step, count($this->results) - 1, (string) $command->output);
             }
         }
+    }
+
+    /**
+     * Fail a phone app whose settings give a secret away. The settings ship
+     * inside the app, so this is ours to check, not the app's own tests'.
+     * Other apps have no such file inside them, so they skip it.
+     */
+    protected function checkPhoneSecrets(WorkspaceDriver $driver, Workspace $workspace, FeatureRequest $featureRequest): bool
+    {
+        if ($featureRequest->project->parent_id === null) {
+            return true;
+        }
+
+        $settings = (string) rescue(fn () => $driver->readFile((string) $workspace->driver_id, '.env.example'), '', report: false);
+        $secrets = PhoneAppSecrets::find($settings);
+
+        $this->addResult(__('Phone app keeps no secrets'), 'checks', $secrets === [] ? self::OUTCOME_PASSED : self::OUTCOME_FAILED, output: $secrets === [] ? '' : PhoneAppSecrets::explain($secrets));
+
+        return $secrets === [];
     }
 
     /**

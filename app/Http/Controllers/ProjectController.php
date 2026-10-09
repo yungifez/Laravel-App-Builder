@@ -16,6 +16,7 @@ use App\Actions\Previews\ReadPreviewProblems;
 use App\Actions\Previews\ReadPreviewRows;
 use App\Actions\Previews\ReadPreviewSchedule;
 use App\Actions\Previews\ShareApp;
+use App\Actions\Projects\AddPhoneApp;
 use App\Actions\Projects\ConnectOwnTool;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\DescribeFirstVersion;
@@ -298,6 +299,13 @@ class ProjectController extends Controller
                     // For a tool that signs in instead, such as the Claude app.
                     'app_address' => route('mcp.app', ['project' => $project->uuid]),
                     'name' => Str::slug($project->name) ?: 'app',
+                ],
+                // The phone app that talks to this app, or, for a phone
+                // app, the app it talks to.
+                'phone' => [
+                    'app' => $project->phoneApp ? ['id' => $project->phoneApp->uuid, 'name' => $project->phoneApp->name] : null,
+                    'parent' => $project->parent ? ['id' => $project->parent->uuid, 'name' => $project->parent->name] : null,
+                    'available' => AddPhoneApp::template() !== null,
                 ],
             ],
             'changes' => fn () => $summarizeChanges->handle($project),

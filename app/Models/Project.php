@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -22,6 +23,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property int $id
  * @property string $uuid Names the row in links and requests
  * @property int $user_id
+ * @property int|null $parent_id The app this phone app talks to; null for an app of its own
  * @property string $name
  * @property string $source_path
  * @property Carbon|null $repository_created_at When the project's repository was first made; a missing repository after that is lost work, never a fresh import
@@ -112,6 +114,26 @@ class Project extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Get the app this phone app talks to.
+     *
+     * @return BelongsTo<Project, $this>
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'parent_id');
+    }
+
+    /**
+     * Get the phone app that talks to this app, if the owner added one.
+     *
+     * @return HasOne<Project, $this>
+     */
+    public function phoneApp(): HasOne
+    {
+        return $this->hasOne(Project::class, 'parent_id');
     }
 
     /**

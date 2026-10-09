@@ -24,6 +24,13 @@ export type ProjectSummary = {
         app_address: string;
         name: string;
     };
+    /** The phone app that talks to this app, or the app a phone app talks to. */
+    phone: {
+        app: { id: string; name: string } | null;
+        parent: { id: string; name: string } | null;
+        /** Whether phone apps can be added here. */
+        available: boolean;
+    };
 };
 
 /** Someone who can sign in to the app on show, as the app keeps them. */
