@@ -1523,6 +1523,11 @@ return [
         ],
         'overlay' => resource_path('preview-tools/overlay.js'),
 
+        // "Add lots more" under Saved data: how many of each kind of record
+        // the app's own factories add, so the owner sees how pages cope.
+        // People get a quarter of this.
+        'lots' => (int) env('BUILDER_PREVIEW_LOTS', 200),
+
         // "What happened" and "What if it fails" beside the app on show
         // need the trace recorder inside the app (BUILDER_TRACE_RECORDER in
         // the box image, loaded through PHP's own prepend setting, never

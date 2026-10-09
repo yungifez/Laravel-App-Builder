@@ -27,7 +27,7 @@ class PreviewDataUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'with' => ['required', 'in:examples,empty'],
+            'with' => ['required', 'in:examples,empty,lots'],
         ];
     }
 }

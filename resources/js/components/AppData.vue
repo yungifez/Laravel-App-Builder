@@ -43,7 +43,7 @@ const saved = computed(
 
 // Clearing what was saved cannot be undone, so it is asked for twice, in
 // place, where the owner's eyes already are.
-const asking = ref<'examples' | 'empty' | null>(null);
+const asking = ref<'examples' | 'empty' | 'lots' | null>(null);
 
 // One table opened in place of the list, read when opened and again when
 // its count changes, so a new sign-up shows while the owner looks.
@@ -538,6 +538,15 @@ function rows(table: SavedTable): string {
                         >Start again with examples</Button
                     >
                     <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        class="h-11 sm:h-8"
+                        data-test="app-data-lots"
+                        @click="asking = 'lots'"
+                        >Add lots more</Button
+                    >
+                    <Button
                         v-if="saved"
                         type="button"
                         size="sm"
@@ -550,12 +559,18 @@ function rows(table: SavedTable): string {
                 </template>
                 <template v-else>
                     <p class="min-w-0 flex-1 text-xs text-muted-foreground">
-                        {{
-                            asking === 'examples'
-                                ? 'Everything saved goes, and your example data takes its place.'
-                                : 'Everything saved goes, and the app starts empty.'
-                        }}
-                        You may need to sign up again.
+                        <template v-if="asking === 'lots'">
+                            Hundreds more of each kind join what is saved, so
+                            you see how your app copes with lots.
+                        </template>
+                        <template v-else>
+                            {{
+                                asking === 'examples'
+                                    ? 'Everything saved goes, and your example data takes its place.'
+                                    : 'Everything saved goes, and the app starts empty.'
+                            }}
+                            You may need to sign up again.
+                        </template>
                     </p>
                     <Button
                         type="submit"
@@ -568,10 +583,14 @@ function rows(table: SavedTable): string {
                         data-test="app-data-confirm"
                         >{{
                             processing
-                                ? 'Starting again…'
+                                ? asking === 'lots'
+                                    ? 'Adding…'
+                                    : 'Starting again…'
                                 : asking === 'examples'
                                   ? 'Start again'
-                                  : 'Empty it'
+                                  : asking === 'lots'
+                                    ? 'Add them'
+                                    : 'Empty it'
                         }}</Button
                     >
                     <Button

@@ -3163,6 +3163,13 @@ reads the preview's workspace, so the app itself does not change.
   either way. The warning stays on screen until the owner picks "All
   works", and the preview server drops the file when it starts, so a
   restarted app starts with all working.
+- **Add lots more** (built). Under Saved data, one tap adds hundreds of
+  each kind of record the app keeps, beside what is saved, so the owner
+  sees how its pages cope with lots before real customers come. The app's
+  own factories make them, as its tests would. People get a quarter as
+  many, and every other kind reuses the people already there, so each of
+  them sees a full app. A kind whose factory breaks is left as it was and
+  named. `BUILDER_PREVIEW_LOTS` sets how many (200).
 - **Jobs** need no tab while previews run queued work at once
   (`QUEUE_CONNECTION=sync`).
 

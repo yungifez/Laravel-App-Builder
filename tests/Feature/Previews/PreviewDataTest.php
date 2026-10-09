@@ -227,6 +227,51 @@ class PreviewDataTest extends TestCase
         $this->assertCount(1, $this->driver->executed);
     }
 
+    public function test_the_owner_adds_lots_more_of_each_kind_beside_what_is_saved()
+    {
+        config(['builder.preview.lots' => 80]);
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 0, output: "A notice\n".json_encode(['made' => ['users' => 20, 'books' => 80, 'reading_lists' => 80], 'broke' => []]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->from(route('projects.show', $this->project))
+            ->put(route('preview-data.update', $this->project), ['with' => 'lots'])
+            ->assertRedirect(route('projects.show', $this->project))
+            ->assertSessionHasNoErrors()
+            ->assertInertiaFlash('toast.message', 'Added 20 users, 80 books and 80 reading lists. Open your pages to see how they cope with lots.');
+
+        // Nothing saved is cleared: only the app's own factories add to it.
+        $command = $this->driver->executed[0]['command'];
+        $this->assertSame(['php', '-r'], array_slice($command, 0, 2));
+        $this->assertSame(['--', '80'], array_slice($command, 3));
+        $this->assertSame('local', $this->driver->environments[0]['APP_ENV']);
+    }
+
+    public function test_a_kind_whose_examples_break_is_named_and_the_rest_are_added()
+    {
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 0, output: json_encode(['made' => ['books' => 200], 'broke' => ['loan_requests', 'shelves']]), errorOutput: '', durationMs: 5);
+
+        $this->actingAs($this->owner)
+            ->put(route('preview-data.update', $this->project), ['with' => 'lots'])
+            ->assertSessionHasNoErrors()
+            ->assertInertiaFlash('toast.message', 'Added 200 books. Open your pages to see how they cope with lots. Your app could not make more loan requests or shelves.');
+    }
+
+    public function test_an_app_with_no_examples_to_make_more_of_is_told_what_to_ask()
+    {
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 0, output: json_encode(['made' => [], 'broke' => []]), errorOutput: '', durationMs: 5);
+        $this->actingAs($this->owner)
+            ->put(route('preview-data.update', $this->project), ['with' => 'lots'])
+            ->assertSessionHasErrors(['app' => 'Your app has no example data to make more of. Ask me to add some.']);
+
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 0, output: json_encode(['made' => [], 'broke' => ['books']]), errorOutput: '', durationMs: 5);
+        $this->put(route('preview-data.update', $this->project), ['with' => 'lots'])
+            ->assertSessionHasErrors(['app' => 'Your app\'s example data could not be made. Ask me to fix its example data.']);
+
+        $this->driver->onExec = fn () => new CommandResult(exitCode: 255, output: 'PHP Fatal error', errorOutput: '', durationMs: 5);
+        $this->put(route('preview-data.update', $this->project), ['with' => 'lots'])
+            ->assertSessionHasErrors(['app' => 'Your app could not be filled with lots of examples. This is our fault. Try again.']);
+    }
+
     public function test_nothing_is_read_or_changed_while_the_app_does_not_run()
     {
         Preview::query()->update(['status' => 'stopped']);
