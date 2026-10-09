@@ -141,7 +141,8 @@ starting.
    at the address in `WORKSPACE_RUNNER_SOCKET_URL`.
 2. Turn on the **scheduler**. It runs `schedule:run` every minute. The
    scheduler closes old workspaces and previews, finds lost runs, and
-   starts or deletes cloud runner machines.
+   starts or deletes cloud runner machines. Once a day it also looks up
+   new security problems in the packages of apps nobody changed for a week.
 
 ## 6. Add runner machines
 

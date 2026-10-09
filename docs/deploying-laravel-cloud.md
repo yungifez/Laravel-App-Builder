@@ -176,7 +176,9 @@ The control plane finds it and tells the owner.
 ## 6. Turn on the scheduler
 
 Turn on the scheduler in the environment. It closes old workspaces and
-previews, finds lost runs, and starts or deletes runner machines.
+previews, finds lost runs, and starts or deletes runner machines. Once a day
+it also looks up new security problems in the packages of apps nobody changed
+for a week.
 
 ## 7. Set up the runner machines
 
